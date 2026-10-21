@@ -7,6 +7,7 @@ const wlr = @import("wlroots");
 const lua = @import("lua");
 const View = @import("view.zig").View;
 const input = @import("input.zig");
+const host = @import("host.zig");
 
 pub const gpa = std.heap.c_allocator;
 const log = std.log.scoped(.server);
@@ -14,10 +15,13 @@ const log = std.log.scoped(.server);
 /// Stored in SceneNode.data of trees we own, to identify them on hit tests.
 pub const Tag = enum { view, layer };
 
-/// Scene layers, bottom to top. `below`/`above` hold Lua rectangles.
-pub const Layer = enum { background, bottom, below, views, above, top, overlay };
+/// Scene layers, bottom to top; all but `views` hold layer-shell surfaces.
+pub const Layer = enum { background, bottom, views, top, overlay };
 
 pub const Server = struct {
+    /// Host functions for the Lua runtime.
+    pub const Api = host;
+
     wl_server: *wl.Server,
     backend: *wlr.Backend,
     session: ?*wlr.Session,
@@ -40,7 +44,9 @@ pub const Server = struct {
     grab: input.Grab = .{},
     next_id: u32 = 1,
     /// Set once the Lua host is running; null during startup and teardown.
-    rt: ?*lua.Runtime = null,
+    rt: ?*host.Runtime = null,
+    /// Single event-loop timer backing all Lua timers.
+    timer: ?*wl.EventSource = null,
 
     new_output: wl.Listener(*wlr.Output) = .init(newOutput),
     layout_change: wl.Listener(*wlr.OutputLayout) = .init(layoutChange),
@@ -103,12 +109,19 @@ pub const Server = struct {
         server.cursor.events.button.add(&server.cursor_button);
         server.cursor.events.axis.add(&server.cursor_axis);
         server.cursor.events.frame.add(&server.cursor_frame);
+        server.timer = try wl_server.getEventLoop().addTimer(*Server, onTimer, server);
+    }
+
+    fn onTimer(server: *Server) c_int {
+        if (server.rt) |rt| rt.runTimers();
+        return 0;
     }
 
     /// Teardown order follows wlroots' tinywl.c. The Lua host must already be
     /// gone (server.rt == null) so destroy events are not forwarded to it.
     pub fn deinit(server: *Server) void {
         std.debug.assert(server.rt == null);
+        if (server.timer) |t| t.remove();
         server.wl_server.destroyClients();
         inline for (.{
             "new_output",        "layout_change",  "new_toplevel",      "new_popup",
@@ -144,6 +157,20 @@ pub const Server = struct {
         return null;
     }
 
+    pub fn outputAt(server: *Server, x: i32, y: i32) ?*Output {
+        const wlr_output = server.output_layout.outputAt(@floatFromInt(x), @floatFromInt(y)) orelse return null;
+        var it = server.outputs.iterator(.forward);
+        while (it.next()) |o| if (o.wlr_output == wlr_output) return o;
+        return null;
+    }
+
+    /// Most recently focused view that is not hidden by a plugin.
+    pub fn firstVisible(server: *Server) ?*View {
+        var it = server.views.iterator(.forward);
+        while (it.next()) |v| if (v.tree.node.enabled) return v;
+        return null;
+    }
+
     pub fn outputById(server: *Server, id: u32) ?*Output {
         var it = server.outputs.iterator(.forward);
         while (it.next()) |o| if (o.id == id) return o;
@@ -152,7 +179,7 @@ pub const Server = struct {
 
     /// Moves keyboard focus to `view` (must be mapped) or clears it.
     pub fn focus(server: *Server, view: ?*View) void {
-        if (view == server.focused) return;
+        if (view != null and view == server.focused) return;
         if (server.focused) |old| _ = old.xdg.setActivated(false);
         server.focused = view;
         const v = view orelse {
@@ -206,6 +233,8 @@ pub const Server = struct {
     /// output (e.g. after unplugging) are moved onto a visible one.
     fn layoutChange(listener: *wl.Listener(*wlr.OutputLayout), _: *wlr.OutputLayout) void {
         const server: *Server = @fieldParentPtr("layout_change", listener);
+        var outs = server.outputs.iterator(.forward);
+        while (outs.next()) |o| o.arrange();
         if (server.activeOutputBox()) |box| {
             var it = server.views.iterator(.forward);
             while (it.next()) |v| {
@@ -232,6 +261,8 @@ pub const Output = struct {
     scene_output: *wlr.SceneOutput,
     link: wl.list.Link = undefined,
     id: u32,
+    /// Area left for windows, output-local (layer-shell exclusive zones removed).
+    usable: wlr.Box = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
 
     frame: wl.Listener(*wlr.Output) = .init(handleFrame),
     request_state: wl.Listener(*wlr.Output.event.RequestState) = .init(handleRequestState),
@@ -255,6 +286,11 @@ pub const Output = struct {
         server.emit(.output_add, output.id);
     }
 
+    pub fn arrange(output: *Output) void {
+        const b = output.box();
+        output.usable = .{ .x = 0, .y = 0, .width = b.width, .height = b.height };
+    }
+
     pub fn box(output: *Output) wlr.Box {
         var b: wlr.Box = undefined;
         output.server.output_layout.getBox(output.wlr_output, &b);
@@ -266,7 +302,6 @@ pub const Output = struct {
     fn handleFrame(listener: *wl.Listener(*wlr.Output), _: *wlr.Output) void {
         const output: *Output = @fieldParentPtr("frame", listener);
         var now = timestamp();
-        if (output.server.rt) |rt| rt.frame(output.id, now);
         _ = output.scene_output.commit(null);
         output.scene_output.sendFrameDone(&now);
     }

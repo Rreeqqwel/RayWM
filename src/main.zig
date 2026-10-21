@@ -1,6 +1,7 @@
 const std = @import("std");
 const wlr = @import("wlroots");
 const srv = @import("server.zig");
+const host = @import("host.zig");
 
 const usage =
     \\Usage: raywm [-c config.lua] [-s startup-command] [-d]
@@ -30,8 +31,6 @@ pub fn main(init: std.process.Init) !void {
             return if (std.mem.eql(u8, arg, "-h")) {} else error.InvalidArgument;
         }
     }
-    // Consumed by the Lua host in stage 2.
-    std.mem.doNotOptimizeAway(config);
     wlr.log.init(if (debug) .debug else .info, null);
 
     var server: srv.Server = undefined;
@@ -49,9 +48,26 @@ pub fn main(init: std.process.Init) !void {
     if (setenv("WAYLAND_DISPLAY", socket, 1) != 0) return error.SetenvFailed;
     try server.backend.start();
 
+    // Started after the backend so plugins see the initial outputs in setup.
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const path = if (config) |p| std.mem.span(p) else defaultConfig(&path_buf) orelse "init.lua";
+    server.rt = try host.Runtime.create(&server, path, .{});
+    defer {
+        const rt = server.rt.?;
+        server.rt = null; // no events into Lua while it shuts down
+        rt.destroy();
+    }
+
     if (startup) |cmd| srv.spawn(cmd);
     std.log.info("running on WAYLAND_DISPLAY={s}", .{socket});
     server.wl_server.run();
+}
+
+fn defaultConfig(buf: []u8) ?[:0]const u8 {
+    if (std.c.getenv("XDG_CONFIG_HOME")) |dir| if (dir[0] != 0)
+        return std.fmt.bufPrintZ(buf, "{s}/raywm/init.lua", .{dir}) catch null;
+    const home = std.c.getenv("HOME") orelse return null;
+    return std.fmt.bufPrintZ(buf, "{s}/.config/raywm/init.lua", .{home}) catch null;
 }
 
 fn terminate(_: c_int, server: *srv.Server) c_int {

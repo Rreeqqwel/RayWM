@@ -86,6 +86,15 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| run.addArgs(args);
     b.step("run", "Run raywm").dependOn(&run.step);
 
-    const unit = b.addTest(.{ .root_module = lua, .use_llvm = use_llvm, .use_lld = use_llvm });
-    b.step("test", "Run Lua host unit tests").dependOn(&b.addRunArtifact(unit).step);
+    const unit_mod = b.createModule(.{
+        .root_source_file = b.path("tests/lua_test.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    unit_mod.addImport("lua", lua);
+    const unit = b.addTest(.{ .root_module = unit_mod, .use_llvm = use_llvm, .use_lld = use_llvm });
+    const unit_run = b.addRunArtifact(unit);
+    unit_run.setCwd(b.path(".")); // fixtures are referenced as tests/lua/...
+    b.step("test", "Run Lua host unit tests").dependOn(&unit_run.step);
 }

@@ -143,7 +143,7 @@ pub fn heldKeys(server: *Server, wlr_kb: *wlr.Keyboard, buf: *[32]u32) []const u
 fn handleBinding(server: *Server, mods: u32, sym: u32) bool {
     if (server.rt) |rt| {
         if (rt.key(mods, sym)) return true;
-        if (rt.configured()) return false;
+        if (rt.hasBindings()) return false;
     }
     // Fallback bindings so a missing or broken config is never a dead end.
     const logo: u32 = @bitCast(wlr.Keyboard.ModifierMask{ .logo = true });

@@ -164,7 +164,7 @@ pub const View = struct {
         if (server.grab.view == view) @import("input.zig").endGrab(server);
         if (server.focused == view) {
             server.focused = null;
-            server.focus(server.views.first());
+            server.focus(server.firstVisible());
         }
         server.emit(.view_unmap, view.id);
         @import("input.zig").refocusPointer(server);
@@ -211,7 +211,7 @@ pub const View = struct {
 
     fn handleSetTitle(listener: *wl.Listener(void)) void {
         const view: *View = @fieldParentPtr("set_title", listener);
-        view.server.emit(.view_title, view.id);
+        if (view.mapped) view.server.emit(.view_title, view.id);
     }
 };
 
