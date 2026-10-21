@@ -156,7 +156,7 @@ pub const Server = struct {
     }
 
     pub fn nextId(server: *Server) u32 {
-        defer server.next_id +%= 1;
+        defer server.next_id = if (server.next_id == std.math.maxInt(u32)) 1 else server.next_id + 1;
         return server.next_id;
     }
 

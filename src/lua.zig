@@ -77,6 +77,8 @@ pub fn Runtime(comptime H: type) type {
         sweeping: bool = false,
         sweep_needed: bool = false,
         reload_requested: bool = false,
+        /// False when no Lua state exists (only after a failed reload).
+        alive: bool = false,
         plugins: std.ArrayList(Plugin) = .empty,
         regs: std.ArrayList(Reg) = .empty,
         next_id: u32 = 1,
@@ -109,25 +111,24 @@ pub fn Runtime(comptime H: type) type {
             return self.config_ok;
         }
 
+        /// Also the way to recover after a failed reload.
         pub fn requestReload(self: *Self) void {
             self.reload_requested = true;
             if (self.depth == 0) self.leaveOuter();
         }
 
         fn start(self: *Self) !void {
-            self.L = c.lua_newstate(alloc, self) orelse return error.OutOfMemory;
-            const L = self.L;
-            c.luaL_openlibs(L);
-            c.lua_sethook(L, hook, c.LUA_MASKCOUNT, hook_step);
-            c.lua_createtable(L, 0, 24);
-            c.lua_pushinteger(L, api_version);
-            c.lua_setfield(L, -2, "api_version");
-            inline for (globals) |g| {
-                c.lua_pushlightuserdata(L, self);
-                c.lua_pushcclosure(L, g[1], 1);
-                c.lua_setfield(L, -2, g[0]);
+            const L = c.lua_newstate(alloc, self) orelse return error.OutOfMemory;
+            // Library setup can raise memory errors, so it runs protected.
+            c.lua_pushcclosure(L, initState, 0);
+            c.lua_pushlightuserdata(L, self);
+            if (c.lua_pcallk(L, 1, 0, 0, 0, null) != c.LUA_OK) {
+                c.lua_close(L);
+                return error.OutOfMemory;
             }
-            c.lua_setglobal(L, "raywm");
+            c.lua_sethook(L, hook, c.LUA_MASKCOUNT, hook_step);
+            self.L = L;
+            self.alive = true;
 
             if (!self.enter()) unreachable;
             self.in_config = true;
@@ -142,12 +143,29 @@ pub fn Runtime(comptime H: type) type {
             self.leave();
         }
 
+        fn initState(L: ?*c.lua_State) callconv(.c) c_int {
+            const self: *Self = @ptrCast(@alignCast(c.lua_touserdata(L, 1)));
+            c.luaL_openlibs(L);
+            c.lua_createtable(L, 0, globals.len + 1);
+            c.lua_pushinteger(L, api_version);
+            c.lua_setfield(L, -2, "api_version");
+            inline for (globals) |g| {
+                c.lua_pushlightuserdata(L, self);
+                c.lua_pushcclosure(L, g[1], 1);
+                c.lua_setfield(L, -2, g[0]);
+            }
+            c.lua_setglobal(L, "raywm");
+            return 0;
+        }
+
         /// Tears down every plugin (teardown + resource release), then the VM.
         fn stop(self: *Self) void {
+            if (!self.alive) return;
             for (self.plugins.items) |*p| p.dead = true;
             self.sweep_needed = true;
             self.sweep();
             c.lua_close(self.L);
+            self.alive = false;
             for (self.plugins.items) |p| gpa.free(p.name);
             self.plugins.clearRetainingCapacity();
             self.regs.clearRetainingCapacity();
@@ -181,7 +199,8 @@ pub fn Runtime(comptime H: type) type {
                 self.reload_requested = false;
                 log.info("reloading {s}", .{self.config_path});
                 self.stop();
-                self.start() catch log.err("reload failed: out of memory", .{});
+                self.start() catch self.limits.report("raywm", "reload failed: out of memory; Lua is disabled until the next reload");
+                self.reload_requested = false;
             }
         }
 
@@ -228,6 +247,9 @@ pub fn Runtime(comptime H: type) type {
         /// logs a traceback and unloads the plugin (null = the config file).
         fn pcall(self: *Self, plugin: ?u32, nargs: c_int, nres: c_int) bool {
             const L = self.L;
+            // Each top-level callback gets the full budget, so a slow handler
+            // cannot get a later, innocent one killed.
+            if (self.depth <= 1) self.budget = self.limits.instructions;
             const base = c.lua_gettop(L) - nargs;
             c.lua_pushcclosure(L, traceback, 0);
             c.lua_rotate(L, base, 1);
@@ -245,6 +267,9 @@ pub fn Runtime(comptime H: type) type {
         // ---- calls from the compositor -----------------------------------
 
         pub fn emit(self: *Self, ev: Event, id: u32) void {
+            // While init.lua runs, events are not delivered (same as on the
+            // first start, before the runtime is attached to the compositor).
+            if (!self.alive or self.in_config) return;
             if (!self.enter()) return;
             defer self.leave();
             const n = self.regs.items.len; // later registrations wait for the next event
@@ -258,6 +283,7 @@ pub fn Runtime(comptime H: type) type {
         }
 
         pub fn key(self: *Self, mods: u32, sym: u32) bool {
+            if (!self.alive) return false;
             for (0..self.regs.items.len) |i| {
                 const r = self.regs.items[i];
                 if (!self.live(r) or r.kind != .bind or r.kind.bind.mods != mods or r.kind.bind.sym != sym) continue;
@@ -272,6 +298,7 @@ pub fn Runtime(comptime H: type) type {
 
         /// Fired by the host's single event-loop timer.
         pub fn runTimers(self: *Self) void {
+            if (!self.alive) return;
             const now = self.clock();
             if (!self.enter()) return;
             const n = self.regs.items.len;
@@ -412,11 +439,15 @@ pub fn Runtime(comptime H: type) type {
             if (td != c.LUA_TFUNCTION and td != c.LUA_TNIL) return failMsg(L, name, "teardown must be a function");
 
             self.plugins.ensureUnusedCapacity(gpa, 1) catch return c.luaL_error(L, "out of memory");
-            const owned = gpa.dupeZ(u8, name) catch return c.luaL_error(L, "out of memory");
             const index: u32 = @intCast(self.plugins.items.len);
+            // luaL_ref may raise; take it before allocating the name.
             const teardown = if (td == c.LUA_TFUNCTION) c.luaL_ref(L, c.LUA_REGISTRYINDEX) else blk: {
                 c.lua_settop(L, -2);
                 break :blk no_ref;
+            };
+            const owned = gpa.dupeZ(u8, name) catch {
+                c.luaL_unref(L, c.LUA_REGISTRYINDEX, teardown);
+                return c.luaL_error(L, "out of memory");
             };
             self.plugins.appendAssumeCapacity(.{ .name = owned, .teardown = teardown });
 
@@ -460,13 +491,15 @@ pub fn Runtime(comptime H: type) type {
             var buf: [16]u32 = undefined;
             const ids = buf[0..Api.outputs(self.host, &buf)];
             c.lua_createtable(L, @intCast(ids.len), 0);
-            for (ids, 1..) |oid, i| {
+            var n: c.lua_Integer = 0;
+            for (ids) |oid| {
                 const info = Api.output(self.host, oid) orelse continue;
                 pushBox(L, info.box);
                 setInt(L, "id", oid);
                 pushBox(L, info.usable);
                 c.lua_setfield(L, -2, "usable");
-                c.lua_rawseti(L, -2, @intCast(i));
+                n += 1;
+                c.lua_rawseti(L, -2, n);
             }
             return 1;
         }
@@ -528,7 +561,13 @@ pub fn Runtime(comptime H: type) type {
         }
 
         fn lReload(L: ?*c.lua_State) callconv(.c) c_int {
-            get(L).reload_requested = true; // performed once Lua has returned
+            const self = get(L);
+            // Reloading from init.lua or a teardown would loop forever.
+            if (self.in_config or self.sweeping) {
+                log.warn("raywm.reload() ignored during init.lua/teardown", .{});
+                return 0;
+            }
+            self.reload_requested = true; // performed once Lua has returned
             return 0;
         }
 
@@ -553,7 +592,7 @@ pub fn Runtime(comptime H: type) type {
             c.lua_pushvalue(L, fn_index);
             const ref = c.luaL_ref(L, c.LUA_REGISTRYINDEX);
             const rid = self.next_id;
-            self.next_id +%= 1;
+            self.next_id = if (self.next_id == std.math.maxInt(u32)) 1 else self.next_id + 1;
             self.regs.appendAssumeCapacity(.{ .id = rid, .plugin = plugin, .ref = ref, .kind = kind });
             c.lua_pushinteger(L, rid);
             return 1;

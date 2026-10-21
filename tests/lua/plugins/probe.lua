@@ -10,6 +10,8 @@ return {
       raywm.spawn("stale:" .. tostring(v) .. ":" .. e .. ":" .. tostring(ok) .. ":" .. e2)
       local info = raywm.view(1)
       raywm.spawn("view1:" .. info.title .. ":" .. info.w .. ":" .. tostring(info.focused))
+      local outs = raywm.outputs()
+      raywm.spawn("outputs:" .. #outs .. ":" .. outs[1].id)
     end)
     ctx.on("output_add", function() ctx.timer(10, function() raywm.spawn("timer") end) end)
   end,

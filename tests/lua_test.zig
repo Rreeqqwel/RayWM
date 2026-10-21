@@ -22,8 +22,9 @@ const Fake = struct {
             return id == 1;
         }
         pub fn outputs(_: *Fake, buf: []u32) usize {
-            buf[0] = 1;
-            return 1;
+            buf[0] = 2; // id 2 vanishes between listing and lookup
+            buf[1] = 1;
+            return 2;
         }
         pub fn output(_: *Fake, id: u32) ?lua.OutputInfo {
             if (id != 1) return null;
@@ -132,6 +133,9 @@ test "plugin contract, dispatch and error isolation" {
     try t.expectEqual(1, f.count("stale:nil:stale:nil:stale"));
     try t.expectEqual(1, f.count("view1:term:640:true"));
 
+    // A vanished output is skipped without leaving a hole in the array.
+    try t.expectEqual(1, f.count("outputs:1:1"));
+
     // raywm.load outside init.lua is an error -> lateload is unloaded.
     rt.emit(.view_title, 1);
     try t.expectEqual(1, f.count("teardown:lateload"));
@@ -214,4 +218,50 @@ test "missing config is not fatal" {
     defer rt.destroy();
     try std.testing.expect(!rt.configured());
     try std.testing.expect(!rt.hasBindings());
+}
+
+test "reload requested from init.lua or teardown is ignored, not recursive" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try RT.create(&f, "tests/lua/reload_in_config.lua", opts);
+    defer rt.destroy();
+    try std.testing.expectEqual(1, f.count("setup:probe"));
+    rt.requestReload(); // reloader's teardown asks for another reload
+    try std.testing.expectEqual(2, f.count("setup:probe"));
+    try std.testing.expectEqual(1, f.count("teardown:probe"));
+    rt.emit(.view_map, 5);
+    try std.testing.expectEqual(1, f.count("map:5"));
+    try std.testing.expectEqual(0, takeErrors());
+}
+
+test "failed reload disables Lua safely until the next reload" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try RT.create(&f, "tests/lua/basic.lua", opts);
+    defer rt.destroy();
+    const saved = rt.limits.memory;
+    rt.limits.memory = 1; // lua_newstate cannot allocate
+    rt.requestReload();
+    try std.testing.expect(hasError("raywm: reload failed"));
+    rt.emit(.view_map, 6); // must not touch the closed state
+    try std.testing.expect(!rt.key(64, 0xff0d));
+    rt.runTimers();
+    try std.testing.expectEqual(0, f.count("map:6"));
+    rt.limits.memory = saved;
+    rt.requestReload();
+    rt.emit(.view_map, 7);
+    try std.testing.expectEqual(1, f.count("map:7"));
+    _ = takeErrors();
+}
+
+test "instruction budget is per callback" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try RT.create(&f, "tests/lua/budget.lua", .{ .instructions = 1_000_000, .report = report });
+    defer rt.destroy();
+    rt.emit(.view_map, 1);
+    rt.emit(.view_map, 2);
+    try std.testing.expectEqual(2, f.count("slow_a"));
+    try std.testing.expectEqual(2, f.count("slow_b"));
+    try std.testing.expectEqual(0, takeErrors());
 }

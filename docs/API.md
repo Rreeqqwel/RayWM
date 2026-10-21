@@ -38,25 +38,39 @@ A rejected plugin leaves nothing registered.
 - Unloading happens after the current event has been fully dispatched.
   Then `teardown` is called (its own errors are only logged) and all of
   the plugin's handlers, bindings and timers are released.
+- A plugin that fails in `setup` has its `teardown` called too, so
+  `teardown` must cope with a partly initialised plugin.
 - `raywm.reload()` (and the fallback binding Super+Shift+R) tears down
   every plugin, creates a fresh Lua state and runs `init.lua` again. This
-  also happens only after the current event.
+  also happens only after the current event. Calls to `raywm.reload()`
+  made from `init.lua` or from a `teardown` are ignored, with a warning.
+  If a reload fails (out of memory), Lua stays off and the fallback
+  bindings apply until the next reload.
+- Events are not delivered while `init.lua` runs. Plugins should read
+  the current state (`raywm.views()`, `raywm.outputs()`) in `setup`.
+- Host calls made from a handler can trigger further events, for example
+  `view_focus`. This nesting is limited to 8 levels; deeper events are
+  dropped and a warning is logged.
 - If `init.lua` is missing or fails, or no loaded plugin binds any key,
   the core keeps **fallback bindings** active:
   Super+Return opens `$TERMINAL` (default `foot`),
   Super+Shift+E quits, and Super+Shift+R reloads.
-- Limits (bug containment, not security): about 64 MiB of Lua memory in
-  total, and an instruction budget per event (≈200 M instructions). When a
-  limit is exceeded, an error is raised inside the plugin that was running.
+- Limits (bug containment, not security): about 64 MiB of Lua memory,
+  **shared by all plugins**, and an instruction budget of about 200 M
+  instructions for each top-level callback. When a limit is exceeded, an
+  error is raised inside the plugin that was running. With the shared
+  memory cap, a plugin that hoards memory can cause a different plugin's
+  allocation to fail.
 
 **Trust model.** Plugins are trusted user code with the full Lua standard
-library (`io`, `os`). The limits catch mistakes like infinite loops; they
-are not a sandbox.
+library (`io`, `os`, including `os.exit`) and one shared global
+environment. Use `local` variables to avoid clashes between plugins. The
+limits catch mistakes like infinite loops; they are not a sandbox.
 
 ## Ids
 
-Windows, outputs and timers are plain integers. RayWM never reuses an id
-within a session, and every call checks it. Commands on a window that no
+Windows, outputs and timers are plain integers. RayWM does not reuse an
+id within a session (ids wrap only after 2³²), and every call checks it. Commands on a window that no
 longer exists return `nil, "stale"` instead of failing. Only mapped
 (visible to the user) windows are known to Lua.
 
