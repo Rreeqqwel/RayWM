@@ -1,10 +1,12 @@
 setup outputs=1
-view_map 2 raywm-test 200x150
-view_focus 2 raywm-test 200x150
+view_map 2 raywm-test 200x150+540+285
+view_focus 2 raywm-test 200x150+540+285
+view_resized 2 raywm-test 1264x704+8+8
 view_focus 0 stale
 view_unmap 2 stale
-view_map 3 raywm-test 200x150
-view_focus 3 raywm-test 200x150
+view_map 3 raywm-test 200x150+540+285
+view_focus 3 raywm-test 200x150+540+285
+view_resized 3 raywm-test 1264x704+8+8
 view_focus 0 stale
 view_unmap 3 stale
 teardown

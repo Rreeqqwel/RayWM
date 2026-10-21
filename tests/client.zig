@@ -61,9 +61,10 @@ pub fn main() !void {
         }
         xdg_surface.ackConfigure(state.serial);
         step("round {d} configured {d}x{d}", .{ round, state.width, state.height });
-
         const w: i32 = if (state.width > 0) state.width else 200;
         const h: i32 = if (state.height > 0) state.height else 150;
+        state.configured = false; // detect the next configure
+        state.width = 0;
         const buffer = try makeBuffer(shm, w, h);
         defer buffer.destroy();
 
@@ -76,6 +77,28 @@ pub fn main() !void {
             if (display.dispatch() != .SUCCESS) return error.DispatchFailed;
         }
         step("round {d} frame done", .{round});
+
+        // With a tiling config the compositor resizes the window after map:
+        // ack that configure and commit a buffer of the requested size.
+        if (std.c.getenv("RAYWM_TEST_RESIZE") != null) {
+            while (state.width == 0 or state.serial == 0 or !state.configured) {
+                if (display.dispatch() != .SUCCESS) return error.DispatchFailed;
+            }
+            state.configured = false;
+            state.frame_done = false;
+            xdg_surface.ackConfigure(state.serial);
+            const resized = try makeBuffer(shm, state.width, state.height);
+            defer resized.destroy();
+            const cb = try surface.frame();
+            cb.setListener(*State, frameListener, &state);
+            surface.attach(resized, 0, 0);
+            surface.damageBuffer(0, 0, state.width, state.height);
+            surface.commit();
+            while (!state.frame_done) {
+                if (display.dispatch() != .SUCCESS) return error.DispatchFailed;
+            }
+            step("round {d} resized {d}x{d}", .{ round, state.width, state.height });
+        }
         toplevel.destroy();
         if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
     }

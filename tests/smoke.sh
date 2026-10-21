@@ -10,10 +10,12 @@ tmp=$(mktemp -d)
 trap 'kill "$pid" 2>/dev/null || true; [ -n "${KEEP:-}" ] && echo "kept $tmp" || rm -rf "$tmp"' EXIT
 chmod 700 "$tmp"
 mkdir -p "$tmp/config/raywm"
-[ -d "$root/tests/config" ] && cp -r "$root/tests/config/." "$tmp/config/raywm/"
+# Shipped plugins first, then the test config (init.lua, eventlog) on top.
+cp -r "$root/config/plugins" "$tmp/config/raywm/"
+cp -r "$root/tests/config/." "$tmp/config/raywm/"
 
 env -i PATH="$PATH" HOME="$tmp" XDG_RUNTIME_DIR="$tmp" XDG_CONFIG_HOME="$tmp/config" \
-    RAYWM_TEST_OUT="$tmp/plugin.log" \
+    RAYWM_TEST_OUT="$tmp/plugin.log" RAYWM_TEST_RESIZE=1 \
     WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER="${RENDERER:-pixman}" WLR_LIBINPUT_NO_DEVICES=1 \
     timeout 20 "$bin/raywm" -s "grep SigBlk /proc/\$\$/status >'$tmp/sigmask'; '$bin/raywm-test-client' >'$tmp/client.log' 2>&1; echo \$? >'$tmp/client.status'" \
     >"$tmp/raywm.log" 2>&1 &
@@ -38,7 +40,7 @@ fail() { echo "FAIL: $1"; echo "--- raywm.log"; cat "$tmp/raywm.log"; echo "--- 
 # (sh itself may block SIGCHLD briefly, so only these two are checked).
 mask=$(awk '{print $2}' "$tmp/sigmask")
 [ $((0x$mask & 0x4002)) -eq 0 ] || fail "spawned process inherited blocked SIGINT/SIGTERM: $mask"
-for s in "round 0 configured" "round 0 frame done" "round 1 configured" "round 1 frame done" "destroyed"; do
+for s in "round 0 configured" "round 0 frame done" "round 0 resized 1264x704" "round 1 configured" "round 1 frame done" "round 1 resized 1264x704" "destroyed"; do
     grep -q "client: $s" "$tmp/client.log" || fail "client step '$s' missing"
 done
 # Native event order: map -> focus -> unmap, twice, with distinct view ids.
