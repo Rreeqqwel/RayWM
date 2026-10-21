@@ -1,3 +1,4 @@
+//! Lua plugin host (stage 2). Stage 1 only defines the interface the core uses.
 const std = @import("std");
 pub const c = @cImport({
     @cInclude("lua.h");
@@ -5,12 +6,16 @@ pub const c = @cImport({
     @cInclude("lauxlib.h");
 });
 
-test "lua 5.4 links and runs" {
-    const L = c.luaL_newstate() orelse return error.OutOfMemory;
-    defer c.lua_close(L);
-    c.luaL_openlibs(L);
-    try std.testing.expectEqual(@as(c_int, c.LUA_OK), c.luaL_loadstring(L, "return 40 + 2"));
-    try std.testing.expectEqual(@as(c_int, c.LUA_OK), c.lua_pcallk(L, 0, 1, 0, 0, null));
-    try std.testing.expectEqual(@as(c.lua_Integer, 42), c.lua_tointegerx(L, -1, null));
-    try std.testing.expectEqual(@as(c.lua_Number, 504), c.LUA_VERSION_NUM);
-}
+pub const Event = enum { view_map, view_unmap, view_focus, view_title, view_resized, output_add, output_remove, layout };
+
+pub const Runtime = struct {
+    pub fn emit(_: *Runtime, _: Event, _: u32) void {}
+    pub fn frame(_: *Runtime, _: u32, _: std.posix.timespec) void {}
+    pub fn key(_: *Runtime, _: u32, _: u32) bool {
+        return false;
+    }
+    pub fn configured(_: *Runtime) bool {
+        return false;
+    }
+    pub fn requestReload(_: *Runtime) void {}
+};

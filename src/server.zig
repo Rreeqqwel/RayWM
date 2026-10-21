@@ -1,0 +1,325 @@
+//! Compositor state: backend, scene, outputs, seat. Owns every native object;
+//! Lua only ever sees integer ids (see host.zig).
+const std = @import("std");
+const posix = std.posix;
+const wl = @import("wayland").server.wl;
+const wlr = @import("wlroots");
+const lua = @import("lua");
+const View = @import("view.zig").View;
+const input = @import("input.zig");
+
+pub const gpa = std.heap.c_allocator;
+const log = std.log.scoped(.server);
+
+/// Stored in SceneNode.data of trees we own, to identify them on hit tests.
+pub const Tag = enum { view, layer };
+
+/// Scene layers, bottom to top. `below`/`above` hold Lua rectangles.
+pub const Layer = enum { background, bottom, below, views, above, top, overlay };
+
+pub const Server = struct {
+    wl_server: *wl.Server,
+    backend: *wlr.Backend,
+    session: ?*wlr.Session,
+    renderer: *wlr.Renderer,
+    allocator: *wlr.Allocator,
+    scene: *wlr.Scene,
+    layers: [std.meta.fields(Layer).len]*wlr.SceneTree,
+    output_layout: *wlr.OutputLayout,
+    scene_layout: *wlr.SceneOutputLayout,
+    xdg_shell: *wlr.XdgShell,
+    seat: *wlr.Seat,
+    cursor: *wlr.Cursor,
+    cursor_mgr: *wlr.XcursorManager,
+
+    /// Mapped views, most recently focused first.
+    views: wl.list.Head(View, .link) = undefined,
+    outputs: wl.list.Head(Output, .link) = undefined,
+    keyboards: wl.list.Head(input.Keyboard, .link) = undefined,
+    focused: ?*View = null,
+    grab: input.Grab = .{},
+    next_id: u32 = 1,
+    /// Set once the Lua host is running; null during startup and teardown.
+    rt: ?*lua.Runtime = null,
+
+    new_output: wl.Listener(*wlr.Output) = .init(newOutput),
+    layout_change: wl.Listener(*wlr.OutputLayout) = .init(layoutChange),
+    new_toplevel: wl.Listener(*wlr.XdgToplevel) = .init(View.create),
+    new_popup: wl.Listener(*wlr.XdgPopup) = .init(newPopup),
+    new_input: wl.Listener(*wlr.InputDevice) = .init(input.newInput),
+    request_cursor: wl.Listener(*wlr.Seat.event.RequestSetCursor) = .init(input.requestCursor),
+    request_selection: wl.Listener(*wlr.Seat.event.RequestSetSelection) = .init(input.requestSelection),
+    cursor_motion: wl.Listener(*wlr.Pointer.event.Motion) = .init(input.motion),
+    cursor_motion_abs: wl.Listener(*wlr.Pointer.event.MotionAbsolute) = .init(input.motionAbsolute),
+    cursor_button: wl.Listener(*wlr.Pointer.event.Button) = .init(input.button),
+    cursor_axis: wl.Listener(*wlr.Pointer.event.Axis) = .init(input.axis),
+    cursor_frame: wl.Listener(*wlr.Cursor) = .init(input.frame),
+
+    pub fn init(server: *Server) !void {
+        const wl_server = try wl.Server.create();
+        errdefer wl_server.destroy();
+        var session: ?*wlr.Session = null;
+        const backend = try wlr.Backend.autocreate(wl_server.getEventLoop(), &session);
+        const renderer = try wlr.Renderer.autocreate(backend);
+        const scene = try wlr.Scene.create();
+        const output_layout = try wlr.OutputLayout.create(wl_server);
+        server.* = .{
+            .wl_server = wl_server,
+            .backend = backend,
+            .session = session,
+            .renderer = renderer,
+            .allocator = try wlr.Allocator.autocreate(backend, renderer),
+            .scene = scene,
+            .layers = undefined,
+            .output_layout = output_layout,
+            .scene_layout = try scene.attachOutputLayout(output_layout),
+            .xdg_shell = try wlr.XdgShell.create(wl_server, 2),
+            .seat = try wlr.Seat.create(wl_server, "seat0"),
+            .cursor = try wlr.Cursor.create(),
+            .cursor_mgr = try wlr.XcursorManager.create(null, 24),
+        };
+        for (&server.layers) |*tree| tree.* = try scene.tree.createSceneTree();
+
+        try renderer.initServer(wl_server);
+        _ = try wlr.Compositor.create(wl_server, 6, renderer);
+        _ = try wlr.Subcompositor.create(wl_server);
+        _ = try wlr.DataDeviceManager.create(wl_server);
+
+        server.views.init();
+        server.outputs.init();
+        server.keyboards.init();
+        backend.events.new_output.add(&server.new_output);
+        output_layout.events.change.add(&server.layout_change);
+        server.xdg_shell.events.new_toplevel.add(&server.new_toplevel);
+        server.xdg_shell.events.new_popup.add(&server.new_popup);
+        backend.events.new_input.add(&server.new_input);
+        server.seat.events.request_set_cursor.add(&server.request_cursor);
+        server.seat.events.request_set_selection.add(&server.request_selection);
+
+        server.cursor.attachOutputLayout(output_layout);
+        try server.cursor_mgr.load(1);
+        server.cursor.events.motion.add(&server.cursor_motion);
+        server.cursor.events.motion_absolute.add(&server.cursor_motion_abs);
+        server.cursor.events.button.add(&server.cursor_button);
+        server.cursor.events.axis.add(&server.cursor_axis);
+        server.cursor.events.frame.add(&server.cursor_frame);
+    }
+
+    /// Teardown order follows wlroots' tinywl.c. The Lua host must already be
+    /// gone (server.rt == null) so destroy events are not forwarded to it.
+    pub fn deinit(server: *Server) void {
+        std.debug.assert(server.rt == null);
+        server.wl_server.destroyClients();
+        inline for (.{
+            "new_output",        "layout_change",  "new_toplevel",      "new_popup",
+            "new_input",         "request_cursor", "request_selection", "cursor_motion",
+            "cursor_motion_abs", "cursor_button",  "cursor_axis",       "cursor_frame",
+        }) |name| @field(server, name).link.remove();
+        server.scene.tree.node.destroy();
+        server.cursor_mgr.destroy();
+        server.cursor.destroy();
+        server.allocator.destroy();
+        server.renderer.destroy();
+        server.backend.destroy();
+        server.wl_server.destroy();
+    }
+
+    pub fn layer(server: *Server, l: Layer) *wlr.SceneTree {
+        return server.layers[@intFromEnum(l)];
+    }
+
+    pub fn emit(server: *Server, ev: lua.Event, id: u32) void {
+        log.debug("event {s} id={d}", .{ @tagName(ev), id });
+        if (server.rt) |rt| rt.emit(ev, id);
+    }
+
+    pub fn nextId(server: *Server) u32 {
+        defer server.next_id +%= 1;
+        return server.next_id;
+    }
+
+    pub fn viewById(server: *Server, id: u32) ?*View {
+        var it = server.views.iterator(.forward);
+        while (it.next()) |v| if (v.id == id) return v;
+        return null;
+    }
+
+    pub fn outputById(server: *Server, id: u32) ?*Output {
+        var it = server.outputs.iterator(.forward);
+        while (it.next()) |o| if (o.id == id) return o;
+        return null;
+    }
+
+    /// Moves keyboard focus to `view` (must be mapped) or clears it.
+    pub fn focus(server: *Server, view: ?*View) void {
+        if (view == server.focused) return;
+        if (server.focused) |old| _ = old.xdg.setActivated(false);
+        server.focused = view;
+        const v = view orelse {
+            server.seat.keyboardNotifyClearFocus();
+            server.emit(.view_focus, 0);
+            return;
+        };
+        std.debug.assert(v.mapped);
+        v.link.remove();
+        server.views.prepend(v);
+        v.tree.node.raiseToTop();
+        _ = v.xdg.setActivated(true);
+        const surface = v.xdg.base.surface;
+        if (server.seat.getKeyboard()) |kb| {
+            var buf: [32]u32 = undefined;
+            server.seat.keyboardNotifyEnter(surface, input.heldKeys(server, kb, &buf), &kb.modifiers);
+        } else {
+            server.seat.keyboardNotifyEnter(surface, &.{}, null);
+        }
+        server.emit(.view_focus, v.id);
+    }
+
+    /// Box of the output under the cursor, falling back to the first output.
+    pub fn activeOutputBox(server: *Server) ?wlr.Box {
+        const out = server.output_layout.outputAt(server.cursor.x, server.cursor.y) orelse
+            (if (server.outputs.first()) |o| o.wlr_output else return null);
+        var box: wlr.Box = undefined;
+        server.output_layout.getBox(out, &box);
+        return box;
+    }
+
+    fn newOutput(listener: *wl.Listener(*wlr.Output), wlr_output: *wlr.Output) void {
+        const server: *Server = @fieldParentPtr("new_output", listener);
+        if (!wlr_output.initRender(server.allocator, server.renderer)) return;
+
+        var state = wlr.Output.State.init();
+        defer state.finish();
+        state.setEnabled(true);
+        if (wlr_output.preferredMode()) |mode| state.setMode(mode);
+        if (!wlr_output.commitState(&state)) {
+            log.err("failed to enable output {s}", .{wlr_output.name});
+            return;
+        }
+        Output.create(server, wlr_output) catch {
+            log.err("failed to set up output {s}", .{wlr_output.name});
+            wlr_output.destroy();
+        };
+    }
+
+    /// Fires on output add/remove/mode change. Views left outside every
+    /// output (e.g. after unplugging) are moved onto a visible one.
+    fn layoutChange(listener: *wl.Listener(*wlr.OutputLayout), _: *wlr.OutputLayout) void {
+        const server: *Server = @fieldParentPtr("layout_change", listener);
+        if (server.activeOutputBox()) |box| {
+            var it = server.views.iterator(.forward);
+            while (it.next()) |v| {
+                const geo = v.xdg.base.geometry;
+                const cx: f64 = @floatFromInt(v.x + @divTrunc(geo.width, 2));
+                const cy: f64 = @floatFromInt(v.y + @divTrunc(geo.height, 2));
+                if (server.output_layout.outputAt(cx, cy) == null) v.move(box.x, box.y);
+            }
+        }
+        server.emit(.layout, 0);
+    }
+
+    fn newPopup(_: *wl.Listener(*wlr.XdgPopup), xdg_popup: *wlr.XdgPopup) void {
+        // Popups of layer surfaces have no xdg parent yet; layer.zig handles them.
+        const parent = wlr.XdgSurface.tryFromWlrSurface(xdg_popup.parent orelse return) orelse return;
+        const parent_tree: *wlr.SceneTree = @ptrCast(@alignCast(parent.data orelse return));
+        @import("view.zig").Popup.create(xdg_popup, parent_tree);
+    }
+};
+
+pub const Output = struct {
+    server: *Server,
+    wlr_output: *wlr.Output,
+    scene_output: *wlr.SceneOutput,
+    link: wl.list.Link = undefined,
+    id: u32,
+
+    frame: wl.Listener(*wlr.Output) = .init(handleFrame),
+    request_state: wl.Listener(*wlr.Output.event.RequestState) = .init(handleRequestState),
+    destroy: wl.Listener(*wlr.Output) = .init(handleDestroy),
+
+    /// On error the caller destroys wlr_output, which cleans up the layout
+    /// and scene output entries.
+    fn create(server: *Server, wlr_output: *wlr.Output) !void {
+        const output = try gpa.create(Output);
+        errdefer gpa.destroy(output);
+        const scene_output = try server.scene.createSceneOutput(wlr_output);
+        output.* = .{ .server = server, .wlr_output = wlr_output, .scene_output = scene_output, .id = server.nextId() };
+        // Listed before joining the layout, so `layout` handlers already see it.
+        server.outputs.append(output);
+        errdefer output.link.remove();
+        const layout_output = try server.output_layout.addAuto(wlr_output);
+        server.scene_layout.addOutput(layout_output, scene_output);
+        wlr_output.events.frame.add(&output.frame);
+        wlr_output.events.request_state.add(&output.request_state);
+        wlr_output.events.destroy.add(&output.destroy);
+        server.emit(.output_add, output.id);
+    }
+
+    pub fn box(output: *Output) wlr.Box {
+        var b: wlr.Box = undefined;
+        output.server.output_layout.getBox(output.wlr_output, &b);
+        return b;
+    }
+
+    /// wlroots only emits frame when the output needs a repaint (damage or
+    /// an explicit schedule), so an idle desktop does no work here.
+    fn handleFrame(listener: *wl.Listener(*wlr.Output), _: *wlr.Output) void {
+        const output: *Output = @fieldParentPtr("frame", listener);
+        var now = timestamp();
+        if (output.server.rt) |rt| rt.frame(output.id, now);
+        _ = output.scene_output.commit(null);
+        output.scene_output.sendFrameDone(&now);
+    }
+
+    fn handleRequestState(listener: *wl.Listener(*wlr.Output.event.RequestState), event: *wlr.Output.event.RequestState) void {
+        const output: *Output = @fieldParentPtr("request_state", listener);
+        _ = output.wlr_output.commitState(event.state);
+    }
+
+    fn handleDestroy(listener: *wl.Listener(*wlr.Output), _: *wlr.Output) void {
+        const output: *Output = @fieldParentPtr("destroy", listener);
+        output.frame.link.remove();
+        output.request_state.link.remove();
+        output.destroy.link.remove();
+        output.link.remove();
+        output.server.emit(.output_remove, output.id);
+        gpa.destroy(output);
+    }
+};
+
+/// True when `serial` is at or past `want`, tolerant of u32 wrap-around.
+pub fn serialReached(serial: u32, want: u32) bool {
+    return @as(i32, @bitCast(serial -% want)) >= 0;
+}
+
+pub fn timestamp() posix.timespec {
+    var ts: posix.timespec = undefined;
+    switch (posix.errno(posix.system.clock_gettime(posix.CLOCK.MONOTONIC, &ts))) {
+        .SUCCESS => return ts,
+        else => @panic("CLOCK_MONOTONIC not supported"),
+    }
+}
+
+extern "c" fn execv(path: [*:0]const u8, argv: [*:null]const ?[*:0]const u8) c_int;
+
+/// Runs `cmd` via /bin/sh in a new session. Double fork so the child is
+/// reparented to init and never becomes a zombie of the compositor.
+pub fn spawn(cmd: [*:0]const u8) void {
+    const pid = std.c.fork();
+    if (pid < 0) return log.err("fork failed", .{});
+    if (pid == 0) {
+        _ = std.c.setsid();
+        const pid2 = std.c.fork();
+        if (pid2 == 0) {
+            // signalfd (wl_event_loop_add_signal) blocked SIGINT/SIGTERM in
+            // the compositor; the mask survives exec, so clear it.
+            const empty = posix.sigemptyset();
+            posix.sigprocmask(posix.SIG.SETMASK, &empty, null);
+            const argv = [_:null]?[*:0]const u8{ "/bin/sh", "-c", cmd };
+            _ = execv("/bin/sh", &argv);
+            std.c._exit(127);
+        }
+        std.c._exit(if (pid2 < 0) 1 else 0);
+    }
+    while (std.c.waitpid(pid, null, 0) < 0 and std.c._errno().* == @intFromEnum(posix.E.INTR)) {}
+}
