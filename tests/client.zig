@@ -7,11 +7,13 @@ const posix = std.posix;
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const xdg = wayland.client.xdg;
+const zwlr = wayland.client.zwlr;
 
 const Globals = struct {
     shm: ?*wl.Shm = null,
     compositor: ?*wl.Compositor = null,
     wm_base: ?*xdg.WmBase = null,
+    layer_shell: ?*zwlr.LayerShellV1 = null,
 };
 
 const State = struct {
@@ -38,6 +40,8 @@ pub fn main() !void {
 
     const shm = globals.shm orelse return error.NoWlShm;
     const compositor = globals.compositor orelse return error.NoWlCompositor;
+    if (std.c.getenv("RAYWM_TEST_LAYER") != null)
+        return panel(display, shm, compositor, globals.layer_shell orelse return error.NoLayerShell);
     const wm_base = globals.wm_base orelse return error.NoXdgWmBase;
     wm_base.setListener(?*anyopaque, wmBaseListener, null);
 
@@ -108,6 +112,46 @@ pub fn main() !void {
     step("destroyed", .{});
 }
 
+/// RAYWM_TEST_LAYER=1: a 30 px top panel with an exclusive zone. Stays mapped until the
+/// compositor goes away.
+fn panel(display: *wl.Display, shm: *wl.Shm, compositor: *wl.Compositor, layer_shell: *zwlr.LayerShellV1) !void {
+    var state: State = .{};
+    const surface = try compositor.createSurface();
+    const layer = try layer_shell.getLayerSurface(surface, null, .top, "raywm-test-panel");
+    layer.setListener(*State, layerListener, &state);
+    layer.setAnchor(.{ .top = true, .left = true, .right = true });
+    layer.setSize(0, 30);
+    layer.setExclusiveZone(30);
+    surface.commit();
+    while (!state.configured) {
+        if (display.dispatch() != .SUCCESS) return error.DispatchFailed;
+    }
+    layer.ackConfigure(state.serial);
+    step("layer configured {d}x{d}", .{ state.width, state.height });
+    const buffer = try makeBuffer(shm, state.width, state.height);
+    const frame = try surface.frame();
+    frame.setListener(*State, frameListener, &state);
+    surface.attach(buffer, 0, 0);
+    surface.commit();
+    while (!state.frame_done) {
+        if (display.dispatch() != .SUCCESS) return error.DispatchFailed;
+    }
+    step("layer frame done", .{});
+    while (display.dispatch() == .SUCCESS) {}
+}
+
+fn layerListener(_: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Event, state: *State) void {
+    switch (event) {
+        .configure => |c| {
+            state.serial = c.serial;
+            state.width = @intCast(c.width);
+            state.height = @intCast(c.height);
+            state.configured = true;
+        },
+        .closed => {},
+    }
+}
+
 fn makeBuffer(shm: *wl.Shm, w: i32, h: i32) !*wl.Buffer {
     const stride = w * 4;
     const size: usize = @intCast(stride * h);
@@ -132,6 +176,8 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, g: *Global
                 g.shm = registry.bind(global.name, wl.Shm, 1) catch return;
             } else if (std.mem.eql(u8, name, std.mem.span(xdg.WmBase.interface.name))) {
                 g.wm_base = registry.bind(global.name, xdg.WmBase, 2) catch return;
+            } else if (std.mem.eql(u8, name, std.mem.span(zwlr.LayerShellV1.interface.name))) {
+                g.layer_shell = registry.bind(global.name, zwlr.LayerShellV1, 4) catch return;
             }
         },
         .global_remove => {},

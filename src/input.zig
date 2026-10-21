@@ -5,6 +5,7 @@ const wlr = @import("wlroots");
 const xkb = @import("xkbcommon");
 const srv = @import("server.zig");
 const View = @import("view.zig").View;
+const LayerSurface = @import("layer.zig").LayerSurface;
 const Server = srv.Server;
 const gpa = srv.gpa;
 
@@ -191,7 +192,7 @@ pub fn motionAbsolute(listener: *wl.Listener(*wlr.Pointer.event.MotionAbsolute),
     processMotion(server, event.time_msec);
 }
 
-const Hit = struct { surface: *wlr.Surface, sx: f64, sy: f64, view: ?*View };
+const Hit = struct { surface: *wlr.Surface, sx: f64, sy: f64, view: ?*View, layer: ?*LayerSurface };
 
 fn surfaceAt(server: *Server, lx: f64, ly: f64) ?Hit {
     var sx: f64 = undefined;
@@ -199,7 +200,7 @@ fn surfaceAt(server: *Server, lx: f64, ly: f64) ?Hit {
     const node = server.scene.tree.node.at(lx, ly, &sx, &sy) orelse return null;
     if (node.type != .buffer) return null;
     const scene_surface = wlr.SceneSurface.tryFromBuffer(wlr.SceneBuffer.fromNode(node)) orelse return null;
-    return .{ .surface = scene_surface.surface, .sx = sx, .sy = sy, .view = View.fromNode(node) };
+    return .{ .surface = scene_surface.surface, .sx = sx, .sy = sy, .view = View.fromNode(node), .layer = LayerSurface.fromNode(node) };
 }
 
 /// Re-evaluates pointer focus after the scene changed under a still cursor.
@@ -298,7 +299,9 @@ pub fn button(listener: *wl.Listener(*wlr.Pointer.event.Button), event: *wlr.Poi
         endGrab(server);
         return;
     }
-    if (event.state == .pressed) if (surfaceAt(server, server.cursor.x, server.cursor.y)) |hit| if (hit.view) |view| {
+    if (event.state == .pressed) if (surfaceAt(server, server.cursor.x, server.cursor.y)) |hit| if (hit.layer) |ls| {
+        if (ls.wantsKeyboard() and server.layer_focus != ls) server.focusLayer(ls);
+    } else if (hit.view) |view| {
         server.focus(view);
         const kb = server.seat.getKeyboard();
         if (kb != null and kb.?.getModifiers().logo and (event.button == BTN_LEFT or event.button == BTN_RIGHT)) {

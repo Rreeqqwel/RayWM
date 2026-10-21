@@ -8,6 +8,8 @@ const lua = @import("lua");
 const View = @import("view.zig").View;
 const input = @import("input.zig");
 const host = @import("host.zig");
+const layer_shell = @import("layer.zig");
+const LayerSurface = layer_shell.LayerSurface;
 
 pub const gpa = std.heap.c_allocator;
 const log = std.log.scoped(.server);
@@ -32,6 +34,7 @@ pub const Server = struct {
     output_layout: *wlr.OutputLayout,
     scene_layout: *wlr.SceneOutputLayout,
     xdg_shell: *wlr.XdgShell,
+    layer_shell: *wlr.LayerShellV1,
     seat: *wlr.Seat,
     cursor: *wlr.Cursor,
     cursor_mgr: *wlr.XcursorManager,
@@ -41,6 +44,8 @@ pub const Server = struct {
     outputs: wl.list.Head(Output, .link) = undefined,
     keyboards: wl.list.Head(input.Keyboard, .link) = undefined,
     focused: ?*View = null,
+    /// Layer surface (launcher, lock-like overlay) holding keyboard focus.
+    layer_focus: ?*LayerSurface = null,
     grab: input.Grab = .{},
     next_id: u32 = 1,
     /// Set once the Lua host is running; null during startup and teardown.
@@ -52,6 +57,7 @@ pub const Server = struct {
     layout_change: wl.Listener(*wlr.OutputLayout) = .init(layoutChange),
     new_toplevel: wl.Listener(*wlr.XdgToplevel) = .init(View.create),
     new_popup: wl.Listener(*wlr.XdgPopup) = .init(newPopup),
+    new_layer_surface: wl.Listener(*wlr.LayerSurfaceV1) = .init(LayerSurface.create),
     new_input: wl.Listener(*wlr.InputDevice) = .init(input.newInput),
     request_cursor: wl.Listener(*wlr.Seat.event.RequestSetCursor) = .init(input.requestCursor),
     request_selection: wl.Listener(*wlr.Seat.event.RequestSetSelection) = .init(input.requestSelection),
@@ -80,6 +86,7 @@ pub const Server = struct {
             .output_layout = output_layout,
             .scene_layout = try scene.attachOutputLayout(output_layout),
             .xdg_shell = try wlr.XdgShell.create(wl_server, 2),
+            .layer_shell = try wlr.LayerShellV1.create(wl_server, 4),
             .seat = try wlr.Seat.create(wl_server, "seat0"),
             .cursor = try wlr.Cursor.create(),
             .cursor_mgr = try wlr.XcursorManager.create(null, 24),
@@ -98,6 +105,7 @@ pub const Server = struct {
         output_layout.events.change.add(&server.layout_change);
         server.xdg_shell.events.new_toplevel.add(&server.new_toplevel);
         server.xdg_shell.events.new_popup.add(&server.new_popup);
+        server.layer_shell.events.new_surface.add(&server.new_layer_surface);
         backend.events.new_input.add(&server.new_input);
         server.seat.events.request_set_cursor.add(&server.request_cursor);
         server.seat.events.request_set_selection.add(&server.request_selection);
@@ -127,6 +135,7 @@ pub const Server = struct {
             "new_output",        "layout_change",  "new_toplevel",      "new_popup",
             "new_input",         "request_cursor", "request_selection", "cursor_motion",
             "cursor_motion_abs", "cursor_button",  "cursor_axis",       "cursor_frame",
+            "new_layer_surface",
         }) |name| @field(server, name).link.remove();
         server.scene.tree.node.destroy();
         server.cursor_mgr.destroy();
@@ -171,6 +180,12 @@ pub const Server = struct {
         return null;
     }
 
+    pub fn outputByWlr(server: *Server, wlr_output: ?*wlr.Output) ?*Output {
+        var it = server.outputs.iterator(.forward);
+        while (it.next()) |o| if (o.wlr_output == wlr_output) return o;
+        return null;
+    }
+
     pub fn outputById(server: *Server, id: u32) ?*Output {
         var it = server.outputs.iterator(.forward);
         while (it.next()) |o| if (o.id == id) return o;
@@ -183,7 +198,7 @@ pub const Server = struct {
         if (server.focused) |old| _ = old.xdg.setActivated(false);
         server.focused = view;
         const v = view orelse {
-            server.seat.keyboardNotifyClearFocus();
+            if (server.layer_focus == null) server.seat.keyboardNotifyClearFocus();
             server.emit(.view_focus, 0);
             return;
         };
@@ -192,14 +207,30 @@ pub const Server = struct {
         server.views.prepend(v);
         v.tree.node.raiseToTop();
         _ = v.xdg.setActivated(true);
-        const surface = v.xdg.base.surface;
+        // An exclusive layer surface (e.g. a launcher) keeps the keyboard;
+        // an on-demand one gives it up when a window is chosen.
+        if (server.layer_focus) |ls| {
+            if (ls.wlr_layer.current.keyboard_interactive == .exclusive) return server.emit(.view_focus, v.id);
+            server.layer_focus = null;
+        }
+        server.keyboardEnter(v.xdg.base.surface);
+        server.emit(.view_focus, v.id);
+    }
+
+    /// Gives the keyboard to a layer surface, or back to the focused view.
+    pub fn focusLayer(server: *Server, ls: ?*LayerSurface) void {
+        server.layer_focus = ls;
+        if (ls) |l| return server.keyboardEnter(l.wlr_layer.surface);
+        if (server.focused) |v| server.keyboardEnter(v.xdg.base.surface) else server.seat.keyboardNotifyClearFocus();
+    }
+
+    fn keyboardEnter(server: *Server, surface: *wlr.Surface) void {
         if (server.seat.getKeyboard()) |kb| {
             var buf: [32]u32 = undefined;
             server.seat.keyboardNotifyEnter(surface, input.heldKeys(server, kb, &buf), &kb.modifiers);
         } else {
             server.seat.keyboardNotifyEnter(surface, &.{}, null);
         }
-        server.emit(.view_focus, v.id);
     }
 
     /// Box of the output under the cursor, falling back to the first output.
@@ -234,7 +265,7 @@ pub const Server = struct {
     fn layoutChange(listener: *wl.Listener(*wlr.OutputLayout), _: *wlr.OutputLayout) void {
         const server: *Server = @fieldParentPtr("layout_change", listener);
         var outs = server.outputs.iterator(.forward);
-        while (outs.next()) |o| o.arrange();
+        while (outs.next()) |o| o.arrangeLayers();
         if (server.activeOutputBox()) |box| {
             var it = server.views.iterator(.forward);
             while (it.next()) |v| {
@@ -263,6 +294,7 @@ pub const Output = struct {
     id: u32,
     /// Area left for windows, output-local (layer-shell exclusive zones removed).
     usable: wlr.Box = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
+    layers: wl.list.Head(LayerSurface, .link) = undefined,
 
     frame: wl.Listener(*wlr.Output) = .init(handleFrame),
     request_state: wl.Listener(*wlr.Output.event.RequestState) = .init(handleRequestState),
@@ -275,6 +307,7 @@ pub const Output = struct {
         errdefer gpa.destroy(output);
         const scene_output = try server.scene.createSceneOutput(wlr_output);
         output.* = .{ .server = server, .wlr_output = wlr_output, .scene_output = scene_output, .id = server.nextId() };
+        output.layers.init();
         // Listed before joining the layout, so `layout` handlers already see it.
         server.outputs.append(output);
         errdefer output.link.remove();
@@ -286,9 +319,8 @@ pub const Output = struct {
         server.emit(.output_add, output.id);
     }
 
-    pub fn arrange(output: *Output) void {
-        const b = output.box();
-        output.usable = .{ .x = 0, .y = 0, .width = b.width, .height = b.height };
+    pub fn arrangeLayers(output: *Output) void {
+        layer_shell.arrange(output);
     }
 
     pub fn box(output: *Output) wlr.Box {
@@ -313,6 +345,7 @@ pub const Output = struct {
 
     fn handleDestroy(listener: *wl.Listener(*wlr.Output), _: *wlr.Output) void {
         const output: *Output = @fieldParentPtr("destroy", listener);
+        layer_shell.closeAll(output);
         output.frame.link.remove();
         output.request_state.link.remove();
         output.destroy.link.remove();
