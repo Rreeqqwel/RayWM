@@ -227,4 +227,25 @@ n10() {
     stop
 }
 
-run_scenarios navigation n1 n2 n3 n4 n5 n6 n7 n8 n9 n10
+# ---- editing bindings, then reloading -----------------------------------------
+n11() {
+    name="edited bindings take effect on reload; clicks work afterwards"
+    WIN=$kbd_win start "$tiled" 2
+    # Rebind "left" from Super+H to Super+F9 in the session's own config.
+    sed -i 's/^    left = { "Super+h" },$/    left = { "Super+F9" },/' "$tmp/config/raywm/plugins/focus.lua"
+    grep -q '"Super+F9"' "$tmp/config/raywm/plugins/focus.lua" || fail "could not edit focus.lua"
+    drive sleep 300 key ctrl down key alt down key r down key r up key alt up key ctrl up sleep 300
+    # shellcheck disable=SC2046
+    drive sleep 200 $(key h super) $(key f12 super) $(key f9 super) $(key f12 super)
+    focused 1 3   # Super+H no longer bound: nothing moved, H went to the client
+    focused 2 2   # Super+F9 is "left" now
+    has b "kbd key 35 pressed"
+    [ "$(grep -c "loaded plugin focus (6 key bindings)" "$tmp/raywm.log")" -eq 2 ] || fail "focus.lua not reloaded with 6 bindings"
+    # Pointer input after the reload: a click on B reaches it and focuses it.
+    drive move 900 300 down left up left sleep 150 $(key f12 super)
+    focused 3 3
+    has b "ptr button 272 released window"
+    stop
+}
+
+run_scenarios navigation n1 n2 n3 n4 n5 n6 n7 n8 n9 n10 n11

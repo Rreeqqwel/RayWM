@@ -11,6 +11,7 @@ against `src/lua.zig` and `src/host.zig`, and most of it is covered by
 - [Limits and trust model](#limits-and-trust-model)
 - [Ids](#ids)
 - [`raywm` functions](#raywm-global)
+- [Pointer and border (v0.1.2)](#pointer-and-border-v012)
 - [`ctx` functions](#ctx-per-plugin)
 - [Events](#events)
 - [Examples](#examples)
@@ -129,7 +130,7 @@ outputs).
 | `raywm.api_version` | `1` | constant |
 | `raywm.load(name)` | `true` or `nil, err` | only during `init.lua` |
 | `raywm.views()` | `{id, ...}` | mapped windows, most recently focused first (at most 4096) |
-| `raywm.view(id)` | table or `nil, "stale"` | `{id, x, y, w, h, title, app_id, focused, output}`. `output` is the output under the window's centre, or `0`. `title`/`app_id` are `""` when unset |
+| `raywm.view(id)` | table or `nil, "stale"` | `{id, x, y, w, h, title, app_id, focused, output, visible}`. `output` is the output under the window's centre, or `0`. `title`/`app_id` are `""` when unset. `visible` is `false` after `view_show(id, false)` (since v0.1.2) |
 | `raywm.focused()` | id or `nil` | the window with keyboard focus |
 | `raywm.outputs()` | `{ {id, x, y, w, h, usable = {x, y, w, h}}, ... }` | at most 4096. `usable` excludes layer-shell exclusive zones (panels). Disabled or unplugged outputs are not listed |
 | `raywm.view_move(id, x, y)` | `true` or `nil, "stale"` | immediate. Cancels a position waiting for a resize |
@@ -139,6 +140,9 @@ outputs).
 | `raywm.view_focus(id)` | `true` or `nil, "stale"` | keyboard focus, and raises the window. Has no effect on a hidden window, but still returns `true` |
 | `raywm.view_close(id)` | `true` or `nil, "stale"` | asks the client to close; it may refuse or ask the user |
 | `raywm.view_show(id, visible)` | `true` or `nil, "stale"` | a hidden window is not drawn and cannot be clicked. If it had focus, focus moves to the next visible window |
+| `raywm.view_border(id, width, color)` | `true` or `nil, "stale"` | since v0.1.2; a solid border around the window, see [below](#pointer-and-border-v012) |
+| `raywm.pointer()` | `{x, y, busy}` | since v0.1.2; see [below](#pointer-and-border-v012) |
+| `raywm.pointer_warp(x, y)` | `true` or `nil, reason` | since v0.1.2; see [below](#pointer-and-border-v012) |
 | `raywm.spawn(cmd)` | — | runs `cmd` with `/bin/sh -c` in a new session. The child is detached (it is never a zombie of RayWM) and has `WAYLAND_DISPLAY` set |
 | `raywm.quit()` | — | stops the compositor |
 | `raywm.reload()` | — | see [Lifecycle](#lifecycle-and-errors) |
@@ -155,6 +159,41 @@ its old size. Once that has happened, `view_resized` fires and
 `raywm.view(id)` reports the real geometry. If the size does not change,
 the window simply moves. A second `view_place` before the client has
 acknowledged the first one always sends a new request.
+
+## Pointer and border (v0.1.2)
+
+These were added in v0.1.2 without changing `api = 1`. A plugin that
+must also run on v0.1.1 can test for them: `if raywm.pointer_warp then`.
+
+**`raywm.pointer()`** returns `{x, y, busy}`: the cursor position in
+layout coordinates (integers), and whether a grab owns the pointer. A
+grab is a window being moved or resized, a held mouse button (the
+implicit grab of the window that got the press, see
+[ARCHITECTURE.md](ARCHITECTURE.md#pointer-input-and-grabs)) or a
+client's popup grab.
+
+**`raywm.pointer_warp(x, y)`** moves the cursor to `(x, y)` (layout
+coordinates). Pointer focus follows (the window under the new position
+gets `enter`); keyboard focus does not change. It returns `true`, or
+`nil` and a reason:
+- `"busy"`: a grab owns the pointer (as `pointer().busy`). Warping
+  then would drag a window or pull a held interaction elsewhere;
+- `"exclusive"`: an exclusive layer surface (a launcher or lock screen)
+  holds the keyboard;
+- `"outside"`: the position is not on any output.
+
+**`raywm.view_border(id, width, color)`** draws a solid border of
+`width` pixels (`0`–`64`) around the window, outside its geometry, in
+`color` (`"#rrggbb"` or `"#rrggbbaa"`). `width = 0` removes it (the
+color may be omitted). The border moves, hides and stacks with the
+window, follows its size, and is drawn below its popups. It takes no
+input: clicking it does nothing. A bad width or color is an error in the
+calling plugin.
+
+Borders are window state, like opacity: they stay until changed, also
+after the plugin that drew them is unloaded. A plugin that draws borders
+should remove them in its `teardown` (which also runs when the plugin is
+unloaded after an error), as `config/plugins/focus.lua` does.
 
 ## `ctx` (per plugin)
 
@@ -176,7 +215,18 @@ keysym name, matched case-insensitively:
 Bindings match the **unshifted** key, so Shift+1 is written
 `"Super+Shift+1"`, not `"Super+exclam"`. Caps Lock and Num Lock are
 ignored. The key events of a matched binding are not sent to any client.
-When several bindings match, the one registered first wins.
+When several bindings match, the one registered first wins; RayWM logs a
+warning (once per plugin) when a plugin binds a key that is already
+bound.
+
+**Keyboard layouts.** The keysym comes from the active layout. When that
+layout gives a non-Latin character for the key (Cyrillic, Greek, ...),
+the key's Latin keysym from another layout of the keymap is used
+instead: with `XKB_DEFAULT_LAYOUT=us,ru` and Russian active, the J key
+still matches `"Super+j"`. Latin layouts keep their own keysyms (on a
+German layout the key labelled Z is `z`). `raywm -d` logs, for each key
+press with Super, Ctrl or Alt, the keysym and layout it was matched with
+and whether a binding ran.
 
 **Managed windows.** A layout plugin calls `ctx.manage(view)` for the
 windows whose geometry it controls. While any live plugin manages a
@@ -289,13 +339,44 @@ return {
 }
 ```
 
-The shipped `config/plugins/dwindle.lua` is a complete layout plugin.
+Highlight the focused window and keep the pointer on it (a reduced
+`config/plugins/focus.lua`):
+
+```lua
+local bordered
+
+local function mark(id)
+  if bordered then raywm.view_border(bordered, 0) end -- may be stale: fine
+  bordered = nil
+  if id ~= 0 and raywm.view_border(id, 3, "#ff8800") then bordered = id end
+end
+
+return {
+  api = 1,
+  setup = function(ctx)
+    ctx.on("view_focus", function(id)
+      mark(id)
+      local v, p = raywm.view(id), raywm.pointer()
+      if v and not p.busy then raywm.pointer_warp(v.x + v.w // 2, v.y + v.h // 2) end
+    end)
+    mark(raywm.focused() or 0)
+  end,
+  teardown = function()
+    if bordered then raywm.view_border(bordered, 0) end
+  end,
+}
+```
+
+The shipped `config/plugins/dwindle.lua` is a complete layout plugin,
+and `config/plugins/focus.lua` a complete focus-navigation plugin.
 
 ## Not supported in v0.1
 
-- Per-frame callbacks, animations and drawing (rectangles, borders,
-  text, images). `on_frame` and decoration rectangles are planned for
-  v0.2.
+- Per-frame callbacks, animations and drawing other than window borders
+  (rectangles, text, images). `on_frame` and more decorations are
+  planned for v0.2.
+- Pointer events in Lua (motion, buttons, focus-follows-mouse). The
+  pointer can be read and warped, not observed.
 - Blur, shadows, rounded corners and shaders. The wlroots scene renderer
   cannot do these; they would need a custom renderer.
 - Workspaces; maximize and fullscreen (the requests are answered but

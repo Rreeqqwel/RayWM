@@ -1,6 +1,6 @@
 # Installing RayWM
 
-RayWM v0.1.1 is an experimental Wayland compositor. It is safe to
+RayWM v0.1.2 is an experimental Wayland compositor. It is safe to
 install next to your current desktop:
 - nothing replaces your window manager or login screen;
 - nothing writes to an existing configuration;
@@ -60,10 +60,10 @@ the libraries above (with these sonames).
 sudo pacman -S --needed wlroots0.20 lua54 wayland libxkbcommon foot   # runtime
 sudo pacman -S --needed grim slurp wl-clipboard libnotify             # optional: screenshots
 
-# download raywm-v0.1.1-linux-x86_64.tar.gz and SHA256SUMS from the release page
+# download raywm-v0.1.2-linux-x86_64.tar.gz and SHA256SUMS from the release page
 sha256sum -c SHA256SUMS                                               # must print: OK
-tar -xzf raywm-v0.1.1-linux-x86_64.tar.gz
-cd raywm-v0.1.1
+tar -xzf raywm-v0.1.2-linux-x86_64.tar.gz
+cd raywm-v0.1.2
 ./install.sh
 ```
 
@@ -75,10 +75,16 @@ What `install.sh` does:
 - copies the example configuration to `~/.config/raywm/`, **only if that
   directory does not exist yet**. An existing configuration is never
   touched; `install.sh` prints the `diff` command to compare it with the
-  example. **Upgrading from v0.1.0:** your configuration stays as it is;
-  to get screenshots, copy `config/plugins/screenshot.lua` to
-  `~/.config/raywm/plugins/` and add `raywm.load("screenshot")` to your
-  `init.lua`;
+  example. **Upgrading:** run `./install.sh --force` to replace the
+  binary (the old one is kept as `raywm.bak`); your configuration stays
+  as it is and keeps working.
+  - from v0.1.1: to get directional focus (Super+H/J/K/L), the focus
+    cycle (Super+Tab) and the focus border, copy
+    `config/plugins/focus.lua` and `config/plugins/dwindle.lua` to
+    `~/.config/raywm/plugins/` and add `raywm.load("focus")` to your
+    `init.lua` (details: [CONFIGURATION.md](CONFIGURATION.md#upgrading-from-v011));
+  - from v0.1.0: also copy `config/plugins/screenshot.lua` and add
+    `raywm.load("screenshot")` to get screenshots;
 - checks with `ldd` that all shared libraries are present.
 
 You can also skip the script and run `bin/raywm` directly from the

@@ -20,6 +20,7 @@ Plugins are loaded from `plugins/` in the same directory as `init.lua`.
 └── plugins/
     ├── dwindle.lua
     ├── binds.lua
+    ├── focus.lua
     └── screenshot.lua
 ```
 
@@ -38,10 +39,11 @@ cp -r config ~/.config/raywm
 ```lua
 raywm.load("dwindle")
 raywm.load("binds")
+raywm.load("focus") -- Super+H/J/K/L, Super+Tab, focus border
 raywm.load("screenshot") -- Print etc.; needs grim, slurp, wl-clipboard
 ```
 
-### Key bindings (`plugins/binds.lua`, `plugins/dwindle.lua`, `plugins/screenshot.lua`)
+### Key bindings (`plugins/binds.lua`, `plugins/focus.lua`, `plugins/screenshot.lua`)
 
 | Keys | Action | Defined in |
 |---|---|---|
@@ -50,7 +52,9 @@ raywm.load("screenshot") -- Print etc.; needs grim, slurp, wl-clipboard
 | Ctrl+Alt+R | reload the configuration | binds.lua |
 | Super+Shift+R | reload (alternative) | binds.lua |
 | Super+Shift+E | quit RayWM | binds.lua |
-| Super+J / Super+K | focus the next / previous window | dwindle.lua |
+| Super+H / Super+L | focus the window to the left / right | focus.lua |
+| Super+J / Super+K | focus the window below / above | focus.lua |
+| Super+Tab / Super+Shift+Tab | focus the next / previous window | focus.lua |
 | Print | save a screenshot of all outputs | screenshot.lua |
 | Shift+Print | select a region with the mouse, save it | screenshot.lua |
 | Ctrl+Print | copy a screenshot of all outputs to the clipboard | screenshot.lua |
@@ -68,6 +72,56 @@ ctx.bind("Super+d", function() raywm.spawn("fuzzel") end)
 ctx.bind("Super+Shift+1", function() raywm.spawn("firefox") end)   -- unshifted key name
 ```
 
+### Keyboard layouts
+
+The layout comes from the xkb environment variables, for example:
+
+```sh
+XKB_DEFAULT_LAYOUT=us,ru XKB_DEFAULT_OPTIONS=grp:alt_shift_toggle raywm -s foot
+```
+
+Bindings are written with Latin key names and work in every layout of
+the keymap: with Russian active, Super+J is still Super+J. (Before
+v0.1.2 they did not; see [Upgrading from v0.1.1](#upgrading-from-v011).)
+In a nested session the keymap comes from the outer compositor.
+
+### Focus navigation (`plugins/focus.lua`)
+
+- **Super+H/J/K/L** focus the window to the left, below, above or to the
+  right of the focused one, by position on screen. A window counts as
+  "to the right" only if it lies further right with both edges; windows
+  directly beside the focused one win over diagonal ones; then the
+  nearest one, then the best aligned, then the one focused most
+  recently. Windows on the same output come first; another output is
+  used only if it lies in that direction. If there is no window in that
+  direction, nothing happens.
+- **Super+Tab / Super+Shift+Tab** go through all windows in a fixed
+  order: outputs from left to right, and on each output the windows in
+  the order they were opened. It wraps around.
+- Hidden windows are skipped. Windows are never moved or resized.
+
+Edit the `options` table at the top of `plugins/focus.lua`:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `keys.left` / `down` / `up` / `right` | `{ "Super+h" }` / `{ "Super+j" }` / `{ "Super+k" }` / `{ "Super+l" }` | directional focus; add e.g. `"Super+Left"` for arrow keys |
+| `keys.next` / `keys.prev` | `{ "Super+Tab" }` / `{ "Super+Shift+Tab" }` | focus cycle |
+| `cross_output` | `true` | continue onto the next output in that direction when the current output has no window there |
+| `warp` | `false` | move the pointer to the centre of the window chosen with these keys (see below) |
+| `border.width` | `2` | border around the focused window, in pixels; `0` disables it |
+| `border.color` | `"#5294e2"` | `"#rrggbb"` or `"#rrggbbaa"` |
+
+An empty key list disables an action.
+
+**Pointer warp** (`warp = true`) moves the pointer only when the focus
+really changed and the pointer is not already inside the new window. It
+is skipped while a mouse button is held or a window is being dragged
+(the pointer belongs to that interaction), and while a launcher or lock
+screen holds the keyboard.
+
+The v0.1.1 order of Super+J/K (dwindle's tree order) is still available
+in `plugins/dwindle.lua`, unbound by default.
+
 ### Dwindle options
 
 Edit the top of `plugins/dwindle.lua`:
@@ -76,6 +130,7 @@ Edit the top of `plugins/dwindle.lua`:
 |---|---|---|
 | `gap` | `8` | pixels between windows and around the edge of the usable area |
 | `min_size` | `1` | smallest width/height ever requested |
+| `keys.focus_next` / `keys.focus_prev` | `{}` / `{}` | cycle focus in tree order (the v0.1.1 Super+J/K). To use it, bind keys here and remove them from `focus.lua`, e.g. `focus_next = { "Super+Tab" }` |
 
 How dwindle works:
 - each output has its own binary tree;
@@ -158,6 +213,18 @@ raywm -s 'waybar & swaybg -i ~/wall.png'
 or from a binding with `raywm.spawn(...)`. Exclusive zones (for example
 a bar's height) are subtracted from the usable area that dwindle uses.
 
+## Mouse
+
+- **Click** a window to focus it. Clicking a launcher-like layer surface
+  that accepts the keyboard gives it the keyboard.
+- **While a button is held**, the window that got the press keeps
+  receiving the pointer, even outside its area and across outputs:
+  selections, scrollbars and slurp regions continue until the release.
+  Other windows get the pointer again after the last button is released.
+- **Super + left/right drag** moves/resizes a floating window (see
+  below). It starts only on the first button of an interaction: if you
+  already hold a button in a window, Super+click goes to that window.
+
 ## Floating and managed windows
 
 - A window that no plugin has claimed is **floating**. Move it with
@@ -202,8 +269,73 @@ RayWM is designed so that a broken configuration is not a dead end:
   unloads the plugin.
 
 Fix the file in the terminal, then reload. To see the log, start RayWM
-from a terminal, or redirect it: `raywm -s foot 2>~/raywm.log`. Add `-d`
-for verbose wlroots messages.
+from a terminal, or redirect it: `raywm -s foot 2>~/raywm.log`.
+
+### Diagnosing key bindings
+
+The normal log shows one line per plugin with its number of bindings,
+and warns about keys that do nothing:
+
+```
+info(lua): loaded plugin focus (6 key bindings)
+warning(lua): plugin focus: key Super+j is already bound by plugin dwindle, whose binding is used
+warning(lua): no plugin registered key bindings: only the built-in Super+Return, Super+Shift+E and Super+Shift+R work
+```
+
+Start with `-d` to see what each key press with Super, Ctrl or Alt was
+matched as (plain typing is never logged; `-d` also makes wlroots very
+verbose):
+
+```
+info(input): key: Super+j (keycode 36, layout 1 "Russian") -> binding
+info(input): key: Super+x (keycode 45, layout 0 "English (US)") -> no binding
+```
+
+If a key shows up as `-> binding` but nothing seems to happen, the
+binding ran: focus may have moved to a window you did not notice (the
+focus border shows it). If the key does not appear at all, RayWM never
+got it: in a nested session the outer compositor may keep it (many
+desktops bind Super+letter combinations). Try it from a TTY, or change
+the binding.
+
+## Upgrading from v0.1.1
+
+`install.sh` never modifies an existing `~/.config/raywm`, so after an
+upgrade your configuration behaves exactly as with v0.1.1 (including
+dwindle's Super+J/K), with these improvements from the core: the
+implicit pointer grab, and bindings that work with non-Latin layouts.
+
+To get directional focus, the focus cycle and the focus border, update
+two plugins and load the new one (from the extracted release directory
+or the repository):
+
+```sh
+cd ~/.config/raywm
+cp plugins/dwindle.lua plugins/dwindle.lua.v011      # keep your old copy
+cp /path/to/raywm-v0.1.2/config/plugins/focus.lua plugins/
+cp /path/to/raywm-v0.1.2/config/plugins/dwindle.lua plugins/
+echo 'raywm.load("focus")' >> init.lua
+```
+
+Then reload (Ctrl+Alt+R). If you had changed `dwindle.lua` (for example
+`gap`), copy your changes into the new file; compare with
+`diff -u plugins/dwindle.lua.v011 plugins/dwindle.lua`. The other
+plugins (`binds.lua`, `screenshot.lua`) did not change.
+
+If you copy `focus.lua` but keep the old `dwindle.lua`, the log says
+`plugin focus: key Super+j is already bound by plugin dwindle`: the old
+Super+J/K keep the tree order, and Super+H/L, Super+Tab and the border
+work. Update `dwindle.lua` to get the new Super+J/K.
+
+If Super+J/K did not work for you with v0.1.1, the likely causes are:
+- a non-Latin keyboard layout was active (fixed in v0.1.2);
+- the outer compositor kept the keys in a nested session (see
+  [Diagnosing key bindings](#diagnosing-key-bindings));
+- `~/.config/raywm` was missing or incomplete, so only the fallback keys
+  worked (the log now warns about this);
+- the focus did move, but nothing showed it (v0.1.2 draws a border).
+
+## Testing a configuration
 
 To test a configuration without touching your real one:
 

@@ -4,6 +4,126 @@ All notable changes to RayWM. Versions follow [Semantic
 Versioning](https://semver.org/); before 1.0, minor versions may break
 the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
+## [v0.1.2] — 2026-10-22 — Input, focus and pointer reliability
+
+The Lua plugin API is still `api = 1`. Its additions are compatible
+(see below), and v0.1.1 configurations keep working unchanged.
+
+### Fixed
+
+- **Implicit pointer grab** (`src/input.zig`). wlroots' default pointer
+  grab does not implement the implicit grab of `wl_pointer`, and RayWM
+  re-ran hit-testing on every motion. While a button was held, a drag
+  that left the window moved pointer focus away: the window got a
+  `leave`, the window under the cursor got an `enter`, and the release
+  was delivered to nobody. Visible effects: text selection, scrollbar
+  and slider drags stopped at the window edge; a slurp selection dragged
+  across two outputs was lost; a client could be left thinking a button
+  was still pressed. Now, while a button the client saw is held:
+  - the surface that got the press keeps the pointer (windows,
+    subsurfaces, popups and layer-shell surfaces alike), and gets every
+    motion in its own coordinates, also outside its bounds, and the
+    release;
+  - extra buttons pressed meanwhile also go to it; the grab ends with
+    the last release, and only then does focus follow the cursor again;
+  - windows moving, mapping or hiding under the cursor (plugin layouts,
+    `view_move`) do not take the pointer away;
+  - if the surface goes away (closed, crashed, unmapped, its output
+    unplugged), no other client gets pointer events until the last
+    release, so none sees the release of a press it never got.
+  wlroots' own grabs (an `xdg_popup` grab) keep working as before.
+- **Key bindings with a non-Latin layout active** (`src/input.zig`).
+  With a keymap like `us,ru` and the Russian layout active, Super+J
+  produced `Cyrillic_o` and matched no binding (the key went to the
+  window instead). Letter bindings now also match the key's Latin keysym
+  from another layout of the keymap. This was a likely cause of the
+  report "Super+J and Super+K do nothing"; see the upgrade notes below.
+- **A layer surface mapping or unmapping under a still cursor** now
+  updates pointer focus at once (before, only the next motion did).
+- **Duplicate-binding check** is bounded (no quadratic native work for
+  a plugin binding thousands of keys) and warns once per plugin.
+
+### Added
+
+- **`config/plugins/focus.lua`** (loaded by the example `init.lua`):
+  - **directional focus**: Super+H/J/K/L focus the window to the
+    left/below/above/right, by geometry, preferring windows directly in
+    that direction, on the same output first (another output only if it
+    lies in that direction); focus stays when there is none;
+  - **focus cycle**: Super+Tab / Super+Shift+Tab, in a fixed order
+    (outputs left to right, windows in opening order), wrapping;
+  - **optional pointer warp** (`warp = true`; off by default) to the
+    centre of the newly focused window; never while a button is held,
+    a window is dragged, or an exclusive launcher/lock surface is open;
+  - **focus border**: a 2 px `#5294e2` border around the focused window
+    (width and color configurable; 0 disables it).
+- **Lua API v1 additions** (compatible; feature-test with
+  `if raywm.pointer_warp then`):
+  - `raywm.view(id).visible`;
+  - `raywm.pointer()` → `{x, y, busy}`;
+  - `raywm.pointer_warp(x, y)` → `true`, or `nil` and
+    `"busy"`/`"exclusive"`/`"outside"`;
+  - `raywm.view_border(id, width, color)`: a solid border outside the
+    window, drawn with wlr_scene rectangles.
+- **Diagnostics** that do not clutter the normal log:
+  - `loaded plugin NAME (N key bindings)` per plugin;
+  - a warning when a key is bound twice (the first binding wins);
+  - a warning when no plugin registered any binding (only the fallback
+    keys work);
+  - `raywm -d` also logs each key press with Super, Ctrl or Alt, the
+    keysym and layout it was matched with, and whether a binding ran.
+    Plain typing is never logged.
+- **Tests:**
+  - `tests/pointer.sh` (13 scenarios): real clients log every
+    `wl_pointer` event; drags across windows, several buttons, release
+    outside, subsurface, layer surface, popup destroyed and window killed
+    while held, output unplugged while held, scene changes under a held
+    button, client-side move/resize, Super+drag, Super+click during a
+    client's grab, an `xdg_popup` grab. 11 of them fail on v0.1.1.
+  - `tests/navigation.sh` (10 scenarios): US and Russian layouts,
+    dwindle and floating windows, two outputs, pointer warp versus a
+    held button, the border checked on screen with grim, reload during a
+    held button, an exclusive launcher, closing a window whose button is
+    held, unchanged and half-migrated v0.1.1 configurations.
+  - `tests/focus_test.lua` (19, in `zig build test`), including 400
+    random two-output layouts; xkb unit tests for the layout rule;
+    host tests for the new API.
+  - `tests/screenshot.sh`: a slurp selection across two outputs.
+
+### Changed
+
+- **dwindle.lua no longer binds Super+J/K.** Its tree-order cycle
+  (`focus_step`) is kept, unbound by default (`keys.focus_next`,
+  `keys.focus_prev`). focus.lua owns Super+H/J/K/L and Super+Tab.
+- The press that starts an interaction decides its target: click focus
+  and Super+drag/resize act on the first press only; buttons pressed
+  while a client holds the implicit grab go to that client.
+- `raywm -d` now also enables RayWM's own key diagnostics.
+
+### Upgrading from v0.1.1
+
+`install.sh` never changes an existing `~/.config/raywm`. Your
+configuration keeps working as before (dwindle's Super+J/K included).
+To get the new focus keys and the border:
+
+```sh
+cp ~/.config/raywm/plugins/dwindle.lua ~/.config/raywm/plugins/dwindle.lua.v011   # backup
+cp config/plugins/focus.lua config/plugins/dwindle.lua ~/.config/raywm/plugins/
+echo 'raywm.load("focus")' >> ~/.config/raywm/init.lua
+```
+
+Then press Ctrl+Alt+R. If you copy only `focus.lua` and keep the old
+`dwindle.lua`, the log warns `plugin focus: key Super+j is already bound
+by plugin dwindle`: dwindle's Super+J/K win until you update it. See
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md#upgrading-from-v011).
+
+### Known limitations
+
+- Drag and drop between clients is still not supported (RayWM does not
+  start `wl_data_device` drags).
+- Not verified on real hardware with real mice and keyboards; the same
+  wlroots input path is driven headlessly with virtual devices.
+
 ## [v0.1.1] — 2026-10-22 — Screenshots and core hardening
 
 The Lua plugin API is unchanged (still `api = 1`).

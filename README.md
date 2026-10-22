@@ -10,17 +10,22 @@ correctness ahead of artificial code reduction.
 - Everything that is policy is a Lua plugin: tiling, key bindings and
   window rules.
 
-> **Status: v0.1.1, experimental.** It is usable for trying out and for
+> **Status: v0.1.2, experimental.** It is usable for trying out and for
 > development, nested in another session or from a TTY. Expect missing
 > features (see [Known limitations](#known-limitations)) and an evolving
-> plugin API. v0.1.1 adds screenshots and fixes several core issues
-> ([CHANGELOG](CHANGELOG.md)).
+> plugin API. v0.1.2 makes pointer input protocol-correct (implicit
+> pointer grab), fixes key bindings on non-Latin keyboard layouts, and
+> adds directional focus, a focus cycle and a focus border
+> ([CHANGELOG](CHANGELOG.md); upgrading: [below](#upgrading-from-v011)).
 
 ## Features
 
 - **Wayland compositor on wlroots 0.20.**
   - xdg-shell windows and popups, with correct configure/ack handling.
-  - Keyboard and pointer, click-to-focus.
+  - Keyboard and pointer, click-to-focus, and the Wayland **implicit
+    pointer grab**: a drag keeps going to the window where it started
+    (also across outputs) until the last button is released.
+  - Key bindings that work in every layout of the keymap (e.g. `us,ru`).
   - Multiple outputs with hotplug.
   - VT switching on a real session.
 - **Layer-shell** (wlr-layer-shell v4) for external panels, docks,
@@ -40,6 +45,10 @@ correctness ahead of artificial code reduction.
   - Respects panels, and keeps its layout across reloads.
   - Tiled windows are protected from accidental dragging through
     `ctx.manage`.
+- **Keyboard focus navigation** (`config/plugins/focus.lua`, Lua):
+  directional focus (Super+H/J/K/L) by window geometry across outputs,
+  a focus cycle (Super+Tab), an optional pointer warp, and a border
+  around the focused window.
 - **Screenshots** (`config/plugins/screenshot.lua`, a plain Lua plugin):
   full screen, interactive region, clipboard copy, PNG files with unique
   names, notifications. The capturing is done by grim, slurp and
@@ -79,13 +88,22 @@ zig build -Doptimize=ReleaseSafe      # -> zig-out/bin/raywm
 From a release archive (after checking `sha256sum -c SHA256SUMS`):
 
 ```sh
-tar -xzf raywm-v0.1.1-linux-x86_64.tar.gz && cd raywm-v0.1.1
+tar -xzf raywm-v0.1.2-linux-x86_64.tar.gz && cd raywm-v0.1.2
 ./install.sh        # ~/.local/bin/raywm; config copied only if ~/.config/raywm does not exist
 ```
 
 `install.sh` needs no root. It does not replace your current window
 manager, and it never overwrites an existing binary (without `--force`)
 or configuration. Full guide: [docs/INSTALL.md](docs/INSTALL.md).
+
+### Upgrading from v0.1.1
+
+Replace the binary (`./install.sh --force`, which keeps a backup). Your
+`~/.config/raywm` is not touched and keeps working as before. To get the
+new focus keys and the focus border, copy `config/plugins/focus.lua` and
+`config/plugins/dwindle.lua` into `~/.config/raywm/plugins/`, add
+`raywm.load("focus")` to `init.lua`, and press Ctrl+Alt+R. Step by step:
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md#upgrading-from-v011).
 
 ## Run
 
@@ -102,11 +120,13 @@ with Super+Shift+E. TTY use is not covered by the automated tests.
 Options:
 - `-c FILE`: use another config file;
 - `-s CMD`: startup command, e.g. `-s 'waybar & foot'`;
-- `-d`: verbose wlroots log;
+- `-d`: verbose log: wlroots, plus each key press with Super, Ctrl or
+  Alt and the binding it matched (plain typing is never logged);
 - `-h`: help.
 
 The keyboard layout comes from `XKB_DEFAULT_LAYOUT`, `XKB_DEFAULT_OPTIONS`
-and the other xkb variables.
+and the other xkb variables, e.g.
+`XKB_DEFAULT_LAYOUT=us,ru XKB_DEFAULT_OPTIONS=grp:alt_shift_toggle`.
 
 ## Default key bindings
 
@@ -116,7 +136,8 @@ With the example configuration (`config/`):
 |---|---|
 | Super+Return | terminal (`$TERMINAL`, default `foot`) |
 | Super+Q | close the focused window |
-| Super+J / Super+K | focus next / previous window |
+| Super+H / J / K / L | focus the window to the left / below / above / right |
+| Super+Tab / Super+Shift+Tab | focus the next / previous window |
 | Ctrl+Alt+R (or Super+Shift+R) | reload the configuration |
 | Super+Shift+E | quit |
 | Print / Shift+Print | save a screenshot of all outputs / of a selected region |
@@ -186,6 +207,7 @@ compositors. See [SECURITY.md](SECURITY.md).
 -- ~/.config/raywm/init.lua
 raywm.load("dwindle")
 raywm.load("binds")
+raywm.load("focus")
 raywm.load("screenshot")
 ```
 
@@ -211,9 +233,11 @@ Lua standard library. See [SECURITY.md](SECURITY.md). API reference:
 
 - **No** Xwayland, workspaces, fullscreen or maximize (the requests are
   answered and ignored), touch, tablets or HiDPI output scaling.
-- **No** animations, per-frame plugin hooks or decorations; these are
-  planned for v0.2. Blur, shadows and rounded corners would need a
-  custom renderer.
+- **No** animations, per-frame plugin hooks or decorations beyond a
+  solid window border; these are planned for v0.2. Blur, shadows and
+  rounded corners would need a custom renderer.
+- **No drag and drop between clients** (wl_data_device drags are not
+  started).
 - **No** per-window floating rules: dwindle tiles every window.
 - **Screen capture is open to every client** of the RayWM socket
   (wlr-screencopy has no permission model). There is no switch to turn
@@ -225,10 +249,6 @@ Lua standard library. See [SECURITY.md](SECURITY.md). API reference:
 - **A broken `binds.lua` together with a working `screenshot.lua`**
   disables the core's fallback keys (they apply only while no plugin
   binds any key); see docs/CONFIGURATION.md.
-- **No implicit pointer grab:** while a button is held, the pointer
-  focus still follows the pointer. A selection dragged across two
-  outputs (slurp) is lost at the border, and drags that leave a window
-  stop reaching it.
 - **Optional protocols are not implemented**, so clients warn and fall
   back. With foot 1.28:
   - no primary selection (middle-click paste);
@@ -250,10 +270,12 @@ All tests are headless and isolated from your session. The input tests
 use test-only virtual input inside a private compositor.
 
 ```sh
-zig build test                      # Zig unit tests (core + Lua host), dwindle and screenshot plugin tests
+zig build test                      # Zig unit tests (core + Lua host), dwindle, focus and screenshot plugin tests
 tests/smoke.sh && tests/focus.sh && tests/docs.sh
 zig build -Dtest-input -p zig-out/test-input
 tests/input.sh && tests/stress.sh   # real pointer/keyboard events, stress
+tests/pointer.sh                    # implicit pointer grab: exact wl_pointer event streams
+tests/navigation.sh                 # focus keys, layouts (us/ru), two outputs, warp, border
 tests/screenshot.sh                 # real grim/slurp/wl-clipboard, PNGs checked pixel by pixel
 ```
 
@@ -264,17 +286,17 @@ container (`.github/workflows/ci.yml`).
 ## Project layout
 
 ```
-src/            Zig core (2249 lines in v0.1.1)
+src/            Zig core (2591 lines in v0.1.2)
   main.zig        startup, signals, config path
   server.zig      backend, scene, outputs, focus, spawn
   view.zig        xdg-shell toplevels/popups, configure/ack geometry
-  input.zig       keyboard, bindings, pointer, move/resize
+  input.zig       keyboard, bindings, pointer focus and grabs, move/resize
   layer.zig       wlr-layer-shell
   lua.zig         Lua 5.4 host: plugins, isolation, limits
   host.zig        compositor functions exposed to Lua (id-based)
-config/         example ~/.config/raywm (dwindle, bindings, screenshots)
+config/         example ~/.config/raywm (dwindle, bindings, focus, screenshots)
 docs/           INSTALL, CONFIGURATION, API, ARCHITECTURE, TESTING, screenshots/
-tests/          unit, integration, input, screenshot and stress tests
+tests/          unit, integration, input, pointer, navigation, screenshot and stress tests
 scripts/        package.sh (release archive), install.sh, gallery.sh
 ```
 
