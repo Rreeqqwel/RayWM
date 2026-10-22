@@ -222,6 +222,9 @@ Lua standard library. See [SECURITY.md](SECURITY.md). API reference:
   the data-control protocols, so `wl-copy` (and `wl-paste`) briefly map a
   tiny window to get keyboard focus. With dwindle, the tiles may jump for
   a moment while that window exists.
+- **A broken `binds.lua` together with a working `screenshot.lua`**
+  disables the core's fallback keys (they apply only while no plugin
+  binds any key); see docs/CONFIGURATION.md.
 - **No implicit pointer grab:** while a button is held, the pointer
   focus still follows the pointer. A selection dragged across two
   outputs (slurp) is lost at the border, and drags that leave a window

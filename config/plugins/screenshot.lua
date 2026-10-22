@@ -59,6 +59,7 @@ shot() {
 if [ "$mode" = copy ]; then
   tmp=$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/raywm-screenshot.XXXXXX") || fail 'cannot create a temporary file'
   trap 'rm -f -- "$tmp"' EXIT
+  trap 'exit 1' HUP INT TERM
   shot "$tmp" || fail 'grim could not capture the screen'
   wl-copy --type image/png <"$tmp" || fail 'wl-copy could not set the clipboard'
   say 'copied to the clipboard'
@@ -71,11 +72,13 @@ dir=${file%/*}
 mkdir -p "$dir" || fail "cannot create $dir"
 tmp=$(mktemp "$dir/.raywm-screenshot.XXXXXX") || fail "cannot write to $dir"
 trap 'rm -f -- "$tmp"' EXIT
+trap 'exit 1' HUP INT TERM
 shot "$tmp" || fail 'grim could not capture the screen'
 # ln does not replace an existing file, so concurrent shots never collide.
+# (Names taken by anything, e.g. a directory, are skipped first.)
 out=$file n=0
-until ln "$tmp" "$out" 2>/dev/null; do
-  if [ ! -e "$out" ]; then
+until [ ! -e "$out" ] && [ ! -L "$out" ] && ln "$tmp" "$out" 2>/dev/null; do
+  if [ ! -e "$out" ] && [ ! -L "$out" ]; then
     mv "$tmp" "$out" || fail "cannot write $out" # no hard links here
     break
   fi

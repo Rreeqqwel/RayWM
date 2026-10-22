@@ -126,6 +126,17 @@ An empty key list disables an action. Behaviour:
 - **XDG_PICTURES_DIR** is read from the environment only; RayWM does
   not parse `~/.config/user-dirs.dirs`. Set `dir` instead if needed.
 - Plugin messages go to RayWM's standard error, like all its logs.
+- On file systems without hard links (FAT, exFAT, some FUSE mounts)
+  the "never overwritten" guarantee is weaker: two shots in the same
+  second may race for one name. A failing slurp (not only Escape) is
+  logged as a cancelled selection.
+- **Fallback bindings:** the core's fallback keys (Super+Return,
+  Super+Shift+R, Super+Shift+E) are active only while *no* plugin binds
+  a key. With the example config, if `binds.lua` fails but
+  `screenshot.lua` loads, the Print keys count as bindings and the
+  fallback keys are off. Fix `binds.lua` and restart RayWM (or switch VT
+  / close the nested window), or comment out `raywm.load("screenshot")`
+  while you repair the config.
 
 **Privacy.** The screen capture protocol is available to every client
 of RayWM's Wayland socket, whether this plugin is loaded or not. See

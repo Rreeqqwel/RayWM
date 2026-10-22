@@ -313,8 +313,13 @@ local p3 = io.popen("stat -c %a " .. q(plain .. "/" .. name .. ".png"))
 check(p3:read("l") == "600", "screenshot file is not private (0600)")
 p3:close()
 
+-- A directory with the target name is skipped, not written into.
+sh("mkdir -p " .. q(plain .. "/screenshot-2026-10-22_12-35-56.png"))
+check(run_only(m._test.command("save", "full", now + 60), bins.all) == 0, "save next to a directory")
+check(exists(plain .. "/screenshot-2026-10-22_12-35-56-1.png"), "a directory with the target name was not skipped")
+
 -- 5c. Region: slurp's geometry goes to grim; cancelling saves nothing.
-code = run_only(m._test.command("save", "region", now + 60), bins.all)
+code = run_only(m._test.command("save", "region", now + 90), bins.all)
 check(code == 0 and (read(logdir .. "/grim.args") or ""):find("-g 10,20 30x40 -t png", 1, true), "region not passed to grim")
 code = run_only(m._test.command("save", "region", now + 120), bins.all, { cancel = true })
 check(code == 0, "cancel: exit " .. tostring(code))
