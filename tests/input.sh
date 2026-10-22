@@ -200,7 +200,10 @@ s8() {
     grep -q "client: layer kbd none" "$tmp/panel.log" || fail "panel did not switch interactivity"
     grep -q "client: kbd leave" "$tmp/panel.log" || fail "panel kept the keyboard"
     grep -q "client: kbd enter" "$tmp/a.log" || fail "window did not get the keyboard back"
-    if grep -q "kbd key 87" "$tmp/a.log"; then fail "window saw the panel's key"; fi
+    # The press went to the panel. Depending on timing, the window may get
+    # the keyboard while F11 is still held, and then (correctly, per the
+    # protocol) see its release, but it must never see the press.
+    if grep -q "kbd key 87 pressed" "$tmp/a.log"; then fail "window saw the panel's key press"; fi
     stop
 }
 
