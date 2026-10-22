@@ -70,6 +70,8 @@ const State = struct {
     frame_done: bool = false,
     /// xdg_toplevel "activated" state, i.e. whether the window has focus.
     activated: bool = false,
+    /// The compositor asked to close the window (RAYWM_TEST_CLOSE honours it).
+    close_requested: bool = false,
 };
 
 fn step(comptime fmt: []const u8, args: anytype) void {
@@ -160,6 +162,10 @@ pub fn main() !void {
                     try popup_test.openWith(xdg_surface, .{ .seat = use.seat, .serial = serial });
                     use.popup = &popup_test;
                     step("grabbing popup mapped", .{});
+                }
+                if (state.close_requested and std.c.getenv("RAYWM_TEST_CLOSE") != null) {
+                    step("closing", .{});
+                    return;
                 }
                 // A configure may already have arrived while waiting above.
                 if (!state.configured) {
@@ -545,7 +551,10 @@ fn toplevelListener(_: *xdg.Toplevel, event: xdg.Toplevel.Event, state: *State) 
             if (active != state.activated) step("{s}", .{if (active) "activated" else "deactivated"});
             state.activated = active;
         },
-        .close => {},
+        .close => {
+            step("close requested", .{});
+            state.close_requested = true;
+        },
     }
 }
 

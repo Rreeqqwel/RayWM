@@ -342,14 +342,15 @@ tests["fresh session ignores a leftover snapshot"] = function()
   check_invariants("fresh")
 end
 
-tests["Super+j/k cycle focus in tree order"] = function()
+tests["focus_step cycles focus in tree order; no keys bound by default"] = function()
   local a, b, c = map(), map(), map()
+  assert(next(binds) == nil, "dwindle binds no keys by default (focus.lua does)")
   assert(focused == c)
-  binds["Super+j"]()
-  assert(focused == a, "j wraps to first")
-  binds["Super+k"]()
-  assert(focused == c, "k wraps to last")
-  binds["Super+k"]()
+  plugin.focus_step(1)
+  assert(focused == a, "next wraps to first")
+  plugin.focus_step(-1)
+  assert(focused == c, "previous wraps to last")
+  plugin.focus_step(-1)
   assert(focused == b)
 end
 

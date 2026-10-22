@@ -30,6 +30,7 @@ pub fn view(server: *Server, id: u32) ?lua.ViewInfo {
         .app_id = v.xdg.app_id,
         .focused = server.focused == v,
         .output = if (out) |o| o.id else 0,
+        .visible = v.tree.node.enabled,
     };
 }
 
@@ -47,9 +48,22 @@ pub fn viewCmd(server: *Server, id: u32, cmd: lua.ViewCmd) bool {
             // Never leave keyboard focus on a window the user cannot see.
             if (!on and server.focused == v) server.focus(server.firstVisible());
         },
+        .border => |b| v.setBorder(b.width, &b.color) catch std.log.err("out of memory", .{}),
     }
     input.refocusPointer(server);
     return true;
+}
+
+pub fn pointer(server: *Server) lua.PointerInfo {
+    return .{
+        .x = coord(@intFromFloat(@floor(std.math.clamp(server.cursor.x, -max_coord, max_coord)))),
+        .y = coord(@intFromFloat(@floor(std.math.clamp(server.cursor.y, -max_coord, max_coord)))),
+        .busy = input.pointerBusy(server),
+    };
+}
+
+pub fn pointerWarp(server: *Server, x: i32, y: i32) lua.WarpResult {
+    return input.warpPointer(server, @floatFromInt(coord(x)), @floatFromInt(coord(y)));
 }
 
 /// Lua may pass any i32; keep geometry far from overflow in later math.

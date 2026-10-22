@@ -28,6 +28,8 @@ pub const View = struct {
     /// Interactive resize: keeps the edges opposite to `edges` fixed.
     anchor: ?struct { serial: u32, edges: wlr.Edges, box: wlr.Box } = null,
     opacity: f32 = 1.0,
+    /// Drawn by plugins (raywm.view_border), e.g. for the focused window.
+    border: ?Border = null,
 
     commit: wl.Listener(*wlr.Surface) = .init(handleCommit),
     map: wl.Listener(void) = .init(handleMap),
@@ -99,6 +101,61 @@ pub const View = struct {
         view.pending = .{ .serial = serial, .x = x, .y = y };
     }
 
+    /// Solid rectangles around the window geometry, outside it: top,
+    /// bottom, left, right. Children of the view's scene tree, below the
+    /// surfaces and popups, so they move, hide and stack with the window
+    /// and are destroyed with it. A border is not a surface: the pointer
+    /// over it is over no client (input.surfaceAt), and clicks do nothing.
+    pub const Border = struct {
+        rects: [4]*wlr.SceneRect,
+        width: i32,
+        /// Window size the rectangles were laid out for.
+        laid_out: [2]i32 = .{ -1, -1 },
+    };
+
+    /// `width` 0 removes the border; `color` is premultiplied RGBA.
+    pub fn setBorder(view: *View, width: i32, color: *const [4]f32) !void {
+        if (width <= 0) {
+            if (view.border) |b| for (b.rects) |r| r.node.destroy();
+            view.border = null;
+            return;
+        }
+        if (view.border == null) {
+            var rects: [4]*wlr.SceneRect = undefined;
+            var n: usize = 0;
+            errdefer for (rects[0..n]) |r| r.node.destroy();
+            while (n < rects.len) : (n += 1) {
+                rects[n] = try view.tree.createSceneRect(0, 0, color);
+                rects[n].node.lowerToBottom();
+            }
+            view.border = .{ .rects = rects, .width = width };
+        }
+        const b = &view.border.?;
+        for (b.rects) |r| r.setColor(color);
+        if (b.width != width) b.laid_out = .{ -1, -1 };
+        b.width = width;
+        view.layoutBorder();
+    }
+
+    /// Follows the window's size; cheap when it did not change.
+    fn layoutBorder(view: *View) void {
+        const b = if (view.border) |*b| b else return;
+        const g = view.xdg.base.geometry;
+        if (b.laid_out[0] == g.width and b.laid_out[1] == g.height) return;
+        b.laid_out = .{ g.width, g.height };
+        const t = b.width;
+        const boxes = [4][4]i32{
+            .{ -t, -t, g.width + 2 * t, t }, // top
+            .{ -t, g.height, g.width + 2 * t, t }, // bottom
+            .{ -t, 0, t, g.height }, // left
+            .{ g.width, 0, t, g.height }, // right
+        };
+        for (b.rects, boxes) |r, box| {
+            r.node.setPosition(box[0], box[1]);
+            r.setSize(@max(box[2], 0), @max(box[3], 0));
+        }
+    }
+
     pub fn setOpacity(view: *View, opacity: f32) void {
         view.opacity = std.math.clamp(opacity, 0, 1);
         view.applyOpacity();
@@ -139,6 +196,7 @@ pub const View = struct {
         }
         @import("input.zig").onCommit(view.server, view);
         view.syncPosition();
+        view.layoutBorder();
         if (view.opacity < 1) view.applyOpacity();
     }
 

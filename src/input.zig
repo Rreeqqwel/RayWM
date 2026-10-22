@@ -16,6 +16,7 @@ const xkb = @import("xkbcommon");
 const srv = @import("server.zig");
 const View = @import("view.zig").View;
 const LayerSurface = @import("layer.zig").LayerSurface;
+const lua = @import("lua");
 const Server = srv.Server;
 const gpa = srv.gpa;
 const log = std.log.scoped(.input);
@@ -358,6 +359,30 @@ pub fn refocusPointer(server: *Server) void {
         return;
     }
     focusHit(server, surfaceAt(server, server.cursor.x, server.cursor.y), null);
+}
+
+/// Some grab owns the pointer: a compositor move/resize, a held button
+/// (implicit grab, also when its surface is gone) or a wlroots grab.
+pub fn pointerBusy(server: *Server) bool {
+    const seat = server.seat;
+    return server.grab.mode != .none or seat.pointer_state.button_count > 0 or seat.pointerHasGrab();
+}
+
+/// Moves the cursor for a plugin (raywm.pointer_warp). Refused while a
+/// grab owns the pointer, because moving it would drag a window or pull
+/// a held interaction somewhere else, and while an exclusive layer
+/// surface (a lock screen, a launcher) holds the keyboard. RayWM has no
+/// pointer-constraints support; if it gets one, warps must respect it.
+/// Pointer focus follows (enter/leave/motion); keyboard focus never does.
+pub fn warpPointer(server: *Server, x: f64, y: f64) lua.WarpResult {
+    if (pointerBusy(server)) return .busy;
+    if (server.layer_focus) |ls| if (ls.wlr_layer.current.keyboard_interactive == .exclusive) return .exclusive;
+    if (!server.cursor.warp(null, x, y)) return .outside;
+    const now = srv.timestamp();
+    const ms: u32 = @truncate(@as(u64, @intCast(now.sec)) *% 1000 +% @as(u64, @intCast(now.nsec)) / std.time.ns_per_ms);
+    focusHit(server, surfaceAt(server, server.cursor.x, server.cursor.y), ms);
+    server.seat.pointerNotifyFrame();
+    return .ok;
 }
 
 fn processMotion(server: *Server, time_msec: u32) void {

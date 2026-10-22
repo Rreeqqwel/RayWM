@@ -60,17 +60,17 @@ s2() {
 # ---- a binding's key must not leak into the newly focused client ----------
 s3() {
     name="binding key not reported as held after a focus change"
-    start "$root/tests/input/managed.lua" 2
+    start "$root/tests/navigation/tiled.lua" 2
     # One driver run, so the virtual keyboard (and the clients' wl_keyboard)
-    # exists throughout: wait, dump 1, Super+J (dwindle focus), dump 2.
+    # exists throughout: wait, dump 1, Super+H (focus.lua: left), dump 2.
     f12="key super down key f12 down key f12 up key super up sleep 150"
-    drive sleep 400 $f12 key super down key j down key j up key super up sleep 150 $f12
+    drive sleep 400 $f12 key super down key h down key h up key super up sleep 150 $f12
     expect 1 "view 3 644,8 628x704 focused=true"
     expect 2 "view 2 8,8 628x704 focused=true"
     enter=$(grep "client: kbd enter" "$tmp/a.log" | tail -1)
     [ -n "$enter" ] || fail "A never got keyboard focus"
-    case "$enter " in *" 36 "*) fail "J (36) reported as held in A's enter: $enter" ;; esac
-    if grep -q "kbd key 36" "$tmp/a.log" "$tmp/b.log"; then fail "J events leaked to a client"; fi
+    case "$enter " in *" 35 "*) fail "H (35) reported as held in A's enter: $enter" ;; esac
+    if grep -q "kbd key 35" "$tmp/a.log" "$tmp/b.log"; then fail "H events leaked to a client"; fi
     stop
 
 }

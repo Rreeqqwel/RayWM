@@ -51,6 +51,14 @@ const Fake = struct {
         pub fn armTimer(f: *Fake, ms: ?u32) void {
             f.timer_ms = ms;
         }
+        pub fn pointer(_: *Fake) lua.PointerInfo {
+            return .{ .x = 10, .y = 20, .busy = false };
+        }
+        pub fn pointerWarp(f: *Fake, x: i32, y: i32) lua.WarpResult {
+            var buf: [64]u8 = undefined;
+            f.log.append(std.testing.allocator, std.testing.allocator.dupe(u8, std.fmt.bufPrint(&buf, "hostwarp:{d},{d}", .{ x, y }) catch unreachable) catch unreachable) catch unreachable;
+            return if (x < 0) .outside else .ok;
+        }
     };
 
     fn deinit(f: *Fake) void {
@@ -249,6 +257,36 @@ test "broken config falls back and still cleans up its plugins" {
     try std.testing.expectEqual(1, f.count("teardown:probe"));
     try std.testing.expect(hasError("init.lua: tests/lua/broken.lua:2: bad config"));
     try std.testing.expectEqual(1, takeErrors());
+}
+
+test "v0.1.2 additions: pointer, pointer_warp, view_border, visible" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/api012.lua", opts);
+    defer rt.destroy();
+    const t = std.testing;
+    try t.expectEqual(0, takeErrors());
+    try t.expectEqual(1, f.count("pointer:10,20,false"));
+    try t.expectEqual(1, f.count("hostwarp:5,6"));
+    try t.expectEqual(1, f.count("warp:true"));
+    try t.expectEqual(1, f.count("hostwarp:-1,0"));
+    try t.expectEqual(1, f.count("warpfail:nil:outside"));
+    try t.expectEqual(1, f.count("visible:true"));
+    try t.expectEqual(1, f.count("border:true"));
+    try t.expectEqual(1, f.count("noborder:true"));
+    try t.expectEqual(1, f.count("staleborder:nil"));
+    try t.expectEqual(6, f.count("bad:false"));
+    try t.expectEqual(1, f.count("badwarp:false"));
+}
+
+test "colors parse to premultiplied RGBA" {
+    const t = std.testing;
+    try t.expectEqual([4]f32{ 1, 0, 0, 1 }, lua.parseColor("#ff0000").?);
+    const half = lua.parseColor("#ffffff80").?;
+    try t.expectApproxEqAbs(@as(f32, 128.0 / 255.0), half[0], 1e-6);
+    try t.expectApproxEqAbs(@as(f32, 128.0 / 255.0), half[3], 1e-6);
+    try t.expectEqual([4]f32{ 0, 0, 0, 0 }, lua.parseColor("#12345600").?);
+    for ([_][]const u8{ "", "#", "ff0000", "#ff00", "#ff00000", "#gg0000", "#ff0000ff0" }) |bad| try t.expect(lua.parseColor(bad) == null);
 }
 
 test "missing config is not fatal" {

@@ -152,7 +152,7 @@ pub fn build(b: *std.Build) void {
     const unit = b.addTest(.{ .root_module = unit_mod, .use_llvm = use_llvm, .use_lld = use_llvm });
     const unit_run = b.addRunArtifact(unit);
     unit_run.setCwd(b.path(".")); // fixtures are referenced as tests/lua/...
-    const test_step = b.step("test", "Run unit tests (core, Lua host, dwindle and screenshot plugins)");
+    const test_step = b.step("test", "Run unit tests (core, Lua host, dwindle, focus and screenshot plugins)");
     test_step.dependOn(&unit_run.step);
 
     // Core unit tests: src/main.zig as a module (exposes srv, host).
@@ -187,6 +187,12 @@ pub fn build(b: *std.Build) void {
     dwindle.setEnvironmentVariable("WAYLAND_DISPLAY", "raywm-dwindle-test");
     dwindle.has_side_effects = true;
     test_step.dependOn(&dwindle.step);
+
+    // The focus plugin (directional focus, cycle, warp, border), mock API.
+    const focus = b.addSystemCommand(&.{ "lua5.4", "tests/focus_test.lua" });
+    focus.setCwd(b.path("."));
+    focus.has_side_effects = true;
+    test_step.dependOn(&focus.step);
 
     // The screenshot plugin, against a mock API and fake grim/slurp/wl-copy.
     const screenshot = b.addSystemCommand(&.{ "lua5.4", "tests/screenshot_test.lua" });

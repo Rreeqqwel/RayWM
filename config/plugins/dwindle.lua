@@ -13,6 +13,11 @@
 
 local gap = 8 -- outer margin and space between windows, in pixels
 local min_size = 1 -- smallest width/height ever passed to view_place
+-- Focus cycling in tree order (Super+J/K before v0.1.2). Unbound by
+-- default: focus.lua provides Super+H/J/K/L and Super+Tab. To use the tree
+-- order for Super+Tab, bind it here, e.g. focus_next = { "Super+Tab" },
+-- and remove that key from focus.lua.
+local keys = { focus_next = {}, focus_prev = {} }
 
 -- Only in the per-user runtime directory (mode 0700); never in /tmp.
 local runtime_dir = os.getenv("XDG_RUNTIME_DIR")
@@ -335,10 +340,11 @@ return {
     end)
     ctx.on("layout", arrange_all)
     ctx.on("output_remove", arrange_all)
-    ctx.bind("Super+j", function() focus_step(1) end)
-    ctx.bind("Super+k", function() focus_step(-1) end)
+    for _, k in ipairs(keys.focus_next) do ctx.bind(k, function() focus_step(1) end) end
+    for _, k in ipairs(keys.focus_prev) do ctx.bind(k, function() focus_step(-1) end) end
   end,
   teardown = save_snapshot,
   -- For tests/dwindle_test.lua only: read access to the internal state.
   inspect = function() return trees, leaves end,
+  focus_step = focus_step,
 }

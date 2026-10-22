@@ -17,9 +17,17 @@ const gpa = std.heap.c_allocator;
 pub const api_version = 1;
 pub const Event = enum { view_map, view_unmap, view_focus, view_title, view_resized, output_add, output_remove, layout };
 pub const Box = struct { x: i32, y: i32, w: i32, h: i32 };
-pub const ViewInfo = struct { box: Box, title: ?[*:0]const u8, app_id: ?[*:0]const u8, focused: bool, output: u32 };
+pub const ViewInfo = struct { box: Box, title: ?[*:0]const u8, app_id: ?[*:0]const u8, focused: bool, output: u32, visible: bool = true };
 pub const OutputInfo = struct { box: Box, usable: Box };
-pub const ViewCmd = union(enum) { move: [2]i32, place: Box, opacity: f32, raise, focus, close, show: bool };
+/// Border drawn outside a window: width in pixels (0 removes it) and a
+/// premultiplied RGBA color.
+pub const Border = struct { width: i32, color: [4]f32 };
+pub const max_border = 64;
+pub const ViewCmd = union(enum) { move: [2]i32, place: Box, opacity: f32, raise, focus, close, show: bool, border: Border };
+/// `busy`: a pointer grab is active (compositor move/resize, a held button
+/// or a client's popup grab); warping is refused then.
+pub const PointerInfo = struct { x: i32, y: i32, busy: bool };
+pub const WarpResult = enum { ok, busy, exclusive, outside };
 pub const Key = struct { mods: u32, sym: u32 };
 pub const Limits = struct {
     memory: usize = 64 << 20,
@@ -61,6 +69,19 @@ pub fn monotonicNs() u64 {
     var ts: std.posix.timespec = undefined;
     _ = std.posix.system.clock_gettime(std.posix.CLOCK.MONOTONIC, &ts);
     return @as(u64, @intCast(ts.sec)) * std.time.ns_per_s + @as(u64, @intCast(ts.nsec));
+}
+
+/// "#rrggbb" or "#rrggbbaa" to premultiplied RGBA (what wlr_scene wants).
+pub fn parseColor(spec: []const u8) ?[4]f32 {
+    if (spec.len != 7 and spec.len != 9) return null;
+    if (spec[0] != '#') return null;
+    var v: [4]f32 = .{ 0, 0, 0, 1 };
+    var i: usize = 0;
+    while (i * 2 + 1 < spec.len) : (i += 1) {
+        const byte = std.fmt.parseInt(u8, spec[1 + i * 2 ..][0..2], 16) catch return null;
+        v[i] = @as(f32, @floatFromInt(byte)) / 255.0;
+    }
+    return .{ v[0] * v[3], v[1] * v[3], v[2] * v[3], v[3] };
 }
 
 /// `H.Api` must provide the host functions called below (see host.zig).
@@ -474,14 +495,16 @@ pub fn Runtime(comptime H: type) type {
         }
 
         const globals = .{
-            .{ "load", lLoad },                 .{ "views", lViews },
-            .{ "view", lView },                 .{ "focused", lFocused },
-            .{ "outputs", lOutputs },           .{ "view_move", viewCmd(.move) },
-            .{ "view_place", viewCmd(.place) }, .{ "view_opacity", viewCmd(.opacity) },
-            .{ "view_raise", viewCmd(.raise) }, .{ "view_focus", viewCmd(.focus) },
-            .{ "view_close", viewCmd(.close) }, .{ "view_show", viewCmd(.show) },
-            .{ "spawn", lSpawn },               .{ "quit", lQuit },
-            .{ "reload", lReload },             .{ "log", lLog },
+            .{ "load", lLoad },                   .{ "views", lViews },
+            .{ "view", lView },                   .{ "focused", lFocused },
+            .{ "outputs", lOutputs },             .{ "view_move", viewCmd(.move) },
+            .{ "view_place", viewCmd(.place) },   .{ "view_opacity", viewCmd(.opacity) },
+            .{ "view_raise", viewCmd(.raise) },   .{ "view_focus", viewCmd(.focus) },
+            .{ "view_close", viewCmd(.close) },   .{ "view_show", viewCmd(.show) },
+            .{ "view_border", viewCmd(.border) }, .{ "pointer", lPointer },
+            .{ "pointer_warp", lPointerWarp },    .{ "spawn", lSpawn },
+            .{ "quit", lQuit },                   .{ "reload", lReload },
+            .{ "log", lLog },
         };
 
         const ctx_fns = .{
@@ -595,7 +618,34 @@ pub fn Runtime(comptime H: type) type {
             c.lua_setfield(L, -2, "app_id");
             c.lua_pushboolean(L, @intFromBool(info.focused));
             c.lua_setfield(L, -2, "focused");
+            c.lua_pushboolean(L, @intFromBool(info.visible));
+            c.lua_setfield(L, -2, "visible");
             return 1;
+        }
+
+        /// raywm.pointer() -> { x, y, busy }
+        fn lPointer(L: ?*c.lua_State) callconv(.c) c_int {
+            const p = Api.pointer(get(L).host);
+            c.lua_createtable(L, 0, 3);
+            setInt(L, "x", p.x);
+            setInt(L, "y", p.y);
+            c.lua_pushboolean(L, @intFromBool(p.busy));
+            c.lua_setfield(L, -2, "busy");
+            return 1;
+        }
+
+        /// raywm.pointer_warp(x, y) -> true, or nil + "busy" | "exclusive" | "outside"
+        fn lPointerWarp(L: ?*c.lua_State) callconv(.c) c_int {
+            const x = int(L, 1);
+            const y = int(L, 2);
+            const r = Api.pointerWarp(get(L).host, x, y);
+            if (r == .ok) {
+                c.lua_pushboolean(L, 1);
+                return 1;
+            }
+            c.lua_pushnil(L);
+            _ = c.lua_pushstring(L, @tagName(r));
+            return 2;
         }
 
         fn lFocused(L: ?*c.lua_State) callconv(.c) c_int {
@@ -620,6 +670,7 @@ pub fn Runtime(comptime H: type) type {
                         .place => .{ .place = .{ .x = int(L, 2), .y = int(L, 3), .w = int(L, 4), .h = int(L, 5) } },
                         .opacity => .{ .opacity = @floatCast(c.luaL_checknumber(L, 2)) },
                         .show => .{ .show = c.lua_toboolean(L, 2) != 0 },
+                        .border => .{ .border = border(L) },
                         inline else => |t| t,
                     };
                     if (!Api.viewCmd(get(L).host, vid, cmd)) return stale(L);
@@ -627,6 +678,20 @@ pub fn Runtime(comptime H: type) type {
                     return 1;
                 }
             }.f;
+        }
+
+        /// view_border(id, width, color): width 0..max_border (0 removes the
+        /// border, color may then be omitted), color "#rrggbb" or "#rrggbbaa".
+        fn border(L: ?*c.lua_State) Border {
+            const w = c.luaL_checkinteger(L, 2);
+            if (w < 0 or w > max_border) _ = c.luaL_argerror(L, 2, "width out of range (0..64)");
+            if (w == 0 and c.lua_type(L, 3) <= c.LUA_TNIL) return .{ .width = 0, .color = @splat(0) };
+            const spec = std.mem.span(c.luaL_checklstring(L, 3, null));
+            const color = parseColor(spec) orelse {
+                _ = c.luaL_argerror(L, 3, "color must be \"#rrggbb\" or \"#rrggbbaa\""); // does not return
+                return .{ .width = 0, .color = @splat(0) };
+            };
+            return .{ .width = @intCast(w), .color = color };
         }
 
         fn lSpawn(L: ?*c.lua_State) callconv(.c) c_int {
