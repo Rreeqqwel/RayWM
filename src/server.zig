@@ -13,6 +13,8 @@ const LayerSurface = layer_shell.LayerSurface;
 
 pub const gpa = std.heap.c_allocator;
 const log = std.log.scoped(.server);
+/// `raywm -d`: also log diagnostics meant for debugging, like key bindings.
+pub var verbose = false;
 
 /// Stored in SceneNode.data of trees we own, to identify them on hit tests.
 pub const Tag = enum { view, layer };

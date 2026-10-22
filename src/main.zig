@@ -3,12 +3,13 @@ const wlr = @import("wlroots");
 // Public for tests/core_test.zig.
 pub const srv = @import("server.zig");
 pub const host = @import("host.zig");
+pub const input = @import("input.zig");
 
 const usage =
     \\Usage: raywm [-c config.lua] [-s startup-command] [-d]
     \\  -c  config file (default: $XDG_CONFIG_HOME/raywm/init.lua)
     \\  -s  command run via /bin/sh once the compositor is ready
-    \\  -d  verbose wlroots logging
+    \\  -d  verbose logging (wlroots, and key presses with Super/Ctrl/Alt)
     \\
 ;
 
@@ -33,6 +34,7 @@ pub fn main(init: std.process.Init) !void {
         }
     }
     wlr.log.init(if (debug) .debug else .info, null);
+    srv.verbose = debug;
 
     var server: srv.Server = undefined;
     try server.init();

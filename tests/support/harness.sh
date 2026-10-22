@@ -11,6 +11,7 @@
 #   WIN="VAR=v ..."     environment of the windows that start() opens
 #   PLUGINS="dir ..."   extra plugin directories copied into the config
 #   DRIVER_ENV="VAR=v"  extra environment of the input driver
+#   FLAGS="-d"          extra raywm command-line flags
 failures=0
 scenarios=0
 default_win="RAYWM_TEST_HOLD=1 RAYWM_TEST_CSD_MOVE=1 RAYWM_TEST_KBD=1 RAYWM_TEST_PTR=1 RAYWM_TEST_ROUNDS=1"
@@ -42,11 +43,13 @@ start() {
         cmd="$cmd; $win >'$tmp/$w.log' 2>&1 & echo \$! >'$tmp/$w.pid'; $(wait_for $w.log 'frame done')"
     done
     cmd="$cmd; sleep 0.3; touch '$tmp/ready'"
-    outputs=${OUTPUTS:-1}   # kept for drive(): the session's layout width
+    # Kept for drive(), which runs after the prefix assignments are gone.
+    outputs=${OUTPUTS:-1}
+    driver_env=${DRIVER_ENV:-}
     env -i PATH="$PATH" HOME="$tmp" XDG_RUNTIME_DIR="$tmp" XDG_CONFIG_HOME="$tmp/config" \
         RAYWM_TEST_OUT="$tmp/probe.log" MALLOC_PERTURB_=165 \
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS="$outputs" WLR_RENDERER="${RENDERER:-pixman}" WLR_LIBINPUT_NO_DEVICES=1 \
-        timeout 60 "$bin/raywm" -s "$cmd" >"$tmp/raywm.log" 2>&1 &
+        timeout 60 "$bin/raywm" ${FLAGS:-} -s "$cmd" >"$tmp/raywm.log" 2>&1 &
     pid=$!
     i=0
     while [ ! -e "$tmp/ready" ]; do
@@ -62,9 +65,9 @@ fail() { echo "FAIL [$name] $1"; failures=$((failures + 1)); }
 
 # drive <args...>: run the input driver against the test compositor only.
 drive() {
-    # shellcheck disable=SC2086 # DRIVER_ENV is a list of VAR=value words
+    # shellcheck disable=SC2086 # driver_env is a list of VAR=value words
     env -i PATH="$PATH" XDG_RUNTIME_DIR="$tmp" WAYLAND_DISPLAY="$(cat "$tmp/display")" \
-        RAYWM_TEST_EXTENT="$((1280 * outputs))x720" ${DRIVER_ENV:-} \
+        RAYWM_TEST_EXTENT="$((1280 * outputs))x720" $driver_env \
         "$bin/raywm-test-input" "$@" >>"$tmp/driver.log" 2>&1 || fail "driver: $*"
 }
 # drive_bg <args...>: like drive, in the background (finish with drive_wait),
@@ -72,7 +75,7 @@ drive() {
 drive_bg() {
     # shellcheck disable=SC2086
     env -i PATH="$PATH" XDG_RUNTIME_DIR="$tmp" WAYLAND_DISPLAY="$(cat "$tmp/display")" \
-        RAYWM_TEST_EXTENT="$((1280 * outputs))x720" ${DRIVER_ENV:-} \
+        RAYWM_TEST_EXTENT="$((1280 * outputs))x720" $driver_env \
         "$bin/raywm-test-input" "$@" >>"$tmp/driver.log" 2>&1 &
     driver_pid=$!
     driver_args=$*

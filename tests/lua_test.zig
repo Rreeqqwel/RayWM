@@ -105,11 +105,21 @@ fn hasError(needle: []const u8) bool {
 var warn_count: usize = 0;
 var last_warn_buf: [256]u8 = undefined;
 var last_warn: []const u8 = "";
+var warn_lines: [16][256]u8 = undefined;
+var warn_lens: [16]usize = undefined;
 fn warn(msg: []const u8) void {
-    warn_count += 1;
     const n = @min(msg.len, last_warn_buf.len);
     @memcpy(last_warn_buf[0..n], msg[0..n]);
     last_warn = last_warn_buf[0..n];
+    if (warn_count < warn_lines.len) {
+        @memcpy(warn_lines[warn_count][0..n], msg[0..n]);
+        warn_lens[warn_count] = n;
+    }
+    warn_count += 1;
+}
+fn hasWarning(needle: []const u8) bool {
+    for (0..@min(warn_count, warn_lines.len)) |i| if (std.mem.indexOf(u8, warn_lines[i][0..warn_lens[i]], needle) != null) return true;
+    return false;
 }
 fn takeWarnings() usize {
     defer warn_count = 0;
@@ -248,6 +258,8 @@ test "missing config is not fatal" {
     defer rt.destroy();
     try std.testing.expect(!rt.configured());
     try std.testing.expect(!rt.hasBindings());
+    // Says why plugin keys do nothing.
+    try std.testing.expect(hasWarning("no plugin registered key bindings"));
 }
 
 test "reload requested from init.lua or teardown is ignored, not recursive" {
@@ -346,7 +358,10 @@ test "edge cases: no debug library, coroutines, invalid ids, nesting, duplicates
     try t.expectEqual(1, f.count("teardown:badsetup"));
     try t.expect(hasError("badsetup: tests/lua/plugins/badsetup.lua:6: setup failed"));
 
-    // Same key bound twice: the registration made first wins.
+    // Same key bound twice: the registration made first wins, and the
+    // later ones are reported.
+    try t.expect(hasWarning("plugin edge2: key Super+Return is already bound by plugin edge, whose binding is used"));
+    try t.expect(hasWarning("plugin badsetup: key Super+Return is already bound by plugin edge"));
     try t.expect(rt.key(64, 0xff0d));
     try t.expectEqual(1, f.count("bind:edge"));
     try t.expectEqual(0, f.count("bind:edge2"));

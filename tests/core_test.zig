@@ -1,5 +1,6 @@
 //! Unit tests for deterministic parts of the native core (no compositor
-//! running). Wayland behaviour is covered by tests/{smoke,focus,input}.sh.
+//! running). Wayland behaviour is covered by tests/{smoke,focus,input,
+//! pointer,navigation}.sh.
 const std = @import("std");
 const posix = std.posix;
 const raywm = @import("raywm");
@@ -39,6 +40,56 @@ test "key specs parse to modifiers and level-0 keysyms" {
 
 fn lua_key(mods: u32, sym: u32) @TypeOf(host.parseKey(undefined, "").?) {
     return .{ .mods = mods, .sym = sym };
+}
+
+test "bindings use a Latin keysym when the active layout is not Latin" {
+    const xkb = @import("xkbcommon");
+    const context = xkb.Context.new(.no_flags) orelse return error.XkbContext;
+    defer context.unref();
+    // Evdev keycodes + 8, as xkb numbers them.
+    const key_j = 36 + 8;
+    const key_z = 44 + 8;
+    const key_1 = 2 + 8;
+    const key_enter = 28 + 8;
+    const key_f12 = 88 + 8;
+
+    const us_ru = try keymapOf(context, "us,ru");
+    defer us_ru.unref();
+    try t.expectEqual(@as(?u32, 'j'), raywm.input.bindingSym(us_ru, key_j, 0));
+    // ru active: J is Cyrillic_o there; the us keysym is used.
+    try t.expectEqual(@as(?u32, 'j'), raywm.input.bindingSym(us_ru, key_j, 1));
+    try t.expectEqual(@as(?u32, '1'), raywm.input.bindingSym(us_ru, key_1, 1));
+    try t.expectEqual(@as(?u32, 0xff0d), raywm.input.bindingSym(us_ru, key_enter, 1));
+    try t.expectEqual(@as(?u32, 0xffc9), raywm.input.bindingSym(us_ru, key_f12, 1));
+
+    // Layout order does not matter: ru first, us second.
+    const ru_us = try keymapOf(context, "ru,us");
+    defer ru_us.unref();
+    try t.expectEqual(@as(?u32, 'j'), raywm.input.bindingSym(ru_us, key_j, 0));
+
+    // Only a non-Latin layout: its own keysym (bindable as Cyrillic_o).
+    const ru = try keymapOf(context, "ru");
+    defer ru.unref();
+    try t.expectEqual(@as(?u32, 0x06cf), raywm.input.bindingSym(ru, key_j, 0));
+
+    // Latin layouts keep their own keysyms (German Z/Y swap stays).
+    const de_us = try keymapOf(context, "de,us");
+    defer de_us.unref();
+    try t.expectEqual(@as(?u32, 'y'), raywm.input.bindingSym(de_us, key_z, 0));
+    try t.expectEqual(@as(?u32, 'z'), raywm.input.bindingSym(de_us, key_z, 1));
+
+    try t.expect(raywm.input.nonLatinChar(0x06cf)); // Cyrillic_o
+    try t.expect(raywm.input.nonLatinChar(0x07e9)); // Greek_iota
+    try t.expect(raywm.input.nonLatinChar(0x0100_0444)); // U+0444 as a keysym
+    try t.expect(!raywm.input.nonLatinChar('j'));
+    try t.expect(!raywm.input.nonLatinChar(0xe4)); // adiaeresis (Latin-1)
+    try t.expect(!raywm.input.nonLatinChar(0xff0d)); // Return
+    try t.expect(!raywm.input.nonLatinChar(0xfe51)); // dead_acute
+}
+
+fn keymapOf(context: *@import("xkbcommon").Context, layout: [*:0]const u8) !*@import("xkbcommon").Keymap {
+    const names: @import("xkbcommon").RuleNames = .{ .rules = null, .model = null, .layout = layout, .variant = null, .options = null };
+    return @import("xkbcommon").Keymap.newFromNames(context, &names, .no_flags) orelse error.XkbKeymap;
 }
 
 test "coordinates from Lua are clamped far from i32 overflow" {

@@ -18,6 +18,7 @@ const View = @import("view.zig").View;
 const LayerSurface = @import("layer.zig").LayerSurface;
 const Server = srv.Server;
 const gpa = srv.gpa;
+const log = std.log.scoped(.input);
 
 const BTN_LEFT = 0x110;
 const BTN_RIGHT = 0x111;
@@ -148,10 +149,11 @@ pub const Keyboard = struct {
         // works regardless of what Shift+1 produces in the layout.
         const mods = @as(u32, @bitCast(wlr_kb.getModifiers())) & mod_mask;
         const keymap = wlr_kb.keymap orelse return false;
-        for (keymap.keyGetSymsByLevel(keycode, state.keyGetLayout(keycode), 0)) |sym| {
-            if (handleBinding(kb.server, mods, @intFromEnum(sym))) return true;
-        }
-        return false;
+        const active = state.keyGetLayout(keycode);
+        const sym = bindingSym(keymap, keycode, active);
+        const handled = if (sym) |s| handleBinding(kb.server, mods, s) else false;
+        if (srv.verbose and (handled or mods & ~shift_mask != 0)) traceKey(keymap, mods, keycode, active, sym, handled);
+        return handled;
     }
 
     fn handleDestroy(listener: *wl.Listener(*wlr.InputDevice), _: *wlr.InputDevice) void {
@@ -186,6 +188,55 @@ pub fn heldKeys(server: *Server, wlr_kb: *wlr.Keyboard, buf: *[32]u32) []const u
         }
     }
     return buf[0..n];
+}
+
+const shift_mask: u32 = @bitCast(wlr.Keyboard.ModifierMask{ .shift = true });
+
+/// The keysym a key press is matched against bindings with: its level-0
+/// keysym in the active layout. Bindings are written with Latin key names,
+/// so when that keysym is a non-Latin character (Cyrillic, Greek, ...),
+/// the key's Latin keysym in the first other layout of the keymap that has
+/// one is used instead: with "us,ru", Super+J works while ru is active.
+/// Keys that are not characters (Return, F1, Print) are the same in every
+/// layout and never need this.
+pub fn bindingSym(keymap: *xkb.Keymap, keycode: u32, active: u32) ?u32 {
+    const syms = keymap.keyGetSymsByLevel(keycode, active, 0);
+    if (syms.len == 0) return null;
+    const sym = @intFromEnum(syms[0]);
+    if (!nonLatinChar(sym)) return sym;
+    const layouts = keymap.numLayoutsForKey(keycode);
+    var layout: u32 = 0;
+    while (layout < layouts) : (layout += 1) {
+        if (layout == active) continue;
+        const other = keymap.keyGetSymsByLevel(keycode, layout, 0);
+        if (other.len > 0 and latin1Char(@intFromEnum(other[0]))) return @intFromEnum(other[0]);
+    }
+    return sym;
+}
+
+/// A character keysym outside Latin-1: the legacy Latin-2..Cyrillic..Greek
+/// ranges and Unicode keysyms. Function, keypad and dead keys are excluded.
+pub fn nonLatinChar(sym: u32) bool {
+    return (sym >= 0x100 and sym < 0xfe00) or (sym >= 0x0100_0100 and sym <= 0x0110_ffff);
+}
+
+pub fn latin1Char(sym: u32) bool {
+    return sym >= 0x20 and sym <= 0xff;
+}
+
+/// `raywm -d`: one line per key press with Super, Ctrl or Alt held, or that
+/// ran a binding (never plain typing), to debug key bindings.
+fn traceKey(keymap: *xkb.Keymap, mods: u32, keycode: u32, active: u32, sym: ?u32, handled: bool) void {
+    const m: wlr.Keyboard.ModifierMask = @bitCast(mods);
+    var name: [64]u8 = undefined;
+    const n = if (sym) |s| xkb.Keysym.getName(@enumFromInt(s), &name, name.len) else -1;
+    const sym_name: []const u8 = if (n > 0) name[0..@min(@as(usize, @intCast(n)), name.len - 1)] else "(none)";
+    const layout_name: [*:0]const u8 = keymap.layoutGetName(active) orelse "?";
+    log.info("key: {s}{s}{s}{s}{s} (keycode {d}, layout {d} \"{s}\") -> {s}", .{
+        if (m.logo) "Super+" else "",             if (m.ctrl) "Ctrl+" else "", if (m.alt) "Alt+" else "", if (m.shift) "Shift+" else "",
+        sym_name,                                 keycode - 8,                 active,                    layout_name,
+        if (handled) "binding" else "no binding",
+    });
 }
 
 fn handleBinding(server: *Server, mods: u32, sym: u32) bool {

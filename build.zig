@@ -175,6 +175,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     core_tests_mod.addImport("raywm", core);
+    core_tests_mod.addImport("xkbcommon", xkbcommon);
     for ([_][]const u8{ "wayland-server", "xkbcommon", "pixman-1" }) |lib| core_tests_mod.linkSystemLibrary(lib, .{});
     const core_tests = b.addTest(.{ .root_module = core_tests_mod, .use_llvm = use_llvm, .use_lld = use_llvm });
     test_step.dependOn(&b.addRunArtifact(core_tests).step);

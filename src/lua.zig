@@ -162,6 +162,8 @@ pub fn Runtime(comptime H: type) type {
             } else self.config_ok = self.pcall(null, 0, 0);
             self.in_config = false;
             self.leave();
+            // The most common reason for "my keys do nothing".
+            if (!self.hasBindings()) self.limits.warn("no plugin registered key bindings: only the built-in Super+Return, Super+Shift+E and Super+Shift+R work");
         }
 
         fn initState(L: ?*c.lua_State) callconv(.c) c_int {
@@ -539,7 +541,9 @@ pub fn Runtime(comptime H: type) type {
                 _ = c.lua_pushfstring(L, "plugin '%s' failed in setup", name.ptr);
                 return 2;
             }
-            log.info("loaded plugin {s}", .{name});
+            var binds: usize = 0;
+            for (self.regs.items) |r| binds += @intFromBool(r.plugin == index and self.live(r) and r.kind == .bind);
+            log.info("loaded plugin {s} ({d} key bindings)", .{ name, binds });
             c.lua_pushboolean(L, 1);
             return 1;
         }
@@ -686,8 +690,18 @@ pub fn Runtime(comptime H: type) type {
         }
 
         fn ctxBind(L: ?*c.lua_State) callconv(.c) c_int {
+            const self = get(L);
             const spec = c.luaL_checklstring(L, 1, null);
-            const k = Api.parseKey(get(L).host, spec) orelse return c.luaL_argerror(L, 1, "bad key, e.g. \"Super+Shift+Return\"");
+            const k = Api.parseKey(self.host, spec) orelse return c.luaL_argerror(L, 1, "bad key, e.g. \"Super+Shift+Return\"");
+            // Allowed (the first registration wins, see key()), but almost
+            // always a configuration mistake.
+            for (self.regs.items) |r| if (self.live(r) and r.kind == .bind and std.meta.eql(r.kind.bind, k)) {
+                var buf: [256]u8 = undefined;
+                const me = self.plugins.items[owner(L)].name;
+                const msg = std.fmt.bufPrint(&buf, "plugin {s}: key {s} is already bound by plugin {s}, whose binding is used", .{ me, std.mem.span(spec), self.plugins.items[r.plugin].name }) catch "a key is bound twice";
+                self.limits.warn(msg);
+                break;
+            };
             return register(L, 2, .{ .bind = k });
         }
 
