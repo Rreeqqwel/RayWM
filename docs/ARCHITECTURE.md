@@ -165,12 +165,12 @@ processes:
 | `src/server.zig` | 425 | `Server`, `Output`, focus, spawn, layout changes, screencopy/xdg-output globals |
 | `src/view.zig` | 311 | `View` (xdg toplevel), `Popup` |
 | `src/input.zig` | 367 | keyboards, bindings, pointer, grabs |
-| `src/layer.zig` | 200 | layer-shell surfaces, arrangement, keyboard rule |
+| `src/layer.zig` | 203 | layer-shell surfaces, arrangement, keyboard rule |
 | `src/host.zig` | 126 | Lua-facing API implementation |
 | `src/lua.zig` | 740 | Lua runtime |
 
-Total: 2246 physical lines (`wc -l src/*.zig`), comments included; v0.1.0
-had 2165 (v0.1.1: +103 / −22). Tests, documentation, CI and scripts are
+Total: 2249 physical lines (`wc -l src/*.zig`), comments included; v0.1.0
+had 2165 (v0.1.1: +106 / −22). Tests, documentation, CI and scripts are
 not counted.
 
 ## Extension points and their limits

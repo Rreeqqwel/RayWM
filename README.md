@@ -264,7 +264,7 @@ container (`.github/workflows/ci.yml`).
 ## Project layout
 
 ```
-src/            Zig core (2246 lines in v0.1.1)
+src/            Zig core (2249 lines in v0.1.1)
   main.zig        startup, signals, config path
   server.zig      backend, scene, outputs, focus, spawn
   view.zig        xdg-shell toplevels/popups, configure/ack geometry

@@ -104,12 +104,15 @@ pub const LayerSurface = struct {
     }
 
     /// Gives up the keyboard: to the remaining exclusive surface in the
-    /// highest layer (the newest one on a tie), else to the focused window.
+    /// highest layer (the last one found on a tie), else to the focused
+    /// window. Surfaces of an output being removed (already out of the
+    /// layout) are skipped: they are about to be closed.
     fn releaseKeyboard(ls: *LayerSurface) void {
         const server = ls.server;
         var best: ?*LayerSurface = null;
         var outs = server.outputs.iterator(.forward);
         while (outs.next()) |o| {
+            if (!o.inLayout()) continue;
             var it = o.layers.iterator(.forward);
             while (it.next()) |c| {
                 if (c == ls or !c.claimsKeyboard() or !c.exclusive()) continue;
