@@ -96,5 +96,14 @@ pub fn build(b: *std.Build) void {
     const unit = b.addTest(.{ .root_module = unit_mod, .use_llvm = use_llvm, .use_lld = use_llvm });
     const unit_run = b.addRunArtifact(unit);
     unit_run.setCwd(b.path(".")); // fixtures are referenced as tests/lua/...
-    b.step("test", "Run Lua host unit tests").dependOn(&unit_run.step);
+    const test_step = b.step("test", "Run unit tests (Lua host and dwindle plugin)");
+    test_step.dependOn(&unit_run.step);
+
+    // The dwindle plugin is plain Lua, tested against a mock of the API.
+    const dwindle = b.addSystemCommand(&.{ "lua5.4", "tests/dwindle_test.lua" });
+    dwindle.setCwd(b.path("."));
+    dwindle.setEnvironmentVariable("XDG_RUNTIME_DIR", b.cache_root.path orelse ".");
+    dwindle.setEnvironmentVariable("WAYLAND_DISPLAY", "raywm-dwindle-test");
+    dwindle.has_side_effects = true;
+    test_step.dependOn(&dwindle.step);
 }

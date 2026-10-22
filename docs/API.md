@@ -8,8 +8,8 @@ key bindings, window rules) lives in plugins.
 1. On start (and on reload) RayWM runs `init.lua`, by default
    `$XDG_CONFIG_HOME/raywm/init.lua` (or `~/.config/raywm/init.lua`, or
    the path given with `-c`).
-2. `init.lua` loads plugins by name: `raywm.load("tiling")` runs
-   `plugins/tiling.lua` next to `init.lua`. Names use `[A-Za-z0-9_-]`.
+2. `init.lua` loads plugins by name: `raywm.load("dwindle")` runs
+   `plugins/dwindle.lua` next to `init.lua`. Names use `[A-Za-z0-9_-]`.
    Each name can be loaded once. `raywm.load` is only allowed while
    `init.lua` runs.
 3. A plugin file must return a table:
