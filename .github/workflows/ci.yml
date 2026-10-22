@@ -1,0 +1,151 @@
+name: CI
+
+on:
+  push:
+    branches: [feature/core]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ZIG_VERSION: 0.16.0
+  # sha256 of zig-x86_64-linux-0.16.0.tar.xz from https://ziglang.org/download/index.json
+  ZIG_SHA256: 70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00
+
+jobs:
+  test:
+    name: build + tests (pixman)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Ubuntu does not ship wlroots 0.20; Arch Linux packages it as wlroots0.20.
+    container: archlinux:base-devel
+    steps:
+      - name: System packages
+        run: |
+          pacman -Syu --noconfirm --needed git wlroots0.20 wayland wayland-protocols \
+            libxkbcommon pixman lua54 pkgconf curl xz file binutils
+          pacman -Q wlroots0.20 wayland lua54 libxkbcommon pixman | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@v4
+
+      - name: Zig ${{ env.ZIG_VERSION }} (checksum-verified)
+        run: |
+          curl -sSfL -o /tmp/zig.tar.xz "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
+          echo "$ZIG_SHA256  /tmp/zig.tar.xz" | sha256sum -c -
+          mkdir -p /opt/zig && tar -xf /tmp/zig.tar.xz -C /opt/zig --strip-components=1
+          echo /opt/zig >> "$GITHUB_PATH"
+
+      - name: Format and AST check
+        run: |
+          zig fmt --check build.zig build.zig.zon src tests
+          for f in src/*.zig tests/*.zig tests/support/*.zig; do zig ast-check "$f"; done
+
+      - name: Lua syntax
+        run: |
+          find config tests -name '*.lua' -print0 | xargs -0 -n1 luac5.4 -p
+
+      - name: Build (Debug)
+        run: zig build
+
+      - name: Build test variant (-Dtest-input)
+        run: zig build -Dtest-input -p zig-out/test-input
+
+      - name: Unit tests (core, Lua host, dwindle)
+        run: zig build test --summary all
+
+      - name: Headless smoke (pixman)
+        run: tests/smoke.sh
+
+      - name: Focus tests (pixman)
+        run: tests/focus.sh
+
+      - name: Input interaction tests (pixman, virtual input)
+        run: tests/input.sh
+
+      - name: Stress tests (pixman)
+        run: tests/stress.sh
+
+      - name: ReleaseSafe build and artifact checks
+        run: |
+          zig build -Doptimize=ReleaseSafe -p zig-out/release
+          file zig-out/release/bin/raywm | tee -a "$GITHUB_STEP_SUMMARY"
+          ldd zig-out/release/bin/raywm
+          ! ldd zig-out/release/bin/raywm | grep -q "not found"
+          ! strings zig-out/release/bin/raywm | grep -qi virtual_pointer
+          zig-out/release/bin/raywm -h
+          tests/smoke.sh zig-out/release/bin
+
+  gles2:
+    name: GLES2 renderer
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: archlinux:base-devel
+    steps:
+      - name: Render node available?
+        id: drm
+        run: |
+          if ls /dev/dri/renderD* >/dev/null 2>&1; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=GLES2 tests NOT RUN::No DRM render node on this runner (infrastructure limitation). GLES2 was verified locally only."
+            echo "### GLES2: NOT RUN — no DRM render node on this runner (infrastructure limitation, not a pass)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: System packages
+        if: steps.drm.outputs.available == 'true'
+        run: pacman -Syu --noconfirm --needed git wlroots0.20 wayland wayland-protocols libxkbcommon pixman lua54 pkgconf curl xz mesa
+
+      - uses: actions/checkout@v4
+        if: steps.drm.outputs.available == 'true'
+
+      - name: Zig
+        if: steps.drm.outputs.available == 'true'
+        run: |
+          curl -sSfL -o /tmp/zig.tar.xz "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
+          echo "$ZIG_SHA256  /tmp/zig.tar.xz" | sha256sum -c -
+          mkdir -p /opt/zig && tar -xf /tmp/zig.tar.xz -C /opt/zig --strip-components=1
+          echo /opt/zig >> "$GITHUB_PATH"
+
+      - name: Headless tests (gles2)
+        if: steps.drm.outputs.available == 'true'
+        env:
+          RENDERER: gles2
+        run: |
+          zig build && zig build -Dtest-input -p zig-out/test-input
+          tests/smoke.sh && tests/focus.sh && tests/input.sh
+
+  package:
+    name: release package
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: archlinux:base-devel
+    steps:
+      - name: System packages
+        run: pacman -Syu --noconfirm --needed git wlroots0.20 wayland wayland-protocols libxkbcommon pixman lua54 pkgconf curl xz file binutils
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Zig
+        run: |
+          curl -sSfL -o /tmp/zig.tar.xz "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
+          echo "$ZIG_SHA256  /tmp/zig.tar.xz" | sha256sum -c -
+          mkdir -p /opt/zig && tar -xf /tmp/zig.tar.xz -C /opt/zig --strip-components=1
+          echo /opt/zig >> "$GITHUB_PATH"
+      - name: Package
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          scripts/package.sh "$GITHUB_REF_NAME"
+          tar -tzf dist/*.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: raywm-${{ github.ref_name }}-linux-x86_64
+          path: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
