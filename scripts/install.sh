@@ -49,6 +49,7 @@ echo "install: installed $target"
 if [ -e "$config_dir" ]; then
     echo "install: $config_dir exists and was left untouched."
     echo "         The example config is in $here/config (compare with: diff -ru $here/config $config_dir)"
+    echo "         Upgrading? CHANGELOG.md (\"Upgrading from ...\") lists the plugins to copy for new features."
 else
     mkdir -p "$config_dir"
     cp -r "$here/config/." "$config_dir/"
