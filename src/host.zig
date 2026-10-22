@@ -55,15 +55,17 @@ pub fn viewCmd(server: *Server, id: u32, cmd: lua.ViewCmd) bool {
 pub fn outputs(server: *Server, buf: []u32) usize {
     var n: usize = 0;
     var it = server.outputs.iterator(.forward);
-    while (it.next()) |o| : (n += 1) {
+    while (it.next()) |o| if (o.inLayout()) {
         if (n == buf.len) break;
         buf[n] = o.id;
-    }
+        n += 1;
+    };
     return n;
 }
 
 pub fn output(server: *Server, id: u32) ?lua.OutputInfo {
     const o = server.outputById(id) orelse return null;
+    if (!o.inLayout()) return null;
     const b = o.box();
     const u = o.usable;
     return .{

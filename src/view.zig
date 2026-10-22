@@ -10,6 +10,7 @@ const wlr = @import("wlroots");
 const srv = @import("server.zig");
 const Server = srv.Server;
 const gpa = srv.gpa;
+const LayerSurface = @import("layer.zig").LayerSurface;
 
 pub const View = struct {
     tag: srv.Tag = .view,
@@ -150,7 +151,7 @@ pub const View = struct {
         server.views.prepend(view);
         server.emit(.view_map, view.id);
         // A plugin may have focused something else in its view_map handler.
-        if (server.focused == null and view.mapped) server.focus(view);
+        if (server.focused == null and view.mapped and view.tree.node.enabled) server.focus(view);
         @import("input.zig").refocusPointer(server);
     }
 
@@ -246,14 +247,18 @@ pub const Popup = struct {
     /// in the root toplevel's surface coordinates.
     fn unconstrain(popup: *Popup) void {
         const tree: *wlr.SceneTree = @ptrCast(@alignCast(popup.xdg_popup.base.data orelse return));
-        const view = View.fromNode(&tree.node) orelse return;
-        const server = view.server;
-        const g = view.geometry();
-        const out = server.output_layout.outputAt(@floatFromInt(g.x + @divTrunc(g.width, 2)), @floatFromInt(g.y + @divTrunc(g.height, 2))) orelse return;
         var box: wlr.Box = undefined;
-        server.output_layout.getBox(out, &box);
-        box.x -= view.tree.node.x;
-        box.y -= view.tree.node.y;
+        const origin: *wlr.SceneNode = if (View.fromNode(&tree.node)) |view| blk: {
+            const g = view.geometry();
+            const out = view.server.outputAt(g.x + @divTrunc(g.width, 2), g.y + @divTrunc(g.height, 2)) orelse return;
+            box = out.box();
+            break :blk &view.tree.node;
+        } else if (LayerSurface.fromNode(&tree.node)) |ls| blk: {
+            box = (ls.output orelse return).box();
+            break :blk &ls.popups.node;
+        } else return;
+        box.x -= origin.x;
+        box.y -= origin.y;
         popup.xdg_popup.unconstrainFromBox(&box);
     }
 

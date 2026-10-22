@@ -18,6 +18,8 @@ pub const LayerSurface = struct {
     output: ?*Output,
     wlr_layer: *wlr.LayerSurfaceV1,
     scene: *wlr.SceneLayerSurfaceV1,
+    /// Above all layers, kept at the surface's position by arrange().
+    popups: *wlr.SceneTree,
     /// In output.layers.
     link: wl.list.Link = undefined,
 
@@ -40,8 +42,14 @@ pub const LayerSurface = struct {
             gpa.destroy(ls);
             return wlr_layer.destroy();
         };
-        ls.* = .{ .server = server, .output = output, .wlr_layer = wlr_layer, .scene = scene };
+        const popups = server.layer(.popups).createSceneTree() catch {
+            scene.tree.node.destroy();
+            gpa.destroy(ls);
+            return wlr_layer.destroy();
+        };
+        ls.* = .{ .server = server, .output = output, .wlr_layer = wlr_layer, .scene = scene, .popups = popups };
         scene.tree.node.data = &ls.tag;
+        popups.node.data = &ls.tag;
         wlr_layer.data = ls;
         output.layers.append(ls);
 
@@ -104,6 +112,7 @@ pub const LayerSurface = struct {
         const ls: *LayerSurface = @fieldParentPtr("destroy", listener);
         if (ls.server.layer_focus == ls) ls.server.focusLayer(null);
         inline for (.{ "commit", "map", "unmap", "destroy", "new_popup" }) |name| @field(ls, name).link.remove();
+        ls.popups.node.destroy();
         // The scene tree is destroyed by wlroots together with the surface.
         if (ls.output) |o| {
             ls.link.remove();
@@ -114,7 +123,7 @@ pub const LayerSurface = struct {
 
     fn handleNewPopup(listener: *wl.Listener(*wlr.XdgPopup), xdg_popup: *wlr.XdgPopup) void {
         const ls: *LayerSurface = @fieldParentPtr("new_popup", listener);
-        Popup.create(xdg_popup, ls.scene.tree);
+        Popup.create(xdg_popup, ls.popups);
     }
 };
 
@@ -131,6 +140,7 @@ pub fn arrange(output: *Output) void {
                 if (!ls.wlr_layer.initialized or state.layer != layer) continue;
                 if ((state.exclusive_zone > 0) != exclusive_pass) continue;
                 ls.scene.configure(&full, &usable);
+                ls.popups.node.setPosition(ls.scene.tree.node.x, ls.scene.tree.node.y);
             }
         }
     }

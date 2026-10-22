@@ -17,8 +17,9 @@ const log = std.log.scoped(.server);
 /// Stored in SceneNode.data of trees we own, to identify them on hit tests.
 pub const Tag = enum { view, layer };
 
-/// Scene layers, bottom to top; all but `views` hold layer-shell surfaces.
-pub const Layer = enum { background, bottom, views, top, overlay };
+/// Scene layers, bottom to top. `popups` holds popups of layer surfaces,
+/// so a dock's menu is never hidden behind windows.
+pub const Layer = enum { background, bottom, views, top, overlay, popups };
 
 pub const Server = struct {
     /// Host functions for the Lua runtime.
@@ -194,7 +195,14 @@ pub const Server = struct {
 
     /// Moves keyboard focus to `view` (must be mapped) or clears it.
     pub fn focus(server: *Server, view: ?*View) void {
-        if (view != null and view == server.focused) return;
+        if (view != null and view == server.focused) {
+            // Clicking the focused window takes the keyboard back from an
+            // on-demand layer surface (but never from an exclusive one).
+            const ls = server.layer_focus orelse return;
+            if (ls.wlr_layer.current.keyboard_interactive == .exclusive) return;
+            server.layer_focus = null;
+            return server.keyboardEnter(view.?.xdg.base.surface);
+        }
         if (server.focused) |old| _ = old.xdg.setActivated(false);
         server.focused = view;
         const v = view orelse {
@@ -235,8 +243,11 @@ pub const Server = struct {
 
     /// Box of the output under the cursor, falling back to the first output.
     pub fn activeOutputBox(server: *Server) ?wlr.Box {
-        const out = server.output_layout.outputAt(server.cursor.x, server.cursor.y) orelse
-            (if (server.outputs.first()) |o| o.wlr_output else return null);
+        const out = server.output_layout.outputAt(server.cursor.x, server.cursor.y) orelse blk: {
+            var it = server.outputs.iterator(.forward);
+            while (it.next()) |o| if (o.inLayout()) break :blk o.wlr_output;
+            return null;
+        };
         var box: wlr.Box = undefined;
         server.output_layout.getBox(out, &box);
         return box;
@@ -265,7 +276,9 @@ pub const Server = struct {
     fn layoutChange(listener: *wl.Listener(*wlr.OutputLayout), _: *wlr.OutputLayout) void {
         const server: *Server = @fieldParentPtr("layout_change", listener);
         var outs = server.outputs.iterator(.forward);
-        while (outs.next()) |o| o.arrangeLayers();
+        // A dying output is still listed here: wlroots removes it from the
+        // layout (firing this event) before our destroy handler runs.
+        while (outs.next()) |o| if (o.inLayout()) o.arrangeLayers();
         if (server.activeOutputBox()) |box| {
             var it = server.views.iterator(.forward);
             while (it.next()) |v| {
@@ -317,6 +330,10 @@ pub const Output = struct {
         wlr_output.events.request_state.add(&output.request_state);
         wlr_output.events.destroy.add(&output.destroy);
         server.emit(.output_add, output.id);
+    }
+
+    pub fn inLayout(output: *Output) bool {
+        return output.server.output_layout.get(output.wlr_output) != null;
     }
 
     pub fn arrangeLayers(output: *Output) void {
