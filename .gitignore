@@ -1,0 +1,7 @@
+
+/CLAUDE/RayWM-Claude-Setup-v1/
+
+# Zig build artifacts
+/zig-out/
+/.zig-cache/
+/zig-pkg/
