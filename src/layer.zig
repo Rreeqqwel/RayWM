@@ -84,6 +84,41 @@ pub const LayerSurface = struct {
         return ls.wlr_layer.current.keyboard_interactive != .none and ls.wlr_layer.surface.mapped;
     }
 
+    /// Top and overlay surfaces take the keyboard when they map or ask for it.
+    fn claimsKeyboard(ls: *LayerSurface) bool {
+        const layer = ls.wlr_layer.current.layer;
+        return ls.wantsKeyboard() and (layer == .top or layer == .overlay);
+    }
+
+    fn exclusive(ls: *LayerSurface) bool {
+        return ls.wlr_layer.current.keyboard_interactive == .exclusive;
+    }
+
+    /// An exclusive holder keeps the keyboard against on-demand surfaces and
+    /// against exclusive ones in a lower layer; a newer exclusive surface in
+    /// the same or a higher layer takes it.
+    fn mayTakeKeyboard(ls: *LayerSurface) bool {
+        const cur = ls.server.layer_focus orelse return true;
+        if (cur == ls or !cur.exclusive()) return true;
+        return ls.exclusive() and @intFromEnum(ls.wlr_layer.current.layer) >= @intFromEnum(cur.wlr_layer.current.layer);
+    }
+
+    /// Gives up the keyboard: to the remaining exclusive surface in the
+    /// highest layer (the newest one on a tie), else to the focused window.
+    fn releaseKeyboard(ls: *LayerSurface) void {
+        const server = ls.server;
+        var best: ?*LayerSurface = null;
+        var outs = server.outputs.iterator(.forward);
+        while (outs.next()) |o| {
+            var it = o.layers.iterator(.forward);
+            while (it.next()) |c| {
+                if (c == ls or !c.claimsKeyboard() or !c.exclusive()) continue;
+                if (best == null or @intFromEnum(c.wlr_layer.current.layer) >= @intFromEnum(best.?.wlr_layer.current.layer)) best = c;
+            }
+        }
+        server.focusLayer(best);
+    }
+
     fn handleCommit(listener: *wl.Listener(*wlr.Surface), _: *wlr.Surface) void {
         const ls: *LayerSurface = @fieldParentPtr("commit", listener);
         const output = ls.output orelse return;
@@ -95,29 +130,27 @@ pub const LayerSurface = struct {
         if ((ls.wlr_layer.initial_commit or committed != 0) and output.inLayout()) output.arrangeLayers();
         // Keyboard interactivity may change while mapped (e.g. a launcher).
         if (ls.wlr_layer.current.committed.keyboard_interactivity and ls.wlr_layer.surface.mapped) {
-            const layer = ls.wlr_layer.current.layer;
-            if (ls.wantsKeyboard() and (layer == .top or layer == .overlay)) {
-                if (ls.server.layer_focus != ls) ls.server.focusLayer(ls);
-            } else if (ls.server.layer_focus == ls) ls.server.focusLayer(null);
+            if (ls.claimsKeyboard()) {
+                if (ls.server.layer_focus != ls and ls.mayTakeKeyboard()) ls.server.focusLayer(ls);
+            } else if (ls.server.layer_focus == ls) ls.releaseKeyboard();
         }
     }
 
     fn handleMap(listener: *wl.Listener(void)) void {
         const ls: *LayerSurface = @fieldParentPtr("map", listener);
         if (ls.output) |o| o.arrangeLayers();
-        const layer = ls.wlr_layer.current.layer;
-        if (ls.wantsKeyboard() and (layer == .top or layer == .overlay)) ls.server.focusLayer(ls);
+        if (ls.claimsKeyboard() and ls.mayTakeKeyboard()) ls.server.focusLayer(ls);
     }
 
     fn handleUnmap(listener: *wl.Listener(void)) void {
         const ls: *LayerSurface = @fieldParentPtr("unmap", listener);
-        if (ls.server.layer_focus == ls) ls.server.focusLayer(null);
+        if (ls.server.layer_focus == ls) ls.releaseKeyboard();
         if (ls.output) |o| o.arrangeLayers();
     }
 
     fn handleDestroy(listener: *wl.Listener(*wlr.LayerSurfaceV1), _: *wlr.LayerSurfaceV1) void {
         const ls: *LayerSurface = @fieldParentPtr("destroy", listener);
-        if (ls.server.layer_focus == ls) ls.server.focusLayer(null);
+        if (ls.server.layer_focus == ls) ls.releaseKeyboard();
         inline for (.{ "commit", "map", "unmap", "destroy", "new_popup" }) |name| @field(ls, name).link.remove();
         ls.popups.node.destroy();
         // The scene tree is destroyed by wlroots together with the surface.

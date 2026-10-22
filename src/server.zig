@@ -301,8 +301,10 @@ pub const Server = struct {
     fn newPopup(_: *wl.Listener(*wlr.XdgPopup), xdg_popup: *wlr.XdgPopup) void {
         // Popups of layer surfaces have no xdg parent yet; layer.zig handles them.
         const parent = wlr.XdgSurface.tryFromWlrSurface(xdg_popup.parent orelse return) orelse return;
-        const parent_tree: *wlr.SceneTree = @ptrCast(@alignCast(parent.data orelse return));
-        @import("view.zig").Popup.create(xdg_popup, parent_tree);
+        // No tree: the parent's role is gone (the client has not seen its
+        // popup_done yet). The popup is never configured or shown.
+        const Popup = @import("view.zig").Popup;
+        Popup.create(xdg_popup, Popup.treeOf(parent) orelse return);
     }
 };
 

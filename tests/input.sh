@@ -26,7 +26,7 @@ start() {
     cp "$root/config/plugins/"*.lua "$root/tests/input/plugins/"*.lua "$tmp/config/raywm/plugins/"
     cp "$1" "$tmp/config/raywm/init.lua"
     client="'$bin/raywm-test-client'"
-    win="RAYWM_TEST_HOLD=1 RAYWM_TEST_CSD_MOVE=1 RAYWM_TEST_KBD=1 RAYWM_TEST_ROUNDS=1 $client"
+    win="RAYWM_TEST_HOLD=1 RAYWM_TEST_CSD_MOVE=1 RAYWM_TEST_KBD=1 RAYWM_TEST_PTR=1 RAYWM_TEST_ROUNDS=1 $client"
     wait_for() { echo "until grep -q '$2' '$tmp/$1'; do sleep 0.05; done"; }
     cmd="echo \$WAYLAND_DISPLAY >'$tmp/display'"
     case "${3:-}" in
@@ -37,7 +37,7 @@ start() {
     [ "$2" -ge 2 ] && cmd="$cmd; $win >'$tmp/b.log' 2>&1 & echo \$! >'$tmp/b.pid'; $(wait_for b.log 'frame done')"
     cmd="$cmd; sleep 0.3; touch '$tmp/ready'"
     env -i PATH="$PATH" HOME="$tmp" XDG_RUNTIME_DIR="$tmp" XDG_CONFIG_HOME="$tmp/config" \
-        RAYWM_TEST_OUT="$tmp/probe.log" \
+        RAYWM_TEST_OUT="$tmp/probe.log" MALLOC_PERTURB_=165 \
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER="${RENDERER:-pixman}" WLR_LIBINPUT_NO_DEVICES=1 \
         timeout 60 "$bin/raywm" -s "$cmd" >"$tmp/raywm.log" 2>&1 &
     pid=$!
@@ -60,13 +60,35 @@ drive() {
 }
 dump() { drive key super down key f12 down key f12 up key super up sleep 150; }
 
+# launch <name> <VAR=value...>: one more test client (log: <name>.log).
+launch() {
+    n=$1; shift
+    env -i PATH="$PATH" XDG_RUNTIME_DIR="$tmp" WAYLAND_DISPLAY="$(cat "$tmp/display")" "$@" \
+        "$bin/raywm-test-client" >"$tmp/$n.log" 2>&1 &
+    echo $! >"$tmp/$n.pid"
+}
+# wait_log <name> <text>: waits up to 5 s for a line in <name>.log.
+wait_log() {
+    w=0
+    until grep -q "$2" "$tmp/$1.log" 2>/dev/null; do
+        w=$((w + 1)); [ $w -gt 100 ] && { fail "$1.log: '$2' never appeared"; return 0; }
+        sleep 0.05
+    done
+}
+# presses <name> <n>: the client saw exactly n presses of J (keycode 36).
+presses() {
+    c=$(grep -c "kbd key 36 pressed" "$tmp/$1.log" || true)
+    [ "$c" -eq "$2" ] || fail "$1 got $c J presses, expected $2"
+}
+press_j() { drive sleep 300 key j down key j up sleep 150; }
+
 stop() {
     kill -TERM $pid 2>/dev/null || true
     status=0; wait $pid || status=$?
     [ "$status" -eq 0 ] || fail "raywm exited with $status"
     if grep -E "panic|\[ERROR\]|error\(" "$tmp/raywm.log" >/dev/null; then fail "errors in compositor log"; fi
     if [ "$failures" -ne "$before" ]; then
-        for f in raywm probe panel a b driver; do [ -f "$tmp/$f.log" ] && { echo "--- $f.log"; tail -25 "$tmp/$f.log"; }; done
+        for f in "$tmp"/*.log; do echo "--- ${f##*/}"; tail -25 "$f"; done
     else echo "ok   [$name]"; fi
     [ -n "${KEEP:-}" ] && echo "kept $tmp" || rm -rf "$tmp"
 }
@@ -207,8 +229,83 @@ s8() {
     stop
 }
 
+# ---- a pointer device disappears in the middle of a grab ------------------
+s9() {
+    name="pointer removed during a grab ends the grab"
+    start "$root/tests/input/floating.lua" 1
+    # Super+drag; the driver exits with the button (and Super) still held,
+    # which destroys its virtual pointer: the grab must end with it.
+    drive move 600 350 key super down down left move 650 400
+    drive move 800 500 sleep 100
+    dump                                                                      # 1
+    expect 1 "view 2 590,335 200x150 focused=true"
+    # Client-side (CSD) move: the client saw the press, so it and the seat
+    # must see a release, or the next press never reaches the client.
+    drive move 640 380 down left sleep 200 move 660 400
+    drive move 900 600 sleep 100
+    dump                                                                      # 2
+    expect 2 "view 2 610,355 200x150 focused=true"
+    drive move 700 420 down left up left sleep 200
+    [ "$(grep -c 'csd move requested' "$tmp/a.log")" -eq 2 ] || fail "a press after the removed pointer did not reach the client"
+    # Super+right resize from the bottom-right quadrant, pointer removed.
+    drive move 780 480 key super down down right move 800 500 sleep 300
+    drive move 1000 650 sleep 300
+    dump                                                                      # 3
+    expect 3 "view 2 610,355 220x170 focused=true"
+    stop
+}
+
+# ---- a new layer surface must not take the keyboard from an exclusive one -
+s10() {
+    name="exclusive layer surface keeps the keyboard"
+    start "$root/tests/input/floating.lua" 1 panel-kbd   # panel: top, exclusive
+    launch od RAYWM_TEST_LAYER=1 RAYWM_TEST_LAYER_LEVEL=overlay RAYWM_TEST_LAYER_KBD=on_demand RAYWM_TEST_KBD=1
+    wait_log od "layer frame done"
+    press_j
+    presses panel 1; presses od 0; presses a 0
+    # A higher (overlay) exclusive surface does take it, and gives it back
+    # to the panel, not to the window, when it goes away.
+    launch ex RAYWM_TEST_LAYER=1 RAYWM_TEST_LAYER_LEVEL=overlay RAYWM_TEST_LAYER_KBD=1 RAYWM_TEST_KBD=1
+    wait_log ex "layer frame done"
+    press_j
+    presses ex 1; presses panel 1
+    kill "$(cat "$tmp/ex.pid")"; sleep 0.3
+    press_j
+    presses panel 2; presses od 0; presses a 0
+    # No exclusive surface left: the window gets the keyboard back.
+    kill "$(cat "$tmp/panel.pid")"; sleep 0.3
+    press_j
+    presses a 1; presses od 0
+    stop
+}
+
+# ---- a toplevel is destroyed while its popup is open ----------------------
+s11() {
+    name="toplevel destroyed with an open popup"
+    start "$root/tests/input/floating.lua" 1
+    # B covers A (540,285 200x150); its popup is at 730,425 60x60, partly
+    # outside both windows. When the pointer enters the popup, B destroys
+    # its toplevel and opens a nested popup on the dying popup (see
+    # PopupTest in tests/client.zig).
+    launch b RAYWM_TEST_HOLD=1 RAYWM_TEST_POPUP=1 RAYWM_TEST_PTR=1 RAYWM_TEST_ROUNDS=1
+    wait_log b "popup mapped"
+    drive move 770 470 sleep 300
+    wait_log b "popup race sent"
+    wait_log b "popup done"
+    # Nothing is under the pointer now: a click must reach no client, in
+    # particular not the closed window's popup.
+    drive down left up left sleep 200
+    if grep -q "ptr button" "$tmp/b.log"; then fail "the destroyed window's popup got the click"; fi
+    if grep -q "ptr button" "$tmp/a.log"; then fail "A got a click outside its area"; fi
+    drive move 600 350 down left up left sleep 200
+    grep -q "ptr button 272 pressed window" "$tmp/a.log" || fail "a click on A did not reach it"
+    dump                                                                      # 1
+    expect 1 "view 2 540,285 200x150 focused=true"
+    stop
+}
+
 # Runs every scenario, or only those whose name contains $ONLY.
-for s in s1 s2 s3 s4 s5 s6 s7 s8; do
+for s in s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11; do
     name=$(sed -n "s/^    name=\"\(.*\)\"$/\1/p" "$0" | sed -n "${s#s}p")
     case "$name" in *"${ONLY:-}"*) $s ;; esac
 done

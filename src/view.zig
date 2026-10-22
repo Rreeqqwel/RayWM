@@ -167,6 +167,11 @@ pub const View = struct {
         view.pending = null;
         view.anchor = null;
         view.link.remove();
+        // wlroots destroys the popups only after this handler; take them out
+        // of the scene now, so the pointer is not refocused onto a popup of
+        // a window that is going away (a later click would go to it).
+        var popups = view.xdg.base.popups.iterator(.forward);
+        while (popups.next()) |p| if (Popup.treeOf(p.base)) |t| t.node.setEnabled(false);
         if (server.grab.view == view) @import("input.zig").endGrab(server);
         if (server.focused == view) {
             server.focused = null;
@@ -223,8 +228,12 @@ pub const View = struct {
 
 pub const Popup = struct {
     xdg_popup: *wlr.XdgPopup,
+    /// Child of the parent's tree. Null once wlroots destroyed it together
+    /// with an ancestor (e.g. a toplevel destroyed while this popup is open).
+    tree: ?*wlr.SceneTree,
     commit: wl.Listener(*wlr.Surface) = .init(handleCommit),
     destroy: wl.Listener(void) = .init(handleDestroy),
+    tree_destroy: wl.Listener(void) = .init(handleTreeDestroy),
 
     /// `parent_tree` is the scene tree of the parent xdg surface; the popup
     /// tree becomes its child so it moves (and fades) with the window.
@@ -235,10 +244,18 @@ pub const Popup = struct {
             tree.node.destroy();
             return std.log.err("out of memory", .{});
         };
-        popup.* = .{ .xdg_popup = xdg_popup };
+        popup.* = .{ .xdg_popup = xdg_popup, .tree = tree };
+        // base.data is what nested popups use as their parent tree, so it
+        // must never point to a freed tree.
         xdg_popup.base.data = tree;
+        tree.node.events.destroy.add(&popup.tree_destroy);
         xdg_popup.base.surface.events.commit.add(&popup.commit);
         xdg_popup.events.destroy.add(&popup.destroy);
+    }
+
+    /// Scene tree of an xdg surface (toplevel or popup), if it still has one.
+    pub fn treeOf(base: *wlr.XdgSurface) ?*wlr.SceneTree {
+        return @ptrCast(@alignCast(base.data orelse return null));
     }
 
     fn handleCommit(listener: *wl.Listener(*wlr.Surface), _: *wlr.Surface) void {
@@ -251,7 +268,7 @@ pub const Popup = struct {
     /// Keeps the popup inside the output its root toplevel is on. The box is
     /// in the root toplevel's surface coordinates.
     fn unconstrain(popup: *Popup) void {
-        const tree: *wlr.SceneTree = @ptrCast(@alignCast(popup.xdg_popup.base.data orelse return));
+        const tree = popup.tree orelse return;
         var box: wlr.Box = undefined;
         const origin: *wlr.SceneNode = if (View.fromNode(&tree.node)) |view| blk: {
             const g = view.geometry();
@@ -267,8 +284,19 @@ pub const Popup = struct {
         popup.xdg_popup.unconstrainFromBox(&box);
     }
 
+    /// The parent's tree (and with it this one) was destroyed first.
+    fn handleTreeDestroy(listener: *wl.Listener(void)) void {
+        const popup: *Popup = @fieldParentPtr("tree_destroy", listener);
+        popup.tree_destroy.link.remove();
+        popup.tree = null;
+        popup.xdg_popup.base.data = null;
+    }
+
     fn handleDestroy(listener: *wl.Listener(void)) void {
         const popup: *Popup = @fieldParentPtr("destroy", listener);
+        // Like a view's tree, a popup's tree must not outlive the role: the
+        // client may keep the xdg_surface and give it a new popup role.
+        if (popup.tree) |t| t.node.destroy(); // runs handleTreeDestroy
         popup.commit.link.remove();
         popup.destroy.link.remove();
         gpa.destroy(popup);

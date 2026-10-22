@@ -20,6 +20,7 @@ const Globals = struct {
 /// Seat use by a held window or panel:
 /// - RAYWM_TEST_CSD_MOVE: a left press asks the compositor to start an
 ///   interactive move, like a client-side title bar does;
+/// - RAYWM_TEST_PTR: log pointer enter and button events (window or popup);
 /// - RAYWM_TEST_KBD: log keyboard enter/leave/key events;
 /// - panel only: F11 switches keyboard interactivity to none.
 const SeatUse = struct {
@@ -29,6 +30,9 @@ const SeatUse = struct {
     layer: ?*zwlr.LayerSurfaceV1 = null,
     pointer: ?*wl.Pointer = null,
     keyboard: ?*wl.Keyboard = null,
+    popup: ?*PopupTest = null,
+    /// Surface under the pointer, as last reported by wl_pointer.enter.
+    ptr_on: ?*wl.Surface = null,
 
     fn listen(use: *SeatUse) void {
         use.seat.setListener(*SeatUse, seatListener, use);
@@ -105,6 +109,11 @@ pub fn main() !void {
         step("round {d} frame done", .{round});
         if (std.c.getenv("RAYWM_TEST_HOLD") != null) {
             var use: SeatUse = .{ .seat = globals.seat orelse return error.NoSeat, .surface = surface, .toplevel = toplevel };
+            var popup_test: PopupTest = .{ .display = display, .wm_base = wm_base, .compositor = compositor, .shm = shm };
+            if (std.c.getenv("RAYWM_TEST_POPUP") != null) {
+                try popup_test.open(xdg_surface);
+                use.popup = &popup_test;
+            }
             use.listen();
             // Keep the window (acking every configure) until the compositor
             // goes away. The previous buffer is released after each commit.
@@ -169,13 +178,18 @@ pub fn main() !void {
 fn panel(display: *wl.Display, shm: *wl.Shm, compositor: *wl.Compositor, layer_shell: *zwlr.LayerShellV1, seat: ?*wl.Seat) !void {
     var state: State = .{};
     const surface = try compositor.createSurface();
-    const layer = try layer_shell.getLayerSurface(surface, null, .top, "raywm-test-panel");
+    // RAYWM_TEST_LAYER_LEVEL=overlay: a 30 px bar at the bottom of the
+    // overlay layer instead, without an exclusive zone.
+    const overlay = if (std.c.getenv("RAYWM_TEST_LAYER_LEVEL")) |l| std.mem.eql(u8, std.mem.span(l), "overlay") else false;
+    const layer = try layer_shell.getLayerSurface(surface, null, if (overlay) .overlay else .top, "raywm-test-panel");
     layer.setListener(*State, layerListener, &state);
-    layer.setAnchor(.{ .top = true, .left = true, .right = true });
+    layer.setAnchor(.{ .top = !overlay, .bottom = overlay, .left = true, .right = true });
     layer.setSize(0, 30);
-    layer.setExclusiveZone(30);
-    // RAYWM_TEST_LAYER_KBD: a launcher-like panel that grabs the keyboard.
-    if (std.c.getenv("RAYWM_TEST_LAYER_KBD") != null) layer.setKeyboardInteractivity(.exclusive);
+    if (!overlay) layer.setExclusiveZone(30);
+    // RAYWM_TEST_LAYER_KBD: a launcher-like panel that grabs the keyboard
+    // (=on_demand: one that takes it only when chosen).
+    if (std.c.getenv("RAYWM_TEST_LAYER_KBD")) |k|
+        layer.setKeyboardInteractivity(if (std.mem.eql(u8, std.mem.span(k), "on_demand")) .on_demand else .exclusive);
     var use: SeatUse = .{ .seat = seat orelse return error.NoSeat, .surface = surface, .layer = layer };
     use.listen();
     surface.commit();
@@ -212,7 +226,8 @@ fn layerListener(_: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Event, stat
 fn seatListener(seat: *wl.Seat, event: wl.Seat.Event, use: *SeatUse) void {
     switch (event) {
         .capabilities => |c| {
-            if (c.capabilities.pointer and use.pointer == null and use.toplevel != null and std.c.getenv("RAYWM_TEST_CSD_MOVE") != null) {
+            const wants_pointer = std.c.getenv("RAYWM_TEST_CSD_MOVE") != null or std.c.getenv("RAYWM_TEST_PTR") != null or use.popup != null;
+            if (c.capabilities.pointer and use.pointer == null and use.toplevel != null and wants_pointer) {
                 use.pointer = seat.getPointer() catch return;
                 use.pointer.?.setListener(*SeatUse, pointerListener, use);
             }
@@ -233,10 +248,96 @@ fn seatListener(seat: *wl.Seat, event: wl.Seat.Event, use: *SeatUse) void {
 
 fn pointerListener(_: *wl.Pointer, event: wl.Pointer.Event, use: *SeatUse) void {
     switch (event) {
-        .button => |b| if (b.button == 0x110 and b.state == .pressed) {
-            use.toplevel.?.move(use.seat, b.serial);
-            step("csd move requested", .{});
+        .enter => |e| {
+            use.ptr_on = e.surface;
+            const on_popup = use.popup != null and e.surface == use.popup.?.surface;
+            if (std.c.getenv("RAYWM_TEST_PTR") != null) step("ptr enter {s}", .{if (on_popup) "popup" else "window"});
+            if (on_popup) if (use.toplevel) |t| {
+                use.popup.?.race(t);
+                use.toplevel = null; // destroyed by race()
+            };
         },
+        .leave => use.ptr_on = null,
+        .button => |b| {
+            const on_popup = use.popup != null and use.ptr_on != null and use.ptr_on == use.popup.?.surface;
+            if (std.c.getenv("RAYWM_TEST_PTR") != null)
+                step("ptr button {d} {s} {s}", .{ b.button, @tagName(b.state), if (on_popup) "popup" else "window" });
+            if (b.button == 0x110 and b.state == .pressed and std.c.getenv("RAYWM_TEST_CSD_MOVE") != null) if (use.toplevel) |t| {
+                t.move(use.seat, b.serial);
+                step("csd move requested", .{});
+            };
+        },
+        else => {},
+    }
+}
+
+/// RAYWM_TEST_POPUP: a 60x60 popup at (190,140) of the held window, i.e.
+/// partly outside a 200x150 window. When the
+/// pointer enters it, the client destroys the toplevel while the popup is
+/// still open and, before it can have seen popup_done, opens a nested popup
+/// on that popup (a legal race: the client did not know the parent died).
+const PopupTest = struct {
+    display: *wl.Display,
+    wm_base: *xdg.WmBase,
+    compositor: *wl.Compositor,
+    shm: *wl.Shm,
+    surface: ?*wl.Surface = null,
+    xdg_surface: ?*xdg.Surface = null,
+    state: State = .{},
+
+    fn positioner(pt: *PopupTest) !*xdg.Positioner {
+        const pos = try pt.wm_base.createPositioner();
+        pos.setSize(60, 60);
+        pos.setAnchorRect(190, 140, 1, 1);
+        pos.setAnchor(.top_left);
+        pos.setGravity(.bottom_right);
+        return pos;
+    }
+
+    fn open(pt: *PopupTest, parent: *xdg.Surface) !void {
+        const surface = try pt.compositor.createSurface();
+        const xs = try pt.wm_base.getXdgSurface(surface);
+        pt.surface = surface;
+        pt.xdg_surface = xs;
+        xs.setListener(*State, xdgSurfaceListener, &pt.state);
+        const pos = try pt.positioner();
+        const popup = try xs.getPopup(parent, pos);
+        pos.destroy();
+        popup.setListener(?*anyopaque, popupListener, null);
+        surface.commit();
+        while (!pt.state.configured) {
+            if (pt.display.dispatch() != .SUCCESS) return error.DispatchFailed;
+        }
+        xs.ackConfigure(pt.state.serial);
+        const buffer = try makeBuffer(pt.shm, 60, 60);
+        const frame = try surface.frame();
+        frame.setListener(*State, frameListener, &pt.state);
+        surface.attach(buffer, 0, 0);
+        surface.damageBuffer(0, 0, 60, 60);
+        surface.commit();
+        while (!pt.state.frame_done) {
+            if (pt.display.dispatch() != .SUCCESS) return error.DispatchFailed;
+        }
+        step("popup mapped", .{});
+    }
+
+    fn race(pt: *PopupTest, toplevel: *xdg.Toplevel) void {
+        toplevel.destroy();
+        const s = pt.compositor.createSurface() catch return;
+        const xs = pt.wm_base.getXdgSurface(s) catch return;
+        const pos = pt.positioner() catch return;
+        const nested = xs.getPopup(pt.xdg_surface.?, pos) catch return;
+        pos.destroy();
+        nested.setListener(?*anyopaque, popupListener, null);
+        s.commit();
+        _ = pt.display.flush();
+        step("popup race sent", .{});
+    }
+};
+
+fn popupListener(_: *xdg.Popup, event: xdg.Popup.Event, _: ?*anyopaque) void {
+    switch (event) {
+        .popup_done => step("popup done", .{}),
         else => {},
     }
 }
