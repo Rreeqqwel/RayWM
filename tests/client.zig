@@ -100,13 +100,13 @@ pub fn main() !void {
         const h: i32 = if (state.height > 0) state.height else 150;
         state.configured = false; // detect the next configure
         state.width = 0;
-        const buffer = try makeBuffer(shm, w, h);
+        const buffer = try windowBuffer(shm, xdg_surface, w, h);
         defer buffer.destroy();
 
         const frame = try surface.frame();
         frame.setListener(*State, frameListener, &state);
         surface.attach(buffer, 0, 0);
-        surface.damageBuffer(0, 0, w, h);
+        surface.damageBuffer(0, 0, std.math.maxInt(i32), std.math.maxInt(i32));
         surface.commit();
         while (!state.frame_done) {
             if (display.dispatch() != .SUCCESS) return error.DispatchFailed;
@@ -134,9 +134,9 @@ pub fn main() !void {
                 xdg_surface.ackConfigure(state.serial);
                 var next: ?*wl.Buffer = null;
                 if (state.width > 0 and state.height > 0) {
-                    next = try makeBuffer(shm, state.width, state.height);
+                    next = try windowBuffer(shm, xdg_surface, state.width, state.height);
                     surface.attach(next, 0, 0);
-                    surface.damageBuffer(0, 0, state.width, state.height);
+                    surface.damageBuffer(0, 0, std.math.maxInt(i32), std.math.maxInt(i32));
                     step("hold resized {d}x{d}", .{ state.width, state.height });
                 }
                 surface.commit();
@@ -157,12 +157,12 @@ pub fn main() !void {
             state.configured = false;
             state.frame_done = false;
             xdg_surface.ackConfigure(state.serial);
-            const resized = try makeBuffer(shm, state.width, state.height);
+            const resized = try windowBuffer(shm, xdg_surface, state.width, state.height);
             defer resized.destroy();
             const cb = try surface.frame();
             cb.setListener(*State, frameListener, &state);
             surface.attach(resized, 0, 0);
-            surface.damageBuffer(0, 0, state.width, state.height);
+            surface.damageBuffer(0, 0, std.math.maxInt(i32), std.math.maxInt(i32));
             surface.commit();
             while (!state.frame_done) {
                 if (display.dispatch() != .SUCCESS) return error.DispatchFailed;
@@ -378,7 +378,22 @@ fn keyboardListener(_: *wl.Keyboard, event: wl.Keyboard.Event, use: *SeatUse) vo
     }
 }
 
+/// A window's content of w x h. RAYWM_TEST_SHADOW=N adds an N pixel
+/// magenta margin around it, outside the window geometry, like client-side
+/// shadows (the window geometry is set to the content).
+fn windowBuffer(shm: *wl.Shm, xdg_surface: *xdg.Surface, w: i32, h: i32) !*wl.Buffer {
+    const m: i32 = if (std.c.getenv("RAYWM_TEST_SHADOW")) |v| std.fmt.parseInt(i32, std.mem.span(v), 10) catch 0 else 0;
+    if (m > 0) xdg_surface.setWindowGeometry(m, m, w, h);
+    return makeBufferMargin(shm, w, h, m);
+}
+
 fn makeBuffer(shm: *wl.Shm, w: i32, h: i32) !*wl.Buffer {
+    return makeBufferMargin(shm, w, h, 0);
+}
+
+fn makeBufferMargin(shm: *wl.Shm, content_w: i32, content_h: i32, m: i32) !*wl.Buffer {
+    const w = content_w + 2 * m;
+    const h = content_h + 2 * m;
     const stride = w * 4;
     const size: usize = @intCast(stride * h);
     const fd = try posix.memfd_create("raywm-test", 0);
@@ -392,8 +407,14 @@ fn makeBuffer(shm: *wl.Shm, w: i32, h: i32) !*wl.Buffer {
         const px = std.mem.bytesAsSlice(u32, data);
         const uw: usize = @intCast(w);
         for (px, 0..) |*p, i| {
-            const right = i % uw >= uw / 2;
-            const bottom = i / uw >= @as(usize, @intCast(h)) / 2;
+            const x: i32 = @intCast(i % uw);
+            const y: i32 = @intCast(i / uw);
+            if (x < m or y < m or x >= w - m or y >= h - m) {
+                p.* = 0xffff00ff; // shadow
+                continue;
+            }
+            const right = x - m >= @divTrunc(content_w, 2);
+            const bottom = y - m >= @divTrunc(content_h, 2);
             p.* = if (bottom) (if (right) 0xffffffff else 0xff0000ff) else if (right) 0xff00ff00 else 0xffff0000;
         }
     } else @memset(data, 0x80);

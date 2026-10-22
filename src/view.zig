@@ -113,9 +113,11 @@ pub const View = struct {
         }.f, view);
     }
 
+    /// wlroots' xdg scene tree already shifts the surface by the window
+    /// geometry offset (client-side shadows, title bars), so the tree's
+    /// origin is the window geometry's top-left.
     fn syncPosition(view: *View) void {
-        const g = view.xdg.base.geometry;
-        view.tree.node.setPosition(view.x -| g.x, view.y -| g.y);
+        view.tree.node.setPosition(view.x, view.y);
     }
 
     fn handleCommit(listener: *wl.Listener(*wlr.Surface), _: *wlr.Surface) void {
@@ -266,21 +268,26 @@ pub const Popup = struct {
     }
 
     /// Keeps the popup inside the output its root toplevel is on. The box is
-    /// in the root toplevel's surface coordinates.
+    /// in the root toplevel's surface coordinates (wlroots' contract).
     fn unconstrain(popup: *Popup) void {
         const tree = popup.tree orelse return;
         var box: wlr.Box = undefined;
-        const origin: *wlr.SceneNode = if (View.fromNode(&tree.node)) |view| blk: {
+        // Layout position of the root surface's (0, 0).
+        var ox: i32 = undefined;
+        var oy: i32 = undefined;
+        if (View.fromNode(&tree.node)) |view| {
             const g = view.geometry();
             const out = view.server.outputAt(g.x +| @divTrunc(g.width, 2), g.y +| @divTrunc(g.height, 2)) orelse return;
             box = out.box();
-            break :blk &view.tree.node;
-        } else if (LayerSurface.fromNode(&tree.node)) |ls| blk: {
+            ox = view.x -| view.xdg.base.geometry.x;
+            oy = view.y -| view.xdg.base.geometry.y;
+        } else if (LayerSurface.fromNode(&tree.node)) |ls| {
             box = (ls.output orelse return).box();
-            break :blk &ls.popups.node;
+            ox = ls.popups.node.x;
+            oy = ls.popups.node.y;
         } else return;
-        box.x -= origin.x;
-        box.y -= origin.y;
+        box.x -|= ox;
+        box.y -|= oy;
         popup.xdg_popup.unconstrainFromBox(&box);
     }
 

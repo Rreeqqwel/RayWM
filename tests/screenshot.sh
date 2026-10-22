@@ -283,7 +283,24 @@ s7() {
     stop
 }
 
-for s in s1 s2 s3 s4 s5 s6 s7; do
+# ---- windows with client-side shadows (geometry inside the surface) -------
+s8() {
+    name="window geometry offset: content lands at the window position"
+    start 1
+    # B: the same 200x150 pattern inside a 10 px "shadow" margin; its window
+    # geometry excludes the shadow, so B covers A exactly (540,285 200x150)
+    # and the shadow is visible around it.
+    launch b RAYWM_TEST_HOLD=1 RAYWM_TEST_PATTERN=1 RAYWM_TEST_ROUNDS=1 RAYWM_TEST_SHADOW=10
+    wait_for b.log "frame done"
+    sleep 0.3
+    press print
+    wait_shots 1
+    png "$(newest)" --size 1280x720 $(pattern 540 285) --pixel 541,286,ff0000 --pixel 738,433,ffffff \
+        --pixel 535,280,ff00ff --pixel 745,440,ff00ff --pixel 528,273,000000
+    stop
+}
+
+for s in s1 s2 s3 s4 s5 s6 s7 s8; do
     name=$(sed -n "s/^    name=\"\(.*\)\"$/\1/p" "$0" | sed -n "${s#s}p")
     case "$name" in *"${ONLY:-}"*) $s ;; esac
 done
