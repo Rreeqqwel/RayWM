@@ -45,6 +45,8 @@ pub const Server = struct {
     outputs: wl.list.Head(Output, .link) = undefined,
     keyboards: wl.list.Head(input.Keyboard, .link) = undefined,
     focused: ?*View = null,
+    /// Counts focus() calls, so map can tell whether a plugin chose focus.
+    focus_requests: u32 = 0,
     /// Layer surface (launcher, lock-like overlay) holding keyboard focus.
     layer_focus: ?*LayerSurface = null,
     grab: input.Grab = .{},
@@ -195,6 +197,7 @@ pub const Server = struct {
 
     /// Moves keyboard focus to `view` (must be mapped) or clears it.
     pub fn focus(server: *Server, view: ?*View) void {
+        server.focus_requests +%= 1;
         if (view != null and view == server.focused) {
             // Clicking the focused window takes the keyboard back from an
             // on-demand layer surface (but never from an exclusive one).

@@ -22,6 +22,8 @@ const State = struct {
     width: i32 = 0,
     height: i32 = 0,
     frame_done: bool = false,
+    /// xdg_toplevel "activated" state, i.e. whether the window has focus.
+    activated: bool = false,
 };
 
 fn step(comptime fmt: []const u8, args: anytype) void {
@@ -51,7 +53,8 @@ pub fn main() !void {
     // creating a new one must work (and must not leak compositor state).
     var state: State = .{};
     xdg_surface.setListener(*State, xdgSurfaceListener, &state);
-    for (0..2) |round| {
+    const rounds: usize = if (std.c.getenv("RAYWM_TEST_ROUNDS")) |r| std.fmt.parseInt(usize, std.mem.span(r), 10) catch 2 else 2;
+    for (0..rounds) |round| {
         state = .{};
         const toplevel = try xdg_surface.getToplevel();
         toplevel.setListener(*State, toplevelListener, &state);
@@ -81,6 +84,22 @@ pub fn main() !void {
             if (display.dispatch() != .SUCCESS) return error.DispatchFailed;
         }
         step("round {d} frame done", .{round});
+        if (std.c.getenv("RAYWM_TEST_HOLD") != null) {
+            // Keep the window (acking every configure) until the compositor
+            // goes away. Buffers are intentionally kept alive until exit.
+            while (display.dispatch() == .SUCCESS) {
+                if (!state.configured) continue;
+                state.configured = false;
+                xdg_surface.ackConfigure(state.serial);
+                if (state.width > 0 and state.height > 0) {
+                    surface.attach(try makeBuffer(shm, state.width, state.height), 0, 0);
+                    surface.damageBuffer(0, 0, state.width, state.height);
+                    step("hold resized {d}x{d}", .{ state.width, state.height });
+                }
+                surface.commit();
+            }
+            return;
+        }
 
         // With a tiling config the compositor resizes the window after map:
         // ack that configure and commit a buffer of the requested size.
@@ -204,6 +223,10 @@ fn toplevelListener(_: *xdg.Toplevel, event: xdg.Toplevel.Event, state: *State) 
         .configure => |c| {
             state.width = c.width;
             state.height = c.height;
+            var active = false;
+            for (c.states.slice(u32)) |s| active = active or s == @intFromEnum(xdg.Toplevel.State.activated);
+            if (active != state.activated) step("{s}", .{if (active) "activated" else "deactivated"});
+            state.activated = active;
         },
         .close => {},
     }

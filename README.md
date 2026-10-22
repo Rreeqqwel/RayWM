@@ -29,6 +29,7 @@ pixman, lua5.4.
 zig build                 # zig-out/bin/raywm
 zig build test            # Lua host unit tests
 tests/smoke.sh            # headless end-to-end test (no GPU, isolated)
+tests/focus.sh            # headless focus tests with two windows
 ```
 
 LLVM and LLD are used by default because the Zig 0.16 linker cannot handle
@@ -55,7 +56,8 @@ on a real session.
 style of Hyprland's dwindle layout:
 
 - a new window splits the focused window's area in two, along that area's
-  longer side, and takes focus, so repeated windows spiral inwards;
+  longer side. It then gets focus (core default, see below), so repeated
+  windows spiral inwards;
 - closing a window gives its area to its sibling, and the tree collapses;
 - each output has its own tree, and windows from an unplugged output move
   to the first remaining one;
@@ -72,12 +74,16 @@ of the plugin API. It covers 1–5 windows, closing the first, middle and
 last window, focus-based splits, output resize, panels, two outputs and
 unplugging, stale windows, reload, and minimum sizes.
 
+## Focus
+
+A newly mapped window gets keyboard focus, even when another window is
+focused. A plugin can override this: if any `view_map` handler calls
+`raywm.view_focus` (even on the previously focused window), the core
+keeps that choice. Handlers still see the previous window in
+`raywm.focused()`, which is what dwindle splits.
+
 ## Known limitations (v0.1)
 
-- **New windows only get focus from a plugin.** The core focuses a newly
-  mapped window only when no window has focus (`src/view.zig`, `handleMap`).
-  The dwindle plugin focuses new windows itself. A fix in the core is
-  pending review.
 - **Optional Wayland protocols are not implemented**, so clients log
   warnings and fall back. With foot 1.28:
   - primary selection (middle-click paste) is unavailable;

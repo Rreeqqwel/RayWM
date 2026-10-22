@@ -3,7 +3,8 @@
 -- Each output has a binary tree. A leaf holds one window. A split node
 -- holds a direction ("h": side by side, "v": stacked), a ratio and two
 -- children. A new window splits the focused window's leaf (or the last
--- leaf of the output), along the longer side of that leaf's area. When a
+-- leaf of the output), along the longer side of that leaf's area, and then
+-- gets focus from the core, so windows spiral inwards. When a
 -- window closes, its sibling takes over the parent's area.
 --
 -- Only geometry is recomputed on changes; the tree itself is edited in
@@ -267,11 +268,9 @@ return {
     for i = #views, 1, -1 do add_view(views[i]) end
     arrange_all()
 
-    ctx.on("view_map", function(id)
-      add_view(id)
-      -- New windows take focus (the next one then splits them).
-      raywm.view_focus(id)
-    end)
+    -- raywm.focused() is still the previous window here; the core focuses
+    -- the new one afterwards, so the next window splits it.
+    ctx.on("view_map", add_view)
     ctx.on("view_unmap", function(id)
       local out = remove(id)
       if out then

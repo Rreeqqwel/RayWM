@@ -149,9 +149,12 @@ pub const View = struct {
         view.syncPosition();
         view.mapped = true;
         server.views.prepend(view);
+        // view_map handlers still see the previous focus (a tiler splits it).
+        const requests = server.focus_requests;
         server.emit(.view_map, view.id);
-        // A plugin may have focused something else in its view_map handler.
-        if (server.focused == null and view.mapped and view.tree.node.enabled) server.focus(view);
+        // New windows take focus, unless a plugin chose focus itself
+        // (even re-focusing the previous window) while handling view_map.
+        if (server.focus_requests == requests and view.mapped and view.tree.node.enabled) server.focus(view);
         @import("input.zig").refocusPointer(server);
     }
 

@@ -5,6 +5,7 @@
 local plugin_path = "config/plugins/dwindle.lua"
 
 local outputs, views, mru, focused, handlers, binds, errors, place_calls
+local focus_requests = 0 -- like the core's Server.focus_requests
 local function reset_world()
   outputs = { { id = 1, x = 0, y = 0, w = 1280, h = 720, usable = { x = 0, y = 0, w = 1280, h = 720 } } }
   views, mru, focused, place_calls = {}, {}, nil, 0
@@ -45,6 +46,7 @@ raywm = {
   end,
   view_focus = function(id)
     if not views[id] then return nil, "stale" end
+    focus_requests = focus_requests + 1
     focused = id
     for i, v in ipairs(mru) do if v == id then table.remove(mru, i) break end end
     table.insert(mru, 1, id)
@@ -84,8 +86,11 @@ local function map(out)
   -- The core centres a new 200x150 window on the active output first.
   views[id] = { x = o.x + (o.w - 200) // 2, y = o.y + (o.h - 150) // 2, w = 200, h = 150 }
   table.insert(mru, 1, id)
+  -- Core rule (src/view.zig handleMap): focus the new window unless a
+  -- view_map handler chose focus itself.
+  local requests = focus_requests
   emit("view_map", id)
-  if focused == nil then raywm.view_focus(id) end
+  if focus_requests == requests then raywm.view_focus(id) end
   return id
 end
 
@@ -145,6 +150,8 @@ tests["1-5 windows spiral (dwindle) and focus follows new windows"] = function()
   expect(d, "962,364 310x170", "5 windows")
   expect(e, "962,542 310x170", "5 windows")
   assert(focused == e, "new window should be focused")
+  -- Each split targeted the window focused *before* the new one mapped.
+  for i, v in ipairs(mru) do assert(v == ({ e, d, c, b, a })[i], "focus order") end
   check_invariants("5 windows")
 end
 

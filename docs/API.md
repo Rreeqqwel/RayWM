@@ -126,7 +126,7 @@ All handlers receive one integer id.
 
 | Event | id | When |
 |---|---|---|
-| `view_map` | view | a window became visible; RayWM centred it first |
+| `view_map` | view | a window became visible; RayWM centred it first. `raywm.focused()` is still the previous window; afterwards the new window gets focus unless a handler called `raywm.view_focus` |
 | `view_unmap` | view | it is gone, so `raywm.view(id)` is already stale |
 | `view_focus` | view, or `0` | keyboard focus changed; `0` means no window has focus |
 | `view_title` | view | title changed (mapped windows only) |
