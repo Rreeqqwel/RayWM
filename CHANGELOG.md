@@ -80,11 +80,12 @@ The Lua plugin API is still `api = 1`. Its additions are compatible
     while held, output unplugged while held, scene changes under a held
     button, client-side move/resize, Super+drag, Super+click during a
     client's grab, an `xdg_popup` grab. 11 of them fail on v0.1.1.
-  - `tests/navigation.sh` (10 scenarios): US and Russian layouts,
+  - `tests/navigation.sh` (11 scenarios): US and Russian layouts,
     dwindle and floating windows, two outputs, pointer warp versus a
     held button, the border checked on screen with grim, reload during a
-    held button, an exclusive launcher, closing a window whose button is
-    held, unchanged and half-migrated v0.1.1 configurations.
+    held button, edited bindings applied by a reload, an exclusive
+    launcher, closing a window whose button is held, unchanged and
+    half-migrated v0.1.1 configurations.
   - `tests/focus_test.lua` (19, in `zig build test`), including 400
     random two-output layouts; xkb unit tests for the layout rule;
     host tests for the new API.
