@@ -7,6 +7,7 @@ local plugin_path = "config/plugins/focus.lua"
 
 local views, mru, outputs, focused, pointer
 local handlers, binds, warps, borders, focus_calls
+local bind_order
 
 local function reset()
   views, mru, outputs, focused = {}, {}, {}, nil
@@ -67,13 +68,14 @@ raywm = {
 
 local plugin
 local function load_plugin()
-  handlers, binds = {}, {}
+  handlers, binds, bind_order = {}, {}, {}
   plugin = dofile(plugin_path)
   assert(plugin.api == 1)
   plugin.setup({
     bind = function(k, fn)
       assert(not binds[k], "key bound twice: " .. k)
       binds[k] = fn
+      bind_order[#bind_order + 1] = k
       return 1
     end,
     on = function(ev, fn) handlers[ev] = handlers[ev] or {}; table.insert(handlers[ev], fn) return 1 end,
@@ -118,6 +120,8 @@ test("default bindings", function()
   local n = 0
   for _ in pairs(binds) do n = n + 1 end
   eq(n, 6, "binding count")
+  -- Registration order is fixed (it decides which of two equal bindings wins).
+  eq(table.concat(bind_order, " "), "Super+h Super+j Super+k Super+l Super+Tab Super+Shift+Tab")
 end)
 
 test("two tiled windows: left/right, nothing up/down", function()

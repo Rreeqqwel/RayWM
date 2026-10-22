@@ -230,8 +230,11 @@ return {
       next = function() focus_cycle(1) end,
       prev = function() focus_cycle(-1) end,
     }
-    for action, keys in pairs(options.keys) do
-      for _, k in ipairs(keys) do ctx.bind(k, assert(actions[action], "unknown action " .. action)) end
+    for action in pairs(options.keys) do assert(actions[action], "unknown action in options.keys: " .. action) end
+    -- A fixed order: registration order decides which of two equal
+    -- bindings wins, and what a duplicate warning names.
+    for _, action in ipairs({ "left", "down", "up", "right", "next", "prev" }) do
+      for _, k in ipairs(options.keys[action] or {}) do ctx.bind(k, actions[action]) end
     end
     if raywm.view_border then
       ctx.on("view_focus", mark)
