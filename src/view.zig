@@ -91,7 +91,9 @@ pub const View = struct {
     /// commit that acknowledges this configure.
     pub fn place(view: *View, x: i32, y: i32, w: i32, h: i32) void {
         const g = view.xdg.base.geometry;
-        if (w == g.width and h == g.height) return view.move(x, y);
+        // With a resize still unacknowledged, the committed size says nothing
+        // about what the client will end up with: always send the request.
+        if (view.pending == null and view.anchor == null and w == g.width and h == g.height) return view.move(x, y);
         const serial = view.xdg.setSize(@max(w, 1), @max(h, 1));
         view.anchor = null;
         view.pending = .{ .serial = serial, .x = x, .y = y };
@@ -113,7 +115,7 @@ pub const View = struct {
 
     fn syncPosition(view: *View) void {
         const g = view.xdg.base.geometry;
-        view.tree.node.setPosition(view.x - g.x, view.y - g.y);
+        view.tree.node.setPosition(view.x -| g.x, view.y -| g.y);
     }
 
     fn handleCommit(listener: *wl.Listener(*wlr.Surface), _: *wlr.Surface) void {
@@ -143,8 +145,8 @@ pub const View = struct {
         const server = view.server;
         if (server.activeOutputBox()) |box| {
             const g = view.xdg.base.geometry;
-            view.x = box.x + @divTrunc(box.width - g.width, 2);
-            view.y = box.y + @divTrunc(box.height - g.height, 2);
+            view.x = box.x +| @divTrunc(box.width -| g.width, 2);
+            view.y = box.y +| @divTrunc(box.height -| g.height, 2);
         }
         view.syncPosition();
         view.mapped = true;
@@ -253,7 +255,7 @@ pub const Popup = struct {
         var box: wlr.Box = undefined;
         const origin: *wlr.SceneNode = if (View.fromNode(&tree.node)) |view| blk: {
             const g = view.geometry();
-            const out = view.server.outputAt(g.x + @divTrunc(g.width, 2), g.y + @divTrunc(g.height, 2)) orelse return;
+            const out = view.server.outputAt(g.x +| @divTrunc(g.width, 2), g.y +| @divTrunc(g.height, 2)) orelse return;
             box = out.box();
             break :blk &view.tree.node;
         } else if (LayerSurface.fromNode(&tree.node)) |ls| blk: {

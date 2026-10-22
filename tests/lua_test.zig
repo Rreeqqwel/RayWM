@@ -8,6 +8,9 @@ const Fake = struct {
     log: std.ArrayList([]u8) = .empty,
     timer_ms: ?u32 = null,
     quit: bool = false,
+    /// Set by tests that need nested dispatch, like the real compositor:
+    /// focusing a view emits view_focus while Lua is still running.
+    rt: ?*RT = null,
 
     pub const Api = struct {
         pub fn views(_: *Fake, buf: []u32) usize {
@@ -18,8 +21,10 @@ const Fake = struct {
             if (id != 1) return null;
             return .{ .box = .{ .x = 0, .y = 0, .w = 640, .h = 480 }, .title = "term", .app_id = "foot", .focused = true, .output = 1 };
         }
-        pub fn viewCmd(_: *Fake, id: u32, _: lua.ViewCmd) bool {
-            return id == 1;
+        pub fn viewCmd(f: *Fake, id: u32, cmd: lua.ViewCmd) bool {
+            if (id != 1) return false;
+            if (cmd == .focus) if (f.rt) |rt| rt.emit(.view_focus, id);
+            return true;
         }
         pub fn outputs(_: *Fake, buf: []u32) usize {
             buf[0] = 2; // id 2 vanishes between listing and lookup
@@ -67,25 +72,50 @@ const Fake = struct {
 
 const RT = lua.Runtime(Fake);
 
+/// Starts a runtime with clean error/warning counters, so leftovers from a
+/// previous test's destroy() never count against this one.
+fn start(f: *Fake, path: [:0]const u8, limits: lua.Limits) !*RT {
+    error_count = 0;
+    warn_count = 0;
+    return RT.create(f, path, limits);
+}
+
 /// Collected plugin errors ("source: first line"), checked by the tests.
-var errors: std.ArrayList([]u8) = .empty;
+/// Fixed storage, so errors raised during destroy() cannot leak.
+var error_lines: [64][256]u8 = undefined;
+var error_lens: [64]usize = undefined;
+var error_count: usize = 0;
 fn report(source: []const u8, msg: []const u8) void {
+    if (error_count == error_lines.len) return;
     const line = std.mem.sliceTo(msg, '\n');
-    const e = std.fmt.allocPrint(std.testing.allocator, "{s}: {s}", .{ source, line }) catch unreachable;
-    errors.append(std.testing.allocator, e) catch unreachable;
+    const e = std.fmt.bufPrint(&error_lines[error_count], "{s}: {s}", .{ source, line }) catch error_lines[error_count][0..];
+    error_lens[error_count] = e.len;
+    error_count += 1;
 }
 fn takeErrors() usize {
-    defer {
-        for (errors.items) |e| std.testing.allocator.free(e);
-        errors.clearAndFree(std.testing.allocator);
-    }
-    return errors.items.len;
+    defer error_count = 0;
+    return error_count;
 }
 fn hasError(needle: []const u8) bool {
-    for (errors.items) |e| if (std.mem.indexOf(u8, e, needle) != null) return true;
+    for (0..error_count) |i| if (std.mem.indexOf(u8, error_lines[i][0..error_lens[i]], needle) != null) return true;
     return false;
 }
-const opts: lua.Limits = .{ .report = report };
+/// Warnings (missing config, ignored reload, dropped events): counted, and
+/// the last one kept, without allocating.
+var warn_count: usize = 0;
+var last_warn_buf: [256]u8 = undefined;
+var last_warn: []const u8 = "";
+fn warn(msg: []const u8) void {
+    warn_count += 1;
+    const n = @min(msg.len, last_warn_buf.len);
+    @memcpy(last_warn_buf[0..n], msg[0..n]);
+    last_warn = last_warn_buf[0..n];
+}
+fn takeWarnings() usize {
+    defer warn_count = 0;
+    return warn_count;
+}
+const opts: lua.Limits = .{ .report = report, .warn = warn };
 var fake_now: u64 = 1_000_000_000;
 fn fakeClock() u64 {
     return fake_now;
@@ -94,7 +124,7 @@ fn fakeClock() u64 {
 test "plugin contract, dispatch and error isolation" {
     var f: Fake = .{};
     defer f.deinit();
-    const rt = try RT.create(&f, "tests/lua/basic.lua", opts);
+    const rt = try start(&f, "tests/lua/basic.lua", opts);
     defer rt.destroy();
     const t = std.testing;
 
@@ -149,7 +179,7 @@ test "plugin contract, dispatch and error isolation" {
 test "timers are one-shot and use the injected clock" {
     var f: Fake = .{};
     defer f.deinit();
-    const rt = try RT.create(&f, "tests/lua/basic.lua", opts);
+    const rt = try start(&f, "tests/lua/basic.lua", opts);
     defer rt.destroy();
     rt.clock = fakeClock;
     rt.emit(.output_add, 1); // probe schedules a 10 ms timer
@@ -170,7 +200,7 @@ test "timers are one-shot and use the injected clock" {
 test "memory and instruction limits unload only the offender" {
     var f: Fake = .{};
     defer f.deinit();
-    const rt = try RT.create(&f, "tests/lua/limits.lua", .{ .memory = 16 << 20, .instructions = 5_000_000, .report = report });
+    const rt = try start(&f, "tests/lua/limits.lua", .{ .memory = 16 << 20, .instructions = 5_000_000, .report = report, .warn = warn });
     defer rt.destroy();
     try std.testing.expect(rt.configured());
     try std.testing.expectEqual(1, f.count("hog:nil"));
@@ -187,7 +217,7 @@ test "memory and instruction limits unload only the offender" {
 test "reload tears everything down and runs the config again" {
     var f: Fake = .{};
     defer f.deinit();
-    const rt = try RT.create(&f, "tests/lua/basic.lua", opts);
+    const rt = try start(&f, "tests/lua/basic.lua", opts);
     defer rt.destroy();
     f.clear();
     rt.requestReload();
@@ -202,7 +232,7 @@ test "reload tears everything down and runs the config again" {
 test "broken config falls back and still cleans up its plugins" {
     var f: Fake = .{};
     defer f.deinit();
-    const rt = try RT.create(&f, "tests/lua/broken.lua", opts);
+    const rt = try start(&f, "tests/lua/broken.lua", opts);
     try std.testing.expect(!rt.configured());
     try std.testing.expectEqual(1, f.count("setup:probe"));
     rt.destroy();
@@ -214,7 +244,7 @@ test "broken config falls back and still cleans up its plugins" {
 test "missing config is not fatal" {
     var f: Fake = .{};
     defer f.deinit();
-    const rt = try RT.create(&f, "tests/lua/does-not-exist.lua", opts);
+    const rt = try start(&f, "tests/lua/does-not-exist.lua", opts);
     defer rt.destroy();
     try std.testing.expect(!rt.configured());
     try std.testing.expect(!rt.hasBindings());
@@ -223,7 +253,7 @@ test "missing config is not fatal" {
 test "reload requested from init.lua or teardown is ignored, not recursive" {
     var f: Fake = .{};
     defer f.deinit();
-    const rt = try RT.create(&f, "tests/lua/reload_in_config.lua", opts);
+    const rt = try start(&f, "tests/lua/reload_in_config.lua", opts);
     defer rt.destroy();
     try std.testing.expectEqual(1, f.count("setup:probe"));
     rt.requestReload(); // reloader's teardown asks for another reload
@@ -237,7 +267,7 @@ test "reload requested from init.lua or teardown is ignored, not recursive" {
 test "failed reload disables Lua safely until the next reload" {
     var f: Fake = .{};
     defer f.deinit();
-    const rt = try RT.create(&f, "tests/lua/basic.lua", opts);
+    const rt = try start(&f, "tests/lua/basic.lua", opts);
     defer rt.destroy();
     const saved = rt.limits.memory;
     rt.limits.memory = 1; // lua_newstate cannot allocate
@@ -257,7 +287,7 @@ test "failed reload disables Lua safely until the next reload" {
 test "instruction budget is per callback" {
     var f: Fake = .{};
     defer f.deinit();
-    const rt = try RT.create(&f, "tests/lua/budget.lua", .{ .instructions = 1_000_000, .report = report });
+    const rt = try start(&f, "tests/lua/budget.lua", .{ .instructions = 1_000_000, .report = report, .warn = warn });
     defer rt.destroy();
     rt.emit(.view_map, 1);
     rt.emit(.view_map, 2);
@@ -269,7 +299,7 @@ test "instruction budget is per callback" {
 test "ctx.manage: owned by the plugin, released on request, unmap, reload and unload" {
     var f: Fake = .{};
     defer f.deinit();
-    const rt = try RT.create(&f, "tests/lua/manage.lua", opts);
+    const rt = try start(&f, "tests/lua/manage.lua", opts);
     defer rt.destroy();
     const t = std.testing;
     try t.expectEqual(1, f.count("manage999:nil:stale"));
@@ -298,4 +328,120 @@ test "ctx.manage: owned by the plugin, released on request, unmap, reload and un
     rt.emit(.view_resized, 1); // the plugin errors and is unloaded
     try t.expect(!rt.managed(1));
     try t.expectEqual(1, takeErrors());
+}
+
+test "edge cases: no debug library, coroutines, invalid ids, nesting, duplicates" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/edge.lua", opts);
+    defer rt.destroy();
+    f.rt = rt;
+    const t = std.testing;
+
+    // Plugins never get the debug library (it can reach host internals).
+    try t.expectEqual(1, f.count("debug:nil:nil"));
+    // A failing setup rejects the plugin; its teardown still runs; its
+    // binding is released.
+    try t.expectEqual(1, f.count("teardown:badsetup"));
+    try t.expect(hasError("badsetup: tests/lua/plugins/badsetup.lua:6: setup failed"));
+
+    // Same key bound twice: the registration made first wins.
+    try t.expect(rt.key(64, 0xff0d));
+    try t.expectEqual(1, f.count("bind:edge"));
+    try t.expectEqual(0, f.count("bind:edge2"));
+    try t.expectEqual(0, f.count("bind:badsetup")); // released with its plugin
+
+    // Coroutines may call the host; invalid ids are stale, not errors.
+    rt.emit(.layout, 0);
+    try t.expectEqual(1, f.count("co:true:true"));
+    try t.expectEqual(3, f.count("id:nil:stale"));
+
+    // Nested dispatch stops at the depth limit with a warning, no crash.
+    // (The coroutine's view_focus above already ran this chain from depth 2:
+    // 7 handlers before the limit.)
+    try t.expectEqual(7, f.count("focus:1"));
+    f.clear();
+    _ = takeWarnings();
+    rt.emit(.view_focus, 1);
+    try t.expectEqual(8, f.count("focus:1"));
+    try t.expectEqual(1, takeWarnings());
+
+    // Toggling ctx.manage 200k times reuses one registration.
+    const before = rt.regs.items.len;
+    rt.emit(.view_title, 1);
+    try t.expectEqual(1, f.count("toggled"));
+    try t.expect(rt.managed(1));
+    try t.expect(rt.regs.items.len <= before + 1);
+
+    // A wrong argument type or a non-string error unloads only this plugin.
+    rt.emit(.output_remove, 3);
+    try t.expect(hasError("edge: (non-string error)"));
+    try t.expectEqual(1, f.count("teardown:edge"));
+    try t.expect(!rt.managed(1)); // its managed view is released
+    try t.expect(rt.key(64, 0xff0d)); // edge2's binding takes over
+    try t.expectEqual(1, f.count("bind:edge2"));
+    _ = takeErrors();
+}
+
+test "reload from a binding callback is deferred, then runs once" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/edge.lua", opts);
+    defer rt.destroy();
+    f.clear();
+    try std.testing.expect(rt.key(64, 'x')); // edge binds Super+x to raywm.reload
+    try std.testing.expectEqual(1, f.count("teardown:edge"));
+    try std.testing.expectEqual(1, f.count("debug:nil:nil")); // setup ran again
+    // edge2's teardown error is reported, not fatal.
+    try std.testing.expect(hasError("edge2: tests/lua/plugins/edge2.lua:7: teardown failed"));
+    _ = takeErrors();
+}
+
+test "repeated reload keeps Lua memory flat" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/basic.lua", opts);
+    defer rt.destroy();
+    rt.requestReload();
+    const first = rt.mem_used;
+    for (0..25) |_| rt.requestReload();
+    try std.testing.expectEqual(26 + 1, f.count("setup:probe"));
+    // Same config, same state size (allow small allocator noise).
+    try std.testing.expect(rt.mem_used <= first + 4096);
+    try std.testing.expect(rt.regs.items.len < 32);
+    _ = takeErrors();
+    _ = takeWarnings();
+}
+
+test "the instruction budget cannot be swallowed by pcall or coroutines" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/bypass.lua", .{ .instructions = 1_000_000, .report = report, .warn = warn });
+    defer rt.destroy();
+    rt.emit(.view_map, 1); // returns instead of hanging
+    try std.testing.expect(hasError("bypass:"));
+    try std.testing.expectEqual(1, takeErrors());
+}
+
+test "the coroutine variant of a budget bypass also ends" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/bypass.lua", .{ .instructions = 1_000_000, .report = report, .warn = warn });
+    defer rt.destroy();
+    rt.emit(.view_unmap, 1);
+    try std.testing.expectEqual(1, takeErrors());
+    // The runtime is still usable afterwards (budget and hook restored).
+    rt.requestReload();
+    try std.testing.expectEqual(0, takeErrors());
+}
+
+test "registrations are capped" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/regcap.lua", .{ .max_registrations = 1000, .report = report, .warn = warn });
+    defer rt.destroy();
+    rt.emit(.view_map, 1);
+    try std.testing.expect(hasError("regcap: tests/lua/plugins/regcap.lua:6: too many registrations"));
+    try std.testing.expect(rt.regs.items.len == 0); // swept with the plugin
+    try std.testing.expectEqual(1, takeErrors());
 }

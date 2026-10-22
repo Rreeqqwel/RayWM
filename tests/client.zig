@@ -14,6 +14,25 @@ const Globals = struct {
     compositor: ?*wl.Compositor = null,
     wm_base: ?*xdg.WmBase = null,
     layer_shell: ?*zwlr.LayerShellV1 = null,
+    seat: ?*wl.Seat = null,
+};
+
+/// Seat use by a held window or panel:
+/// - RAYWM_TEST_CSD_MOVE: a left press asks the compositor to start an
+///   interactive move, like a client-side title bar does;
+/// - RAYWM_TEST_KBD: log keyboard enter/leave/key events;
+/// - panel only: F11 switches keyboard interactivity to none.
+const SeatUse = struct {
+    seat: *wl.Seat,
+    surface: *wl.Surface,
+    toplevel: ?*xdg.Toplevel = null,
+    layer: ?*zwlr.LayerSurfaceV1 = null,
+    pointer: ?*wl.Pointer = null,
+    keyboard: ?*wl.Keyboard = null,
+
+    fn listen(use: *SeatUse) void {
+        use.seat.setListener(*SeatUse, seatListener, use);
+    }
 };
 
 const State = struct {
@@ -43,7 +62,7 @@ pub fn main() !void {
     const shm = globals.shm orelse return error.NoWlShm;
     const compositor = globals.compositor orelse return error.NoWlCompositor;
     if (std.c.getenv("RAYWM_TEST_LAYER") != null)
-        return panel(display, shm, compositor, globals.layer_shell orelse return error.NoLayerShell);
+        return panel(display, shm, compositor, globals.layer_shell orelse return error.NoLayerShell, globals.seat);
     const wm_base = globals.wm_base orelse return error.NoXdgWmBase;
     wm_base.setListener(?*anyopaque, wmBaseListener, null);
 
@@ -85,10 +104,16 @@ pub fn main() !void {
         }
         step("round {d} frame done", .{round});
         if (std.c.getenv("RAYWM_TEST_HOLD") != null) {
+            var use: SeatUse = .{ .seat = globals.seat orelse return error.NoSeat, .surface = surface, .toplevel = toplevel };
+            use.listen();
             // Keep the window (acking every configure) until the compositor
             // goes away. Buffers are intentionally kept alive until exit.
-            while (display.dispatch() == .SUCCESS) {
-                if (!state.configured) continue;
+            while (true) {
+                // A configure may already have arrived while waiting above.
+                if (!state.configured) {
+                    if (display.dispatch() != .SUCCESS) break;
+                    continue;
+                }
                 state.configured = false;
                 xdg_surface.ackConfigure(state.serial);
                 if (state.width > 0 and state.height > 0) {
@@ -133,7 +158,7 @@ pub fn main() !void {
 
 /// RAYWM_TEST_LAYER=1: a 30 px top panel with an exclusive zone. Stays mapped until the
 /// compositor goes away.
-fn panel(display: *wl.Display, shm: *wl.Shm, compositor: *wl.Compositor, layer_shell: *zwlr.LayerShellV1) !void {
+fn panel(display: *wl.Display, shm: *wl.Shm, compositor: *wl.Compositor, layer_shell: *zwlr.LayerShellV1, seat: ?*wl.Seat) !void {
     var state: State = .{};
     const surface = try compositor.createSurface();
     const layer = try layer_shell.getLayerSurface(surface, null, .top, "raywm-test-panel");
@@ -141,6 +166,10 @@ fn panel(display: *wl.Display, shm: *wl.Shm, compositor: *wl.Compositor, layer_s
     layer.setAnchor(.{ .top = true, .left = true, .right = true });
     layer.setSize(0, 30);
     layer.setExclusiveZone(30);
+    // RAYWM_TEST_LAYER_KBD: a launcher-like panel that grabs the keyboard.
+    if (std.c.getenv("RAYWM_TEST_LAYER_KBD") != null) layer.setKeyboardInteractivity(.exclusive);
+    var use: SeatUse = .{ .seat = seat orelse return error.NoSeat, .surface = surface, .layer = layer };
+    use.listen();
     surface.commit();
     while (!state.configured) {
         if (display.dispatch() != .SUCCESS) return error.DispatchFailed;
@@ -171,6 +200,61 @@ fn layerListener(_: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Event, stat
     }
 }
 
+/// Devices may only be requested once the seat has them.
+fn seatListener(seat: *wl.Seat, event: wl.Seat.Event, use: *SeatUse) void {
+    switch (event) {
+        .capabilities => |c| {
+            if (c.capabilities.pointer and use.pointer == null and use.toplevel != null and std.c.getenv("RAYWM_TEST_CSD_MOVE") != null) {
+                use.pointer = seat.getPointer() catch return;
+                use.pointer.?.setListener(*SeatUse, pointerListener, use);
+            }
+            // wlroots makes a wl_keyboard inert when the seat loses its
+            // keyboard (the test driver exits): drop it, ask again later.
+            if (!c.capabilities.keyboard) if (use.keyboard) |k| {
+                k.destroy();
+                use.keyboard = null;
+            };
+            if (c.capabilities.keyboard and use.keyboard == null and std.c.getenv("RAYWM_TEST_KBD") != null) {
+                use.keyboard = seat.getKeyboard() catch return;
+                use.keyboard.?.setListener(*SeatUse, keyboardListener, use);
+            }
+        },
+        else => {},
+    }
+}
+
+fn pointerListener(_: *wl.Pointer, event: wl.Pointer.Event, use: *SeatUse) void {
+    switch (event) {
+        .button => |b| if (b.button == 0x110 and b.state == .pressed) {
+            use.toplevel.?.move(use.seat, b.serial);
+            step("csd move requested", .{});
+        },
+        else => {},
+    }
+}
+
+fn keyboardListener(_: *wl.Keyboard, event: wl.Keyboard.Event, use: *SeatUse) void {
+    switch (event) {
+        .keymap => |k| _ = posix.system.close(k.fd),
+        .enter => |e| {
+            var buf: [256]u8 = undefined;
+            var w: std.Io.Writer = .fixed(&buf);
+            for (e.keys.slice(u32)) |k| w.print(" {d}", .{k}) catch {};
+            step("kbd enter{s}", .{w.buffered()});
+        },
+        .leave => step("kbd leave", .{}),
+        .key => |k| {
+            step("kbd key {d} {s}", .{ k.key, @tagName(k.state) });
+            if (use.layer) |layer| if (k.key == 87 and k.state == .pressed) {
+                layer.setKeyboardInteractivity(.none);
+                use.surface.commit();
+                step("layer kbd none", .{});
+            };
+        },
+        else => {},
+    }
+}
+
 fn makeBuffer(shm: *wl.Shm, w: i32, h: i32) !*wl.Buffer {
     const stride = w * 4;
     const size: usize = @intCast(stride * h);
@@ -195,6 +279,8 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, g: *Global
                 g.shm = registry.bind(global.name, wl.Shm, 1) catch return;
             } else if (std.mem.eql(u8, name, std.mem.span(xdg.WmBase.interface.name))) {
                 g.wm_base = registry.bind(global.name, xdg.WmBase, 2) catch return;
+            } else if (std.mem.eql(u8, name, std.mem.span(wl.Seat.interface.name))) {
+                g.seat = registry.bind(global.name, wl.Seat, 1) catch return;
             } else if (std.mem.eql(u8, name, std.mem.span(zwlr.LayerShellV1.interface.name))) {
                 g.layer_shell = registry.bind(global.name, zwlr.LayerShellV1, 4) catch return;
             }

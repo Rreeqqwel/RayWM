@@ -7,12 +7,21 @@ pub fn build(b: *std.Build) void {
     // Zig 0.16's self-hosted linker cannot handle SFrame sections emitted by
     // recent GCC crt objects, so LLVM+LLD is the default. -Dllvm=false opts out.
     const use_llvm = b.option(bool, "llvm", "use LLVM and LLD (default: true)") orelse true;
+    // TEST ONLY: virtual pointer/keyboard protocols for tests/input.sh.
+    // Never enable this for a build that is installed or distributed.
+    const test_input = b.option(bool, "test-input", "TEST ONLY: enable virtual input protocols") orelse false;
 
     const scanner = Scanner.create(b, .{});
     scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
     scanner.addSystemProtocol("stable/tablet/tablet-v2.xml");
     scanner.addSystemProtocol("staging/color-management/color-management-v1.xml");
     scanner.addCustomProtocol(b.path("protocol/wlr-layer-shell-unstable-v1.xml"));
+    if (test_input) {
+        scanner.addCustomProtocol(b.path("tests/protocol/wlr-virtual-pointer-unstable-v1.xml"));
+        scanner.addCustomProtocol(b.path("tests/protocol/virtual-keyboard-unstable-v1.xml"));
+        scanner.generate("zwlr_virtual_pointer_manager_v1", 2);
+        scanner.generate("zwp_virtual_keyboard_manager_v1", 1);
+    }
 
     // Versions only control Zig code generation, not what wlroots implements.
     scanner.generate("wl_compositor", 4);
@@ -61,6 +70,33 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("xkbcommon", xkbcommon);
     exe.root_module.addImport("wlroots", wlroots);
     exe.root_module.addImport("lua", lua);
+    const options = b.addOptions();
+    options.addOption(bool, "test_input", test_input);
+    exe.root_module.addOptions("build_options", options);
+    if (test_input) {
+        const vi = b.createModule(.{ .root_source_file = b.path("tests/support/virtual_input.zig") });
+        vi.addImport("wayland", wayland);
+        vi.addImport("wlroots", wlroots);
+        exe.root_module.addImport("test_input", vi);
+
+        // Drives the virtual pointer/keyboard from tests/input.sh.
+        const driver = b.addExecutable(.{
+            .name = "raywm-test-input",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("tests/input_driver.zig"),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+            }),
+            .use_llvm = use_llvm,
+            .use_lld = use_llvm,
+        });
+        driver.root_module.addImport("wayland", wayland);
+        driver.root_module.addImport("xkbcommon", xkbcommon);
+        driver.root_module.linkSystemLibrary("wayland-client", .{});
+        driver.root_module.linkSystemLibrary("xkbcommon", .{});
+        b.installArtifact(driver);
+    }
     exe.root_module.linkSystemLibrary("wayland-server", .{});
     exe.root_module.linkSystemLibrary("xkbcommon", .{});
     exe.root_module.linkSystemLibrary("pixman-1", .{});

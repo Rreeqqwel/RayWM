@@ -26,15 +26,26 @@ pub const Limits = struct {
     instructions: u64 = 200_000_000,
     /// Receives plugin/config errors ("init.lua" for the config itself).
     report: *const fn (source: []const u8, msg: []const u8) void = logError,
+    /// Receives non-fatal warnings (missing config, ignored reload, ...).
+    warn: *const fn (msg: []const u8) void = logWarn,
+    /// Most registrations (handlers, bindings, timers, managed views) alive
+    /// at once, for all plugins together.
+    max_registrations: usize = 1 << 16,
 };
 
 fn logError(source: []const u8, msg: []const u8) void {
     log.err("[{s}] {s}", .{ source, msg });
 }
 
+fn logWarn(msg: []const u8) void {
+    log.warn("{s}", .{msg});
+}
+
 const max_depth = 8; // nested host->Lua->host->Lua re-entry
 const hook_step = 10_000;
 const no_ref = c.LUA_NOREF;
+/// Most ids returned by raywm.views() / raywm.outputs().
+pub const max_list = 4096;
 
 /// Lua string at `i`, or `default` if it is not a string or number.
 fn str(L: ?*c.lua_State, i: c_int, default: [:0]const u8) [:0]const u8 {
@@ -78,6 +89,8 @@ pub fn Runtime(comptime H: type) type {
         sweeping: bool = false,
         sweep_needed: bool = false,
         reload_requested: bool = false,
+        /// Instruction budget used up; the hook fires on every instruction.
+        exhausted: bool = false,
         /// False when no Lua state exists (only after a failed reload).
         alive: bool = false,
         plugins: std.ArrayList(Plugin) = .empty,
@@ -144,7 +157,7 @@ pub fn Runtime(comptime H: type) type {
             if (rc != c.LUA_OK) {
                 const msg = str(L, -1, "?");
                 // A missing config is normal on first start: fallback bindings apply.
-                if (rc == c.LUA_ERRFILE) log.warn("{s}; using fallback bindings", .{msg}) else self.limits.report("init.lua", msg);
+                if (rc == c.LUA_ERRFILE) self.limits.warn(msg) else self.limits.report("init.lua", msg);
                 c.lua_settop(L, 0);
             } else self.config_ok = self.pcall(null, 0, 0);
             self.in_config = false;
@@ -154,6 +167,15 @@ pub fn Runtime(comptime H: type) type {
         fn initState(L: ?*c.lua_State) callconv(.c) c_int {
             const self: *Self = @ptrCast(@alignCast(c.lua_touserdata(L, 1)));
             c.luaL_openlibs(L);
+            // `debug` can rewrite C-closure upvalues and the registry, i.e.
+            // reach host internals; plugins do not get it.
+            c.lua_pushnil(L);
+            c.lua_setglobal(L, "debug");
+            _ = c.lua_getglobal(L, "package");
+            _ = c.lua_getfield(L, -1, "loaded");
+            c.lua_pushnil(L);
+            c.lua_setfield(L, -2, "debug");
+            c.lua_settop(L, -3);
             c.lua_createtable(L, 0, globals.len + 1);
             c.lua_pushinteger(L, api_version);
             c.lua_setfield(L, -2, "api_version");
@@ -186,7 +208,7 @@ pub fn Runtime(comptime H: type) type {
 
         fn enter(self: *Self) bool {
             if (self.depth >= max_depth) {
-                log.warn("event dropped: re-entry depth {d}", .{self.depth});
+                self.limits.warn("event dropped: plugin re-entry depth limit reached");
                 return false;
             }
             if (self.depth == 0) self.budget = self.limits.instructions;
@@ -257,7 +279,13 @@ pub fn Runtime(comptime H: type) type {
             const L = self.L;
             // Each top-level callback gets the full budget, so a slow handler
             // cannot get a later, innocent one killed.
-            if (self.depth <= 1) self.budget = self.limits.instructions;
+            if (self.depth <= 1) {
+                self.budget = self.limits.instructions;
+                if (self.exhausted) {
+                    self.exhausted = false;
+                    c.lua_sethook(L, hook, c.LUA_MASKCOUNT, hook_step);
+                }
+            }
             const base = c.lua_gettop(L) - nargs;
             c.lua_pushcclosure(L, traceback, 0);
             c.lua_rotate(L, base, 1);
@@ -356,9 +384,25 @@ pub fn Runtime(comptime H: type) type {
         fn hook(L: ?*c.lua_State, _: ?*c.lua_Debug) callconv(.c) void {
             var self: *Self = undefined;
             _ = c.lua_getallocf(L, @ptrCast(&self));
+            // A coroutine armed while exhausted keeps a step of 1: reset it
+            // instead of charging a full step per instruction.
+            if (!self.exhausted and c.lua_gethookcount(L) == 1) {
+                c.lua_sethook(L, hook, c.LUA_MASKCOUNT, hook_step);
+                return;
+            }
             if (self.budget > hook_step) {
                 self.budget -= hook_step;
-            } else _ = c.luaL_error(L, "instruction budget exceeded (runaway loop?)");
+                return;
+            }
+            // Plugin code may catch this error with pcall and loop on; from
+            // now on the hook fires on every instruction until RayWM regains
+            // control (pcall() restores the normal step).
+            if (!self.exhausted) {
+                self.exhausted = true;
+                c.lua_sethook(self.L, hook, c.LUA_MASKCOUNT, 1);
+                if (L != self.L) c.lua_sethook(L, hook, c.LUA_MASKCOUNT, 1);
+            }
+            _ = c.luaL_error(L, "instruction budget exceeded (runaway loop?)");
         }
 
         fn traceback(L: ?*c.lua_State) callconv(.c) c_int {
@@ -496,13 +540,13 @@ pub fn Runtime(comptime H: type) type {
         }
 
         fn lViews(L: ?*c.lua_State) callconv(.c) c_int {
-            var buf: [256]u32 = undefined;
+            var buf: [max_list]u32 = undefined;
             return pushIds(L, buf[0..Api.views(get(L).host, &buf)]);
         }
 
         fn lOutputs(L: ?*c.lua_State) callconv(.c) c_int {
             const self = get(L);
-            var buf: [16]u32 = undefined;
+            var buf: [max_list]u32 = undefined;
             const ids = buf[0..Api.outputs(self.host, &buf)];
             c.lua_createtable(L, @intCast(ids.len), 0);
             var n: c.lua_Integer = 0;
@@ -534,7 +578,7 @@ pub fn Runtime(comptime H: type) type {
         }
 
         fn lFocused(L: ?*c.lua_State) callconv(.c) c_int {
-            var buf: [256]u32 = undefined;
+            var buf: [max_list]u32 = undefined;
             const self = get(L);
             for (buf[0..Api.views(self.host, &buf)]) |vid| {
                 if ((Api.view(self.host, vid) orelse continue).focused) {
@@ -578,7 +622,7 @@ pub fn Runtime(comptime H: type) type {
             const self = get(L);
             // Reloading from init.lua or a teardown would loop forever.
             if (self.in_config or self.sweeping) {
-                log.warn("raywm.reload() ignored during init.lua/teardown", .{});
+                self.limits.warn("raywm.reload() ignored during init.lua/teardown");
                 return 0;
             }
             self.reload_requested = true; // performed once Lua has returned
@@ -593,7 +637,9 @@ pub fn Runtime(comptime H: type) type {
         // ---- ctx: registrations owned by one plugin -------------------------
 
         fn owner(L: ?*c.lua_State) u32 {
-            return @intCast(c.lua_tointegerx(L, upvalue(2), null));
+            const v = c.lua_tointegerx(L, upvalue(2), null);
+            if (v < 0 or v >= get(L).plugins.items.len) _ = c.luaL_error(L, "invalid plugin context");
+            return @intCast(v);
         }
 
         /// Stores the function at stack index `fn_index` as a registration.
@@ -603,6 +649,7 @@ pub fn Runtime(comptime H: type) type {
             const plugin = owner(L);
             if (self.plugins.items[plugin].dead) return c.luaL_error(L, "plugin is unloaded");
             if (fn_index != 0) c.luaL_checktype(L, fn_index, c.LUA_TFUNCTION);
+            if (self.regs.items.len >= self.limits.max_registrations) return c.luaL_error(L, "too many registrations");
             self.regs.ensureUnusedCapacity(gpa, 1) catch return c.luaL_error(L, "out of memory");
             const ref = if (fn_index == 0) no_ref else blk: {
                 c.lua_pushvalue(L, fn_index);
@@ -644,11 +691,11 @@ pub fn Runtime(comptime H: type) type {
             const vid = checkId(L, 1);
             const on = c.lua_type(L, 2) <= c.LUA_TNIL or c.lua_toboolean(L, 2) != 0;
             if (Api.view(self.host, vid) == null) return stale(L);
-            for (self.regs.items) |*r| if (r.kind == .manage and r.kind.manage == vid and r.plugin == owner(L) and !r.dead) {
-                if (!on) {
-                    r.dead = true;
-                    self.sweep_needed = true;
-                }
+            // Reuse this plugin's entry (also one released earlier in this
+            // callback and not yet swept), so toggling does not grow the list.
+            for (self.regs.items) |*r| if (r.kind == .manage and r.kind.manage == vid and r.plugin == owner(L)) {
+                r.dead = !on;
+                if (!on) self.sweep_needed = true;
                 c.lua_pushboolean(L, 1);
                 return 1;
             };

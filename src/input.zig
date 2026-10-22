@@ -28,6 +28,8 @@ pub const Grab = struct {
     /// xdg move/resize: the client saw the press, so it must see the release
     /// (otherwise wlr_seat keeps counting the button as held).
     forward_release: bool = false,
+    /// Only the release of this button ends the grab.
+    button: u32 = 0,
     w: i32 = 0,
     h: i32 = 0,
 };
@@ -36,8 +38,9 @@ pub const Keyboard = struct {
     server: *Server,
     device: *wlr.InputDevice,
     link: wl.list.Link = undefined,
-    /// Keycodes whose press triggered a binding; their release is swallowed too.
-    swallowed: [8]u32 = @splat(0),
+    /// Keycodes whose press triggered a binding; their release is swallowed
+    /// too. As large as wlr_keyboard's own array of pressed keys.
+    swallowed: [32]u32 = @splat(0),
 
     modifiers: wl.Listener(*wlr.Keyboard) = .init(handleModifiers),
     key: wl.Listener(*wlr.Keyboard.event.Key) = .init(handleKey),
@@ -76,10 +79,15 @@ pub const Keyboard = struct {
         const keycode = event.keycode + 8; // libinput -> xkb
         var handled = false;
         if (event.state == .pressed) {
+            // Marked before the binding runs: if it changes focus, the newly
+            // focused client must not see this key as held.
+            const slot = for (&kb.swallowed) |*s| {
+                if (s.* == 0) break s;
+            } else null;
+            if (slot) |s| s.* = keycode;
             handled = kb.handlePress(wlr_kb, keycode);
-            if (handled) for (&kb.swallowed) |*s| if (s.* == 0) {
-                s.* = keycode;
-                break;
+            if (!handled) if (slot) |s| {
+                s.* = 0;
             };
         } else for (&kb.swallowed) |*s| if (s.* == keycode) {
             s.* = 0;
@@ -160,7 +168,10 @@ fn handleBinding(server: *Server, mods: u32, sym: u32) bool {
 }
 
 pub fn newInput(listener: *wl.Listener(*wlr.InputDevice), device: *wlr.InputDevice) void {
-    const server: *Server = @fieldParentPtr("new_input", listener);
+    addDevice(@fieldParentPtr("new_input", listener), device);
+}
+
+pub fn addDevice(server: *Server, device: *wlr.InputDevice) void {
     switch (device.type) {
         .keyboard => Keyboard.create(server, device) catch |err| std.log.err("keyboard setup failed: {}", .{err}),
         .pointer => server.cursor.attachInputDevice(device),
@@ -226,6 +237,9 @@ fn processMotion(server: *Server, time_msec: u32) void {
         }
         return;
     };
+    // Became managed mid-grab (ctx.manage, reload): stop changing geometry,
+    // but keep the grab until release so the release is still delivered.
+    if (layoutManaged(server, view)) return;
     const dx: i32 = @intFromFloat(server.cursor.x - g.cx);
     const dy: i32 = @intFromFloat(server.cursor.y - g.cy);
     switch (g.mode) {
@@ -254,8 +268,8 @@ fn processMotion(server: *Server, time_msec: u32) void {
 pub fn onCommit(server: *Server, view: *View) void {
     const a = view.anchor orelse return;
     const geo = view.xdg.base.geometry;
-    if (a.edges.left) view.x = a.box.x + a.box.width - geo.width;
-    if (a.edges.top) view.y = a.box.y + a.box.height - geo.height;
+    if (a.edges.left) view.x = a.box.x +| a.box.width -| geo.width;
+    if (a.edges.top) view.y = a.box.y +| a.box.height -| geo.height;
     if (server.grab.view != view and srv.serialReached(view.xdg.base.current.configure_serial, a.serial)) view.anchor = null;
 }
 
@@ -269,7 +283,7 @@ fn layoutManaged(server: *Server, view: *View) bool {
 pub fn beginMove(server: *Server, view: *View, from_client: bool) void {
     if (layoutManaged(server, view)) return;
     endGrab(server);
-    server.grab = .{ .mode = .move, .view = view, .cx = server.cursor.x, .cy = server.cursor.y, .box = view.geometry(), .forward_release = from_client };
+    server.grab = .{ .mode = .move, .view = view, .cx = server.cursor.x, .cy = server.cursor.y, .box = view.geometry(), .forward_release = from_client, .button = server.seat.pointer_state.grab_button };
     startGrab(server, "grabbing");
 }
 
@@ -278,7 +292,7 @@ pub fn beginResize(server: *Server, view: *View, edges: wlr.Edges, from_client: 
     endGrab(server);
     view.pending = null;
     const box = view.geometry();
-    server.grab = .{ .mode = .resize, .view = view, .cx = server.cursor.x, .cy = server.cursor.y, .box = box, .edges = edges, .forward_release = from_client, .w = box.width, .h = box.height };
+    server.grab = .{ .mode = .resize, .view = view, .cx = server.cursor.x, .cy = server.cursor.y, .box = box, .edges = edges, .forward_release = from_client, .button = server.seat.pointer_state.grab_button, .w = box.width, .h = box.height };
     _ = view.xdg.setResizing(true);
     startGrab(server, "se-resize");
 }
@@ -302,26 +316,36 @@ pub fn endGrab(server: *Server) void {
 
 pub fn button(listener: *wl.Listener(*wlr.Pointer.event.Button), event: *wlr.Pointer.event.Button) void {
     const server: *Server = @fieldParentPtr("cursor_button", listener);
-    if (event.state == .released and server.grab.mode != .none) {
-        // Super+drag: the client never saw the press, so it gets no release.
+    if (server.grab.mode != .none) {
+        // Other buttons are ignored during a grab; only the grab's own
+        // release ends it. Super+drag: the client never saw the press, so
+        // it gets no release either.
+        if (event.state != .released or event.button != server.grab.button) return;
         if (server.grab.forward_release) _ = server.seat.pointerNotifyButton(event.time_msec, event.button, event.state);
         endGrab(server);
         return;
     }
     if (event.state == .pressed) if (surfaceAt(server, server.cursor.x, server.cursor.y)) |hit| if (hit.layer) |ls| {
-        if (ls.wantsKeyboard() and server.layer_focus != ls) server.focusLayer(ls);
+        const exclusive = if (server.layer_focus) |cur| cur.wlr_layer.current.keyboard_interactive == .exclusive else false;
+        if (ls.wantsKeyboard() and server.layer_focus != ls and !exclusive) server.focusLayer(ls);
     } else if (hit.view) |view| {
         server.focus(view);
         const kb = server.seat.getKeyboard();
         // On a managed window Super+click is an ordinary click.
         if (kb != null and kb.?.getModifiers().logo and (event.button == BTN_LEFT or event.button == BTN_RIGHT) and !layoutManaged(server, view)) {
-            if (event.button == BTN_LEFT) return beginMove(server, view, false);
+            if (event.button == BTN_LEFT) {
+                beginMove(server, view, false);
+                server.grab.button = event.button;
+                return;
+            }
             const g = view.geometry();
             const fx: i32 = @intFromFloat(server.cursor.x);
             const fy: i32 = @intFromFloat(server.cursor.y);
             const left = fx < g.x + @divTrunc(g.width, 2);
             const top = fy < g.y + @divTrunc(g.height, 2);
-            return beginResize(server, view, .{ .left = left, .right = !left, .top = top, .bottom = !top }, false);
+            beginResize(server, view, .{ .left = left, .right = !left, .top = top, .bottom = !top }, false);
+            server.grab.button = event.button;
+            return;
         }
     };
     _ = server.seat.pointerNotifyButton(event.time_msec, event.button, event.state);

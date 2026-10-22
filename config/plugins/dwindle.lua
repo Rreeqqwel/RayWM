@@ -14,8 +14,11 @@
 local gap = 8 -- outer margin and space between windows, in pixels
 local min_size = 1 -- smallest width/height ever passed to view_place
 
-local runtime_dir = os.getenv("XDG_RUNTIME_DIR") or "/tmp"
-local snapshot_path = runtime_dir .. "/raywm-dwindle-" .. (os.getenv("WAYLAND_DISPLAY") or "unknown") .. ".lua"
+-- Only in the per-user runtime directory (mode 0700); never in /tmp.
+local runtime_dir = os.getenv("XDG_RUNTIME_DIR")
+local snapshot_path = runtime_dir and (runtime_dir .. "/raywm-dwindle-" .. (os.getenv("WAYLAND_DISPLAY") or "unknown") .. ".txt")
+local snapshot_max_bytes = 1 << 20
+local snapshot_max_depth = 4096
 
 -- Leaf:  { view = id, parent = node|nil, rect = {x,y,w,h} }
 -- Split: { split = "h"|"v", ratio = 0..1, a = node, b = node, parent, rect }
@@ -117,10 +120,16 @@ local function apply(node, x, y, w, h, stale)
     return
   end
   local horizontal = node.split == "h"
-  local size = horizontal and w or h
-  local avail = math.max(0, size - gap)
-  local first = math.max(min_size, math.floor(avail * node.ratio))
-  local second = math.max(min_size, avail - first)
+  local avail = (horizontal and w or h) - gap
+  if avail < 2 * min_size then
+    -- Too small to split: both children share the area (they overlap, but
+    -- never leave it). Only reachable with very many windows.
+    apply(node.a, x, y, w, h, stale)
+    apply(node.b, x, y, w, h, stale)
+    return
+  end
+  local first = math.min(avail - min_size, math.max(min_size, math.floor(avail * node.ratio)))
+  local second = avail - first
   if horizontal then
     apply(node.a, x, y, first, h, stale)
     apply(node.b, x + first + gap, y, second, h, stale)
@@ -167,7 +176,10 @@ local function sync_views()
   for id in pairs(leaves) do
     if not alive[id] then gone[#gone + 1] = id end
   end
-  for _, id in ipairs(gone) do remove(id) end
+  for _, id in ipairs(gone) do
+    remove(id)
+    manage(id, false) -- in case it still exists
+  end
 end
 
 local function arrange_all()
@@ -212,59 +224,91 @@ local function focus_step(step)
 end
 
 -- ---- reload support -------------------------------------------------------
+-- Snapshot format (plain data, never executed), one token per line in
+-- pre-order:  "output <id>", then "h <ratio>" / "v <ratio>" / "leaf <view>".
 
-local function serialize(node)
-  if node.view then return "{v=" .. node.view .. "}" end
-  return string.format("{s=%q,r=%.6f,a=%s,b=%s}", node.split, node.ratio, serialize(node.a), serialize(node.b))
+local function write_tree(node, lines)
+  if node.view then
+    lines[#lines + 1] = "leaf " .. node.view
+    return
+  end
+  lines[#lines + 1] = string.format("%s %.6f", node.split, node.ratio)
+  write_tree(node.a, lines)
+  write_tree(node.b, lines)
 end
 
 local function save_snapshot()
-  local parts = {}
-  for out, root in pairs(trees) do parts[#parts + 1] = "[" .. out .. "]=" .. serialize(root) end
+  if not snapshot_path then return end
+  local lines = { "raywm-dwindle 1" }
+  for out, root in pairs(trees) do
+    lines[#lines + 1] = "output " .. out
+    write_tree(root, lines)
+  end
   local f = io.open(snapshot_path, "w")
   if not f then return end
-  f:write("return {", table.concat(parts, ","), "}\n")
+  f:write(table.concat(lines, "\n"), "\n")
   f:close()
 end
 
--- Rebuilds trees from a snapshot, keeping only windows that still exist.
-local function build(t, parent, alive)
-  if type(t) ~= "table" then return nil end
-  if math.type(t.v) == "integer" then
-    if not alive[t.v] or leaves[t.v] then return nil end
-    local leaf = { view = t.v, parent = parent }
-    leaves[t.v] = leaf
-    manage(t.v)
-    return leaf
+-- Parses one subtree starting at lines[i]. Returns node (nil if all its
+-- windows are gone) and the next index, or false on malformed input.
+-- Leaves are collected in `seen`; nothing global is touched.
+local function parse_tree(lines, i, depth, alive, seen)
+  local kind, value = (lines[i] or ""):match("^(%a+) (%S+)$")
+  if depth > snapshot_max_depth then return false end
+  if kind == "leaf" then
+    local id = math.tointeger(tonumber(value))
+    if not id then return false end
+    if not alive[id] or seen[id] then return nil, i + 1 end
+    local leaf = { view = id }
+    seen[id] = leaf
+    return leaf, i + 1
+  elseif kind == "h" or kind == "v" then
+    local ratio = tonumber(value)
+    if not ratio then return false end
+    local node = { split = kind, ratio = math.min(0.9, math.max(0.1, ratio)) }
+    local a, j = parse_tree(lines, i + 1, depth + 1, alive, seen)
+    if a == false then return false end
+    local b, k = parse_tree(lines, j, depth + 1, alive, seen)
+    if b == false then return false end
+    if a and b then
+      node.a, node.b, a.parent, b.parent = a, b, node, node
+      return node, k
+    end
+    return a or b, k -- a window vanished: collapse
   end
-  if t.s ~= "h" and t.s ~= "v" then return nil end
-  local node = { split = t.s, ratio = math.min(0.9, math.max(0.1, tonumber(t.r) or 0.5)), parent = parent }
-  node.a, node.b = build(t.a, node, alive), build(t.b, node, alive)
-  if node.a and node.b then return node end
-  local only = node.a or node.b -- a window vanished: collapse
-  if only then only.parent = parent end
-  return only
+  return false
 end
 
 local function load_snapshot(alive)
+  if not snapshot_path then return end
   local f = io.open(snapshot_path, "r")
   if not f then return end
-  local text = f:read("a")
+  local text = f:read(snapshot_max_bytes + 1)
   f:close()
   os.remove(snapshot_path) -- consumed once; never reused by a later session
-  if next(alive) == nil then return end -- fresh session: ignore
-  local chunk = load(text, "dwindle-snapshot", "t", {})
-  local ok, data = pcall(chunk or error)
-  if not ok or type(data) ~= "table" then return end
+  if next(alive) == nil or not text or #text > snapshot_max_bytes then return end
+  local lines = {}
+  for line in text:gmatch("[^\n]+") do lines[#lines + 1] = line end
+  if lines[1] ~= "raywm-dwindle 1" then return end
   local _, by_id = current_outputs()
-  for out, t in pairs(data) do
-    if math.type(out) == "integer" and by_id[out] and not trees[out] then
-      local root = build(t, nil, alive)
-      if root then
-        root.out = out
-        trees[out] = root
-      end
-    end
+  local parsed, seen, i = {}, {}, 2
+  while lines[i] do
+    local out = math.tointeger(tonumber((lines[i]:match("^output (%S+)$"))))
+    if not out or parsed[out] then return end
+    local root, j = parse_tree(lines, i + 1, 1, alive, seen)
+    if root == false then return end -- malformed: ignore the whole snapshot
+    if root and by_id[out] then parsed[out] = root end
+    i = j
+  end
+  -- Only a fully valid snapshot is applied.
+  for out, root in pairs(parsed) do
+    root.out = out
+    trees[out] = root
+    each_leaf(root, function(l)
+      leaves[l.view] = l
+      manage(l.view)
+    end)
   end
 end
 
@@ -295,4 +339,6 @@ return {
     ctx.bind("Super+k", function() focus_step(-1) end)
   end,
   teardown = save_snapshot,
+  -- For tests/dwindle_test.lua only: read access to the internal state.
+  inspect = function() return trees, leaves end,
 }

@@ -92,7 +92,14 @@ pub const LayerSurface = struct {
             ls.scene.tree.node.reparent(ls.server.layer(sceneLayer(ls.wlr_layer.current.layer)));
         }
         // The initial commit needs a configure; later only real state changes.
-        if (ls.wlr_layer.initial_commit or committed != 0) output.arrangeLayers();
+        if ((ls.wlr_layer.initial_commit or committed != 0) and output.inLayout()) output.arrangeLayers();
+        // Keyboard interactivity may change while mapped (e.g. a launcher).
+        if (ls.wlr_layer.current.committed.keyboard_interactivity and ls.wlr_layer.surface.mapped) {
+            const layer = ls.wlr_layer.current.layer;
+            if (ls.wantsKeyboard() and (layer == .top or layer == .overlay)) {
+                if (ls.server.layer_focus != ls) ls.server.focusLayer(ls);
+            } else if (ls.server.layer_focus == ls) ls.server.focusLayer(null);
+        }
     }
 
     fn handleMap(listener: *wl.Listener(void)) void {

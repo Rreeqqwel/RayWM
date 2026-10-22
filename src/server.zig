@@ -121,6 +121,9 @@ pub const Server = struct {
         server.cursor.events.axis.add(&server.cursor_axis);
         server.cursor.events.frame.add(&server.cursor_frame);
         server.timer = try wl_server.getEventLoop().addTimer(*Server, onTimer, server);
+        // Test builds only (zig build -Dtest-input): virtual input for tests.
+        if (@import("build_options").test_input)
+            try @import("test_input").install(Server, server, wl_server, input.addDevice);
     }
 
     fn onTimer(server: *Server) c_int {
@@ -133,6 +136,7 @@ pub const Server = struct {
     pub fn deinit(server: *Server) void {
         std.debug.assert(server.rt == null);
         if (server.timer) |t| t.remove();
+        server.timer = null;
         server.wl_server.destroyClients();
         inline for (.{
             "new_output",        "layout_change",  "new_toplevel",      "new_popup",
@@ -286,8 +290,8 @@ pub const Server = struct {
             var it = server.views.iterator(.forward);
             while (it.next()) |v| {
                 const geo = v.xdg.base.geometry;
-                const cx: f64 = @floatFromInt(v.x + @divTrunc(geo.width, 2));
-                const cy: f64 = @floatFromInt(v.y + @divTrunc(geo.height, 2));
+                const cx: f64 = @floatFromInt(v.x +| @divTrunc(geo.width, 2));
+                const cy: f64 = @floatFromInt(v.y +| @divTrunc(geo.height, 2));
                 if (server.output_layout.outputAt(cx, cy) == null) v.move(box.x, box.y);
             }
         }

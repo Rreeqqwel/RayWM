@@ -23,7 +23,7 @@ pub fn views(server: *Server, buf: []u32) usize {
 pub fn view(server: *Server, id: u32) ?lua.ViewInfo {
     const v = server.viewById(id) orelse return null;
     const g = v.geometry();
-    const out = server.outputAt(g.x + @divTrunc(g.width, 2), g.y + @divTrunc(g.height, 2));
+    const out = server.outputAt(g.x +| @divTrunc(g.width, 2), g.y +| @divTrunc(g.height, 2));
     return .{
         .box = .{ .x = g.x, .y = g.y, .w = g.width, .h = g.height },
         .title = v.xdg.title,
@@ -36,8 +36,8 @@ pub fn view(server: *Server, id: u32) ?lua.ViewInfo {
 pub fn viewCmd(server: *Server, id: u32, cmd: lua.ViewCmd) bool {
     const v = server.viewById(id) orelse return false;
     switch (cmd) {
-        .move => |p| v.move(p[0], p[1]),
-        .place => |b| v.place(b.x, b.y, b.w, b.h),
+        .move => |p| v.move(coord(p[0]), coord(p[1])),
+        .place => |b| v.place(coord(b.x), coord(b.y), std.math.clamp(b.w, 1, max_coord), std.math.clamp(b.h, 1, max_coord)),
         .opacity => |a| v.setOpacity(a),
         .raise => v.tree.node.raiseToTop(),
         .focus => if (v.tree.node.enabled) server.focus(v),
@@ -50,6 +50,12 @@ pub fn viewCmd(server: *Server, id: u32, cmd: lua.ViewCmd) bool {
     }
     input.refocusPointer(server);
     return true;
+}
+
+/// Lua may pass any i32; keep geometry far from overflow in later math.
+const max_coord = 1 << 24;
+fn coord(v: i32) i32 {
+    return std.math.clamp(v, -max_coord, max_coord);
 }
 
 pub fn outputs(server: *Server, buf: []u32) usize {

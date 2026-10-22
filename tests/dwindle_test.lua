@@ -7,9 +7,10 @@ local plugin_path = "config/plugins/dwindle.lua"
 local outputs, views, mru, focused, handlers, binds, errors, place_calls
 local focus_requests = 0 -- like the core's Server.focus_requests
 local managed = {} -- view id -> true, as tracked by the runtime for ctx.manage
+local views_cap -- truncates raywm.views() when set
 local function reset_world()
   outputs = { { id = 1, x = 0, y = 0, w = 1280, h = 720, usable = { x = 0, y = 0, w = 1280, h = 720 } } }
-  views, mru, focused, place_calls, managed = {}, {}, nil, 0, {}
+  views, mru, focused, place_calls, managed, views_cap = {}, {}, nil, 0, {}, nil
 end
 
 local function output_at(x, y)
@@ -27,7 +28,14 @@ end
 
 raywm = {
   api_version = 1,
-  views = function() return copy(mru) end,
+  views = function()
+    local r = {}
+    for i, id in ipairs(mru) do
+      if views_cap and i > views_cap then break end
+      r[i] = id
+    end
+    return r
+  end,
   focused = function() return focused end,
   outputs = function() return copy(outputs) end,
   view = function(id)
@@ -118,8 +126,47 @@ local function expect(id, want, label)
   if got ~= want then error(("%s: view %d is %s, expected %s"):format(label, id, got, want), 2) end
 end
 
+-- Structural invariants of the plugin's trees (via plugin.inspect()):
+-- parent links, unique leaves, leaves map == tree leaves == managed set,
+-- every leaf is an existing window, traversal terminates.
+local function check_tree(label)
+  local trees, leaves = plugin.inspect()
+  local seen, count = {}, 0
+  for out, root in pairs(trees) do
+    assert(root.parent == nil, label .. ": root has a parent")
+    assert(root.out == out, label .. ": root.out mismatch")
+    local stack, steps = { root }, 0
+    while #stack > 0 do
+      local node = table.remove(stack)
+      steps = steps + 1
+      assert(steps < 100000, label .. ": tree traversal does not terminate")
+      if node.view then
+        assert(not seen[node.view], label .. ": window " .. node.view .. " owned twice")
+        seen[node.view] = true
+        count = count + 1
+        assert(leaves[node.view] == node, label .. ": leaves map out of sync for " .. node.view)
+        assert(views[node.view], label .. ": leaf refers to missing window " .. node.view)
+        assert(managed[node.view], label .. ": tiled window " .. node.view .. " not managed")
+      else
+        assert(node.split == "h" or node.split == "v", label .. ": bad split")
+        assert(node.a and node.b, label .. ": split without two children")
+        assert(node.a.parent == node and node.b.parent == node, label .. ": broken parent link")
+        stack[#stack + 1] = node.a
+        stack[#stack + 1] = node.b
+      end
+    end
+  end
+  for id in pairs(leaves) do assert(seen[id], label .. ": stale leaves entry " .. id) end
+  for id in pairs(managed) do
+    -- (the runtime drops ctx.manage of windows that are gone)
+    if views[id] then assert(seen[id], label .. ": window " .. id .. " managed but not tiled") end
+  end
+  return count
+end
+
 -- No overlaps, everything inside the usable area (minus the outer gap).
 local function check_invariants(label)
+  check_tree(label)
   local ids = {}
   for id in pairs(views) do ids[#ids + 1] = id end
   for i, a in ipairs(ids) do
@@ -127,13 +174,20 @@ local function check_invariants(label)
     local o
     for _, x in ipairs(outputs) do if output_at(va.x, va.y) == x.id then o = x end end
     assert(o, label .. ": view " .. a .. " is outside every output")
+    assert(va.w >= 1 and va.h >= 1, label .. ": size below 1")
     local u = o.usable
+    if u.w <= 16 or u.h <= 16 then goto next_view end -- smaller than the gaps
     assert(va.x >= u.x + 8 and va.y >= u.y + 8 and va.x + va.w <= u.x + u.w - 8 and va.y + va.h <= u.y + u.h - 8,
       label .. ": view " .. a .. " (" .. geo(a) .. ") leaves the usable area")
+    ::next_view::
     for j = i + 1, #ids do
       local vb = views[ids[j]]
+      -- Areas too small to split are shared on purpose (very many windows).
+      -- (smaller than gap + 2 px in some direction).
+      if math.min(va.w, va.h, vb.w, vb.h) < 10 then goto continue end
       local overlap = va.x < vb.x + vb.w and vb.x < va.x + va.w and va.y < vb.y + vb.h and vb.y < va.y + va.h
       assert(not overlap, label .. ": views " .. a .. " and " .. ids[j] .. " overlap")
+      ::continue::
     end
   end
   assert(#errors == 0, label .. ": Lua errors: " .. table.concat(errors, "; "))
@@ -299,6 +353,126 @@ tests["Super+j/k cycle focus in tree order"] = function()
   assert(focused == b)
 end
 
+tests["10 and 20 windows keep every invariant"] = function()
+  local first = map()
+  for n = 2, 20 do
+    map()
+    check_invariants(n .. " windows")
+    if n == 10 or n == 20 then
+      expect(first, "8,8 628x704", n .. " windows") -- the first split never moves
+    end
+  end
+  assert(check_tree("20") == 20)
+end
+
+tests["closing leaves in any order collapses the tree"] = function()
+  for _, order in ipairs({ { 1, 2, 3, 4, 5, 6 }, { 6, 5, 4, 3, 2, 1 }, { 3, 1, 5, 2, 6, 4 }, { 2, 4, 6, 1, 3, 5 } }) do
+    reset_world()
+    errors = {}
+    load_plugin()
+    local ids = {}
+    for i = 1, 6 do ids[i] = map() end
+    for k, i in ipairs(order) do
+      unmap(ids[i])
+      check_invariants("close order step " .. k)
+      local left = 6 - k
+      assert(check_tree("count") == left)
+      if left == 1 then
+        for _, id in ipairs(ids) do
+          if views[id] then expect(id, "8,8 1264x704", "last window takes the whole area") end
+        end
+      end
+    end
+  end
+end
+
+tests["randomized operation sequences (fixed seeds)"] = function()
+  for seed = 1, 20 do
+    reset_world()
+    errors = {}
+    load_plugin()
+    math.randomseed(seed)
+    local label = "seed " .. seed
+    for step = 1, 300 do
+      local r = math.random(100)
+      local ids = {}
+      for id in pairs(views) do ids[#ids + 1] = id end
+      table.sort(ids)
+      if r <= 35 or #ids == 0 then
+        map(outputs[math.random(#outputs)].id)
+      elseif r <= 60 then
+        unmap(ids[math.random(#ids)])
+      elseif r <= 72 then
+        raywm.view_focus(ids[math.random(#ids)])
+      elseif r <= 82 then -- panel appears/disappears or output resizes
+        local o = outputs[math.random(#outputs)]
+        local top = math.random(0, 1) * 30
+        o.w, o.h = math.random(1, 4) * 320, math.random(1, 4) * 180
+        o.usable = { x = o.x, y = o.y + top, w = o.w, h = o.h - top }
+        emit("layout", o.id)
+      elseif r <= 92 then -- plug or unplug a second output
+        if #outputs == 1 then
+          outputs[2] = { id = 100 + step, x = 5000, y = 0, w = 800, h = 600, usable = { x = 5000, y = 0, w = 800, h = 600 } }
+          emit("output_add", outputs[2].id)
+          emit("layout", 0)
+        else
+          local gone = table.remove(outputs, 2)
+          -- The core moves windows off a dead output onto a visible one.
+          for _, id in ipairs(ids) do
+            local v = views[id]
+            if v.x >= gone.x then v.x, v.y = 0, 0 end
+          end
+          emit("output_remove", gone.id)
+          emit("layout", 0)
+        end
+      else -- reload
+        plugin.teardown()
+        managed = {}
+        load_plugin()
+      end
+      check_invariants(label .. " step " .. step)
+    end
+  end
+end
+
+tests["malformed or hostile snapshots are ignored"] = function()
+  local path = os.getenv("XDG_RUNTIME_DIR") .. "/raywm-dwindle-" .. os.getenv("WAYLAND_DISPLAY") .. ".txt"
+  local deep = { "raywm-dwindle 1", "output 1" }
+  for _ = 1, 10000 do deep[#deep + 1] = "h 0.5" end
+  deep[#deep + 1] = "leaf 2"
+  local cases = {
+    "return {[1]={v=2}}\nwhile true do end", -- code is never executed
+    "raywm-dwindle 1\noutput 1\nh 0.5\nleaf 2", -- truncated
+    "raywm-dwindle 1\noutput 1\nleaf 2\nleaf 2", -- garbage after a tree
+    "raywm-dwindle 1\noutput x\nleaf 2",
+    table.concat(deep, "\n"), -- deeper than the limit
+    string.rep("x", (1 << 20) + 10), -- too large
+  }
+  for i, text in ipairs(cases) do
+    reset_world()
+    errors = {}
+    load_plugin()
+    local a, b = map(), map()
+    plugin.teardown() -- writes a valid snapshot ...
+    local f = assert(io.open(path, "w"))
+    f:write(text) -- ... which we replace
+    f:close()
+    managed = {}
+    load_plugin()
+    check_invariants("snapshot case " .. i)
+    assert(check_tree("case " .. i) == 2, "case " .. i .. ": windows lost")
+    assert(not io.open(path, "r"), "case " .. i .. ": snapshot not consumed")
+  end
+end
+
+tests["a truncated views() list never leaves managed windows untiled"] = function()
+  for _ = 1, 6 do map() end
+  views_cap = 4
+  emit("layout", 1) -- two windows look gone: removed from the tree and released
+  check_tree("truncated")
+  views_cap = nil
+end
+
 local names = {}
 for name in pairs(tests) do names[#names + 1] = name end
 table.sort(names)
@@ -309,7 +483,7 @@ for _, name in ipairs(names) do
   load_plugin()
   local ok, err = pcall(tests[name])
   if ok then pcall(plugin.teardown) end
-  os.remove((os.getenv("XDG_RUNTIME_DIR") or "/tmp") .. "/raywm-dwindle-" .. (os.getenv("WAYLAND_DISPLAY") or "unknown") .. ".lua")
+  os.remove((os.getenv("XDG_RUNTIME_DIR") or "/tmp") .. "/raywm-dwindle-" .. (os.getenv("WAYLAND_DISPLAY") or "unknown") .. ".txt")
   print((ok and "PASS  " or "FAIL  ") .. name .. (ok and "" or ("\n      " .. tostring(err))))
   if not ok then failed = failed + 1 end
 end
