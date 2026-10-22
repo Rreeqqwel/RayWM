@@ -7,6 +7,7 @@ const zwlr = @import("wayland").server.zwlr;
 const wlr = @import("wlroots");
 const srv = @import("server.zig");
 const Popup = @import("view.zig").Popup;
+const input = @import("input.zig");
 const Server = srv.Server;
 const Output = srv.Output;
 const gpa = srv.gpa;
@@ -143,12 +144,16 @@ pub const LayerSurface = struct {
         const ls: *LayerSurface = @fieldParentPtr("map", listener);
         if (ls.output) |o| o.arrangeLayers();
         if (ls.claimsKeyboard() and ls.mayTakeKeyboard()) ls.server.focusLayer(ls);
+        // The surface may appear under a still cursor (or under an implicit
+        // grab, which it must not take over).
+        input.refocusPointer(ls.server);
     }
 
     fn handleUnmap(listener: *wl.Listener(void)) void {
         const ls: *LayerSurface = @fieldParentPtr("unmap", listener);
         if (ls.server.layer_focus == ls) ls.releaseKeyboard();
         if (ls.output) |o| o.arrangeLayers();
+        input.refocusPointer(ls.server);
     }
 
     fn handleDestroy(listener: *wl.Listener(*wlr.LayerSurfaceV1), _: *wlr.LayerSurfaceV1) void {

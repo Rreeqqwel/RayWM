@@ -3,11 +3,14 @@
 //! given as arguments, with a roundtrip after each one:
 //!   move X Y          absolute pointer position in layout pixels
 //!   down|up left|right
-//!   key NAME down|up  NAME: super, ctrl, alt, shift, f11, f12, j, r, p,
-//!                     print, escape
+//!   key NAME down|up  NAME: super, ctrl, alt, shift, f9, f10, f11, f12,
+//!                     h, j, k, l, q, r, p, tab, print, escape
+//!   group N           locks keyboard layout group N (0 = first layout), as
+//!                     a layout switch key does
 //!   sleep MS
 //! RAYWM_TEST_EXTENT=WxH: the layout size for absolute motion (default
-//! 1280x720, one headless output).
+//! 1280x720, one headless output). The keymap follows XKB_DEFAULT_LAYOUT
+//! etc., e.g. XKB_DEFAULT_LAYOUT=us,ru for a two-layout keymap.
 const std = @import("std");
 const posix = std.posix;
 const wayland = @import("wayland");
@@ -20,7 +23,14 @@ const BTN_LEFT = 0x110;
 const BTN_RIGHT = 0x111;
 const KEY_F12 = 88;
 const KEY_F11 = 87;
+const KEY_F10 = 68;
+const KEY_F9 = 67;
+const KEY_H = 35;
 const KEY_J = 36;
+const KEY_K = 37;
+const KEY_L = 38;
+const KEY_Q = 16;
+const KEY_TAB = 15;
 const KEY_R = 19;
 const KEY_LEFTCTRL = 29;
 const KEY_LEFTALT = 56;
@@ -38,9 +48,16 @@ const keys = [_]Key{
     .{ .name = "p", .code = KEY_P },
     .{ .name = "print", .code = KEY_SYSRQ },
     .{ .name = "escape", .code = KEY_ESC },
+    .{ .name = "f9", .code = KEY_F9 },
+    .{ .name = "f10", .code = KEY_F10 },
     .{ .name = "f11", .code = KEY_F11 },
     .{ .name = "f12", .code = KEY_F12 },
+    .{ .name = "h", .code = KEY_H },
     .{ .name = "j", .code = KEY_J },
+    .{ .name = "k", .code = KEY_K },
+    .{ .name = "l", .code = KEY_L },
+    .{ .name = "q", .code = KEY_Q },
+    .{ .name = "tab", .code = KEY_TAB },
     .{ .name = "r", .code = KEY_R },
 };
 const KEY_LEFTMETA = 125;
@@ -67,6 +84,7 @@ pub fn main(init: std.process.Init) !void {
     const keymap = try uploadKeymap(keyboard);
     defer keymap.unref();
     var depressed: u32 = 0;
+    var group: u32 = 0;
     if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
 
     // Matches the single default headless output (WLR_HEADLESS_OUTPUTS=1).
@@ -106,9 +124,13 @@ pub fn main(init: std.process.Init) !void {
                 if (index >= 32) return error.UnknownModifier;
                 const bit = @as(u32, 1) << @intCast(index);
                 depressed = if (down) depressed | bit else depressed & ~bit;
-                keyboard.modifiers(depressed, 0, 0, 0);
+                keyboard.modifiers(depressed, 0, 0, group);
             }
             i += 3;
+        } else if (std.mem.eql(u8, cmd, "group")) {
+            group = try std.fmt.parseInt(u32, a, 10);
+            keyboard.modifiers(depressed, 0, 0, group);
+            i += 2;
         } else if (std.mem.eql(u8, cmd, "sleep")) {
             const ms = try std.fmt.parseInt(u32, a, 10);
             var ts: posix.timespec = .{ .sec = ms / 1000, .nsec = @as(isize, ms % 1000) * std.time.ns_per_ms };

@@ -50,6 +50,8 @@ pub const Server = struct {
     /// Layer surface (launcher, lock-like overlay) holding keyboard focus.
     layer_focus: ?*LayerSurface = null,
     grab: input.Grab = .{},
+    /// Scene node of the pointer-focused surface (see input.zig).
+    pointer_node: input.PointerNode = .{},
     next_id: u32 = 1,
     /// Set once the Lua host is running; null during startup and teardown.
     rt: ?*host.Runtime = null,

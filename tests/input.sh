@@ -12,92 +12,7 @@ set -eu
 bin=$(cd "${1:-zig-out/test-input/bin}" && pwd)
 root=$(cd "$(dirname "$0")/.." && pwd)
 [ -x "$bin/raywm-test-input" ] || { echo "input: missing $bin/raywm-test-input (build with -Dtest-input)"; exit 2; }
-failures=0
-scenarios=0
-
-# start <config.lua> <windows> [panel|panel-kbd]
-# Starts the compositor, then an optional panel and N held windows
-# (logs: panel.log, a.log, b.log; pids: *.pid).
-start() {
-    scenarios=$((scenarios + 1))
-    before=$failures
-    tmp=$(mktemp -d); chmod 700 "$tmp"
-    mkdir -p "$tmp/config/raywm/plugins"
-    cp "$root/config/plugins/"*.lua "$root/tests/input/plugins/"*.lua "$tmp/config/raywm/plugins/"
-    cp "$1" "$tmp/config/raywm/init.lua"
-    client="'$bin/raywm-test-client'"
-    win="RAYWM_TEST_HOLD=1 RAYWM_TEST_CSD_MOVE=1 RAYWM_TEST_KBD=1 RAYWM_TEST_PTR=1 RAYWM_TEST_ROUNDS=1 $client"
-    wait_for() { echo "until grep -q '$2' '$tmp/$1'; do sleep 0.05; done"; }
-    cmd="echo \$WAYLAND_DISPLAY >'$tmp/display'"
-    case "${3:-}" in
-        panel) cmd="$cmd; RAYWM_TEST_LAYER=1 RAYWM_TEST_KBD=1 $client >'$tmp/panel.log' 2>&1 & echo \$! >'$tmp/panel.pid'; $(wait_for panel.log 'layer frame done')" ;;
-        panel-kbd) cmd="$cmd; RAYWM_TEST_LAYER=1 RAYWM_TEST_LAYER_KBD=1 RAYWM_TEST_KBD=1 $client >'$tmp/panel.log' 2>&1 & echo \$! >'$tmp/panel.pid'; $(wait_for panel.log 'layer frame done')" ;;
-    esac
-    [ "$2" -ge 1 ] && cmd="$cmd; $win >'$tmp/a.log' 2>&1 & echo \$! >'$tmp/a.pid'; $(wait_for a.log 'frame done')"
-    [ "$2" -ge 2 ] && cmd="$cmd; $win >'$tmp/b.log' 2>&1 & echo \$! >'$tmp/b.pid'; $(wait_for b.log 'frame done')"
-    cmd="$cmd; sleep 0.3; touch '$tmp/ready'"
-    env -i PATH="$PATH" HOME="$tmp" XDG_RUNTIME_DIR="$tmp" XDG_CONFIG_HOME="$tmp/config" \
-        RAYWM_TEST_OUT="$tmp/probe.log" MALLOC_PERTURB_=165 \
-        WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER="${RENDERER:-pixman}" WLR_LIBINPUT_NO_DEVICES=1 \
-        timeout 60 "$bin/raywm" -s "$cmd" >"$tmp/raywm.log" 2>&1 &
-    pid=$!
-    i=0
-    while [ ! -e "$tmp/ready" ]; do
-        i=$((i + 1))
-        if [ $i -gt 150 ] || ! kill -0 $pid 2>/dev/null; then
-            echo "FAIL [$name] compositor/clients did not start"; cat "$tmp/raywm.log"; exit 1
-        fi
-        sleep 0.1
-    done
-}
-
-fail() { echo "FAIL [$name] $1"; failures=$((failures + 1)); }
-
-# drive <args...>: run the input driver against the test compositor only.
-drive() {
-    env -i PATH="$PATH" XDG_RUNTIME_DIR="$tmp" WAYLAND_DISPLAY="$(cat "$tmp/display")" \
-        "$bin/raywm-test-input" "$@" >>"$tmp/driver.log" 2>&1 || fail "driver: $*"
-}
-dump() { drive key super down key f12 down key f12 up key super up sleep 150; }
-
-# launch <name> <VAR=value...>: one more test client (log: <name>.log).
-launch() {
-    n=$1; shift
-    env -i PATH="$PATH" XDG_RUNTIME_DIR="$tmp" WAYLAND_DISPLAY="$(cat "$tmp/display")" "$@" \
-        "$bin/raywm-test-client" >"$tmp/$n.log" 2>&1 &
-    echo $! >"$tmp/$n.pid"
-}
-# wait_log <name> <text>: waits up to 5 s for a line in <name>.log.
-wait_log() {
-    w=0
-    until grep -q "$2" "$tmp/$1.log" 2>/dev/null; do
-        w=$((w + 1)); [ $w -gt 100 ] && { fail "$1.log: '$2' never appeared"; return 0; }
-        sleep 0.05
-    done
-}
-# presses <name> <n>: the client saw exactly n presses of J (keycode 36).
-presses() {
-    c=$(grep -c "kbd key 36 pressed" "$tmp/$1.log" || true)
-    [ "$c" -eq "$2" ] || fail "$1 got $c J presses, expected $2"
-}
-press_j() { drive sleep 300 key j down key j up sleep 150; }
-
-stop() {
-    kill -TERM $pid 2>/dev/null || true
-    status=0; wait $pid || status=$?
-    [ "$status" -eq 0 ] || fail "raywm exited with $status"
-    if grep -E "panic|\[ERROR\]|error\(" "$tmp/raywm.log" >/dev/null; then fail "errors in compositor log"; fi
-    if [ "$failures" -ne "$before" ]; then
-        for f in "$tmp"/*.log; do echo "--- ${f##*/}"; tail -25 "$f"; done
-    else echo "ok   [$name]"; fi
-    [ -n "${KEEP:-}" ] && echo "kept $tmp" || rm -rf "$tmp"
-}
-
-# expect <dump-number> <line>: the probe's dump N contains exactly this line.
-expect() {
-    awk -v n="dump $1" '$0 == n {on=1; next} /^dump / {on=0} on' "$tmp/probe.log" | grep -qxF "$2" ||
-        fail "dump $1: expected '$2'"
-}
+. "$root/tests/support/harness.sh"
 
 # ---- floating windows: free interactive move/resize -----------------------
 s1() {
@@ -323,10 +238,4 @@ s12() {
     stop
 }
 
-# Runs every scenario, or only those whose name contains $ONLY.
-for s in s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11 s12; do
-    name=$(sed -n "s/^    name=\"\(.*\)\"$/\1/p" "$0" | sed -n "${s#s}p")
-    case "$name" in *"${ONLY:-}"*) $s ;; esac
-done
-
-[ "$failures" -eq 0 ] && echo "input: OK ($scenarios scenarios)" || { echo "input: $failures failure(s) in $scenarios scenarios"; exit 1; }
+run_scenarios input s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11 s12

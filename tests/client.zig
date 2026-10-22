@@ -13,6 +13,7 @@ const Globals = struct {
     shm: ?*wl.Shm = null,
     compositor: ?*wl.Compositor = null,
     wm_base: ?*xdg.WmBase = null,
+    subcompositor: ?*wl.Subcompositor = null,
     layer_shell: ?*zwlr.LayerShellV1 = null,
     seat: ?*wl.Seat = null,
     /// The seat's capabilities arrive right after binding, before any
@@ -24,7 +25,11 @@ const Globals = struct {
 /// Seat use by a held window or panel:
 /// - RAYWM_TEST_CSD_MOVE: a left press asks the compositor to start an
 ///   interactive move, like a client-side title bar does;
-/// - RAYWM_TEST_PTR: log pointer enter and button events (window or popup);
+/// - RAYWM_TEST_CSD_RESIZE: a right press asks for an interactive resize
+///   from the bottom-right corner;
+/// - RAYWM_TEST_PTR: log every pointer event (enter, leave, motion with
+///   surface-local coordinates, button) and the surface it is for: window,
+///   sub (RAYWM_TEST_SUB), popup or layer;
 /// - RAYWM_TEST_KBD: log keyboard enter/leave/key events;
 /// - panel only: F11 switches keyboard interactivity to none.
 const SeatUse = struct {
@@ -35,8 +40,21 @@ const SeatUse = struct {
     pointer: ?*wl.Pointer = null,
     keyboard: ?*wl.Keyboard = null,
     popup: ?*PopupTest = null,
+    /// RAYWM_TEST_SUB: a 60x60 subsurface at (20,20) of the window.
+    sub: ?*wl.Surface = null,
+    /// RAYWM_TEST_POPUP_GRAB: serial of the right press that asked for a
+    /// grabbing popup; opened by the main loop (not inside a listener).
+    popup_request: ?u32 = null,
     /// Surface under the pointer, as last reported by wl_pointer.enter.
     ptr_on: ?*wl.Surface = null,
+
+    /// What a pointer event's surface is, for the log.
+    fn kind(use: *SeatUse, surface: ?*wl.Surface) []const u8 {
+        const s = surface orelse return "gone";
+        if (use.popup) |p| if (p.surface == s) return "popup";
+        if (use.sub == s) return "sub";
+        return if (use.layer != null) "layer" else "window";
+    }
 
     fn listen(use: *SeatUse, g: *Globals) void {
         g.seat_use = use;
@@ -119,12 +137,30 @@ pub fn main() !void {
                 try popup_test.open(xdg_surface);
                 use.popup = &popup_test;
             }
+            if (std.c.getenv("RAYWM_TEST_SUB") != null) {
+                const sub_surface = try compositor.createSurface();
+                const sub = try (globals.subcompositor orelse return error.NoSubcompositor).getSubsurface(sub_surface, surface);
+                sub.setPosition(20, 20);
+                const sub_buffer = try makeBuffer(shm, 60, 60);
+                sub_surface.attach(sub_buffer, 0, 0);
+                sub_surface.damageBuffer(0, 0, 60, 60);
+                sub_surface.commit();
+                surface.commit(); // a synchronized subsurface appears with its parent's commit
+                use.sub = sub_surface;
+                step("subsurface mapped", .{});
+            }
             use.listen(&globals);
             // Keep the window (acking every configure) until the compositor
             // goes away. The previous buffer is released after each commit.
             var prev: ?*wl.Buffer = null;
             defer if (prev) |p| p.destroy();
             while (true) {
+                if (use.popup_request) |serial| {
+                    use.popup_request = null;
+                    try popup_test.openWith(xdg_surface, .{ .seat = use.seat, .serial = serial });
+                    use.popup = &popup_test;
+                    step("grabbing popup mapped", .{});
+                }
                 // A configure may already have arrived while waiting above.
                 if (!state.configured) {
                     if (display.dispatch() != .SUCCESS) break;
@@ -241,7 +277,7 @@ fn seatListener(_: *wl.Seat, event: wl.Seat.Event, g: *Globals) void {
 fn applyCaps(use: *SeatUse, caps: wl.Seat.Capability) void {
     const seat = use.seat;
     const wants_pointer = std.c.getenv("RAYWM_TEST_CSD_MOVE") != null or std.c.getenv("RAYWM_TEST_PTR") != null or use.popup != null;
-    if (caps.pointer and use.pointer == null and use.toplevel != null and wants_pointer) {
+    if (caps.pointer and use.pointer == null and (use.toplevel != null or use.layer != null) and wants_pointer) {
         use.pointer = seat.getPointer() catch return;
         use.pointer.?.setListener(*SeatUse, pointerListener, use);
     }
@@ -258,25 +294,41 @@ fn applyCaps(use: *SeatUse, caps: wl.Seat.Capability) void {
 }
 
 fn pointerListener(_: *wl.Pointer, event: wl.Pointer.Event, use: *SeatUse) void {
+    const log_ptr = std.c.getenv("RAYWM_TEST_PTR") != null;
     switch (event) {
         .enter => |e| {
             use.ptr_on = e.surface;
             const on_popup = use.popup != null and e.surface == use.popup.?.surface;
-            if (std.c.getenv("RAYWM_TEST_PTR") != null) step("ptr enter {s}", .{if (on_popup) "popup" else "window"});
-            if (on_popup) if (use.toplevel) |t| {
+            if (log_ptr) step("ptr enter {s} at {d},{d}", .{ use.kind(e.surface), e.surface_x.toInt(), e.surface_y.toInt() });
+            if (on_popup and std.c.getenv("RAYWM_TEST_POPUP") != null and std.c.getenv("RAYWM_TEST_POPUP_KILL") == null) if (use.toplevel) |t| {
                 use.popup.?.race(t);
                 use.toplevel = null; // destroyed by race()
             };
         },
-        .leave => use.ptr_on = null,
+        .leave => |e| {
+            if (log_ptr) step("ptr leave {s}", .{use.kind(e.surface)});
+            use.ptr_on = null;
+        },
+        .motion => |m| if (log_ptr) step("ptr motion {d},{d}", .{ m.surface_x.toInt(), m.surface_y.toInt() }),
         .button => |b| {
             const on_popup = use.popup != null and use.ptr_on != null and use.ptr_on == use.popup.?.surface;
-            if (std.c.getenv("RAYWM_TEST_PTR") != null)
-                step("ptr button {d} {s} {s}", .{ b.button, @tagName(b.state), if (on_popup) "popup" else "window" });
+            if (log_ptr) step("ptr button {d} {s} {s}", .{ b.button, @tagName(b.state), use.kind(use.ptr_on) });
             if (b.button == 0x110 and b.state == .pressed and std.c.getenv("RAYWM_TEST_CSD_MOVE") != null) if (use.toplevel) |t| {
                 t.move(use.seat, b.serial);
                 step("csd move requested", .{});
             };
+            if (b.button == 0x111 and b.state == .pressed and std.c.getenv("RAYWM_TEST_CSD_RESIZE") != null) if (use.toplevel) |t| {
+                t.resize(use.seat, b.serial, .bottom_right);
+                step("csd resize requested", .{});
+            };
+            if (b.button == 0x111 and b.state == .pressed and use.popup == null and std.c.getenv("RAYWM_TEST_POPUP_GRAB") != null)
+                use.popup_request = b.serial;
+            // RAYWM_TEST_POPUP_KILL: the popup goes away while the button
+            // that was pressed on it is still held.
+            if (on_popup and b.state == .pressed and std.c.getenv("RAYWM_TEST_POPUP_KILL") != null) {
+                use.ptr_on = null;
+                use.popup.?.kill();
+            }
         },
         else => {},
     }
@@ -294,6 +346,7 @@ const PopupTest = struct {
     shm: *wl.Shm,
     surface: ?*wl.Surface = null,
     xdg_surface: ?*xdg.Surface = null,
+    popup: ?*xdg.Popup = null,
     state: State = .{},
 
     fn positioner(pt: *PopupTest) !*xdg.Positioner {
@@ -306,6 +359,12 @@ const PopupTest = struct {
     }
 
     fn open(pt: *PopupTest, parent: *xdg.Surface) !void {
+        return pt.openWith(parent, null);
+    }
+
+    /// With `grab`, the popup takes an xdg_popup grab (wlroots routes the
+    /// pointer to this client's surfaces until the popup is dismissed).
+    fn openWith(pt: *PopupTest, parent: *xdg.Surface, grab: ?struct { seat: *wl.Seat, serial: u32 }) !void {
         const surface = try pt.compositor.createSurface();
         const xs = try pt.wm_base.getXdgSurface(surface);
         pt.surface = surface;
@@ -315,6 +374,8 @@ const PopupTest = struct {
         const popup = try xs.getPopup(parent, pos);
         pos.destroy();
         popup.setListener(?*anyopaque, popupListener, null);
+        pt.popup = popup;
+        if (grab) |g| popup.grab(g.seat, g.serial);
         surface.commit();
         while (!pt.state.configured) {
             if (pt.display.dispatch() != .SUCCESS) return error.DispatchFailed;
@@ -330,6 +391,18 @@ const PopupTest = struct {
             if (pt.display.dispatch() != .SUCCESS) return error.DispatchFailed;
         }
         step("popup mapped", .{});
+    }
+
+    /// Destroys the popup (role, xdg_surface, surface).
+    fn kill(pt: *PopupTest) void {
+        if (pt.popup) |p| p.destroy();
+        if (pt.xdg_surface) |x| x.destroy();
+        if (pt.surface) |s| s.destroy();
+        pt.popup = null;
+        pt.xdg_surface = null;
+        pt.surface = null;
+        _ = pt.display.flush();
+        step("popup destroyed", .{});
     }
 
     fn race(pt: *PopupTest, toplevel: *xdg.Toplevel) void {
@@ -433,6 +506,8 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, g: *Global
                 g.shm = registry.bind(global.name, wl.Shm, 1) catch return;
             } else if (std.mem.eql(u8, name, std.mem.span(xdg.WmBase.interface.name))) {
                 g.wm_base = registry.bind(global.name, xdg.WmBase, 2) catch return;
+            } else if (std.mem.eql(u8, name, std.mem.span(wl.Subcompositor.interface.name))) {
+                g.subcompositor = registry.bind(global.name, wl.Subcompositor, 1) catch return;
             } else if (std.mem.eql(u8, name, std.mem.span(wl.Seat.interface.name))) {
                 const seat = registry.bind(global.name, wl.Seat, 1) catch return;
                 seat.setListener(*Globals, seatListener, g);

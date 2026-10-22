@@ -1,4 +1,14 @@
 //! Keyboard, pointer and interactive move/resize.
+//!
+//! Pointer focus has three owners, checked in this order:
+//! 1. a compositor grab (`server.grab`: interactive move/resize) — no client
+//!    gets pointer events;
+//! 2. a wlroots grab (`seat.pointerHasGrab()`: an xdg_popup grab) — RayWM
+//!    keeps reporting the surface under the cursor and wlroots decides;
+//! 3. the implicit grab of wl_pointer: while a button the seat delivered is
+//!    held (`pointer_state.button_count > 0`), the surface that got the
+//!    press keeps the pointer, wherever the cursor goes.
+//! Otherwise pointer focus follows the cursor (hit-testing the scene).
 const std = @import("std");
 const wl = @import("wayland").server.wl;
 const wlr = @import("wlroots");
@@ -32,6 +42,30 @@ pub const Grab = struct {
     button: u32 = 0,
     w: i32 = 0,
     h: i32 = 0,
+};
+
+/// Scene buffer node of the surface that has pointer focus, as last set by
+/// hit-testing. Used during an implicit grab, when the cursor may be far
+/// from that surface, to compute surface-local coordinates from the
+/// surface's current position (it may move while the button is held).
+/// Cleared when the node is destroyed (its surface is destroyed or its
+/// window's scene tree goes away).
+pub const PointerNode = struct {
+    node: ?*wlr.SceneNode = null,
+    destroy: wl.Listener(void) = .init(handleDestroy),
+
+    fn set(pn: *PointerNode, node: ?*wlr.SceneNode) void {
+        if (pn.node == node) return;
+        if (pn.node != null) pn.destroy.link.remove();
+        pn.node = node;
+        if (node) |n| n.events.destroy.add(&pn.destroy);
+    }
+
+    fn handleDestroy(listener: *wl.Listener(void)) void {
+        const pn: *PointerNode = @fieldParentPtr("destroy", listener);
+        pn.destroy.link.remove();
+        pn.node = null;
+    }
 };
 
 pub const Keyboard = struct {
@@ -208,7 +242,7 @@ pub fn motionAbsolute(listener: *wl.Listener(*wlr.Pointer.event.MotionAbsolute),
     processMotion(server, event.time_msec);
 }
 
-const Hit = struct { surface: *wlr.Surface, sx: f64, sy: f64, view: ?*View, layer: ?*LayerSurface };
+const Hit = struct { surface: *wlr.Surface, node: *wlr.SceneNode, sx: f64, sy: f64, view: ?*View, layer: ?*LayerSurface };
 
 fn surfaceAt(server: *Server, lx: f64, ly: f64) ?Hit {
     var sx: f64 = undefined;
@@ -216,30 +250,76 @@ fn surfaceAt(server: *Server, lx: f64, ly: f64) ?Hit {
     const node = server.scene.tree.node.at(lx, ly, &sx, &sy) orelse return null;
     if (node.type != .buffer) return null;
     const scene_surface = wlr.SceneSurface.tryFromBuffer(wlr.SceneBuffer.fromNode(node)) orelse return null;
-    return .{ .surface = scene_surface.surface, .sx = sx, .sy = sy, .view = View.fromNode(node), .layer = LayerSurface.fromNode(node) };
+    return .{ .surface = scene_surface.surface, .node = node, .sx = sx, .sy = sy, .view = View.fromNode(node), .layer = LayerSurface.fromNode(node) };
 }
 
-/// Re-evaluates pointer focus after the scene changed under a still cursor.
+/// True while wl_pointer's implicit grab holds: a button that the seat
+/// delivered (or tried to deliver) is still pressed, and no wlroots grab
+/// (xdg_popup) is in charge. wlroots counts the held buttons; RayWM keeps
+/// no counter of its own.
+pub fn implicitGrab(server: *Server) bool {
+    const seat = server.seat;
+    return seat.pointer_state.button_count > 0 and !seat.pointerHasGrab();
+}
+
+/// Layout position of the surface holding the implicit grab, or null if
+/// there is none or it is no longer shown (unmapped, hidden, destroyed).
+fn grabOrigin(server: *Server) ?[2]f64 {
+    const focused = server.seat.pointer_state.focused_surface orelse return null;
+    const node = server.pointer_node.node orelse return null;
+    const scene_surface = wlr.SceneSurface.tryFromBuffer(wlr.SceneBuffer.fromNode(node)) orelse return null;
+    if (scene_surface.surface != focused) return null;
+    var lx: c_int = undefined;
+    var ly: c_int = undefined;
+    if (!node.coords(&lx, &ly)) return null; // disabled itself or by an ancestor
+    return .{ @floatFromInt(lx), @floatFromInt(ly) };
+}
+
+/// Gives pointer focus to `hit` (or to nothing) and, with a time, sends
+/// the motion. wlroots sends enter/leave only when the surface changes.
+fn focusHit(server: *Server, hit: ?Hit, time_msec: ?u32) void {
+    if (hit) |h| {
+        server.pointer_node.set(h.node);
+        server.seat.pointerNotifyEnter(h.surface, h.sx, h.sy);
+        if (time_msec) |t| server.seat.pointerNotifyMotion(t, h.sx, h.sy);
+    } else {
+        server.pointer_node.set(null);
+        server.cursor.setXcursor(server.cursor_mgr, "default");
+        server.seat.pointerNotifyClearFocus();
+    }
+}
+
+/// Re-evaluates pointer focus after the scene changed under a still cursor
+/// (windows mapped, moved, hidden; layer surfaces; layouts). During a grab
+/// focus stays where it is: the implicit grab surface keeps the pointer
+/// while it is shown. If it was unmapped or hidden, it gets a leave and no
+/// surface has the pointer until the last button is released, so no other
+/// client sees the release of a press it never got.
 pub fn refocusPointer(server: *Server) void {
     if (server.grab.mode != .none) return;
-    if (surfaceAt(server, server.cursor.x, server.cursor.y)) |hit| {
-        server.seat.pointerNotifyEnter(hit.surface, hit.sx, hit.sy);
-    } else {
-        server.cursor.setXcursor(server.cursor_mgr, "default");
-        server.seat.pointerClearFocus();
+    if (implicitGrab(server)) {
+        if (server.seat.pointer_state.focused_surface != null and grabOrigin(server) == null) {
+            server.pointer_node.set(null);
+            // Not the notify_ variant: that one would make wlroots forget the
+            // held buttons, ending the grab.
+            server.seat.pointerClearFocus();
+        }
+        return;
     }
+    focusHit(server, surfaceAt(server, server.cursor.x, server.cursor.y), null);
 }
 
 fn processMotion(server: *Server, time_msec: u32) void {
     const g = &server.grab;
     const view = g.view orelse {
-        if (surfaceAt(server, server.cursor.x, server.cursor.y)) |hit| {
-            server.seat.pointerNotifyEnter(hit.surface, hit.sx, hit.sy);
-            server.seat.pointerNotifyMotion(time_msec, hit.sx, hit.sy);
-        } else {
-            server.cursor.setXcursor(server.cursor_mgr, "default");
-            server.seat.pointerClearFocus();
+        if (implicitGrab(server)) {
+            // Motion goes to the grab surface in its own coordinates, which
+            // may lie outside it. Nothing is sent while it is gone.
+            const origin = grabOrigin(server) orelse return;
+            server.seat.pointerNotifyMotion(time_msec, server.cursor.x - origin[0], server.cursor.y - origin[1]);
+            return;
         }
+        focusHit(server, surfaceAt(server, server.cursor.x, server.cursor.y), time_msec);
         return;
     };
     // Became managed mid-grab (ctx.manage, reload): stop changing geometry,
@@ -303,7 +383,10 @@ pub fn beginResize(server: *Server, view: *View, edges: wlr.Edges, from_client: 
 }
 
 /// Clearing pointer focus makes the client set its cursor again on re-enter.
+/// (Not the notify_ variant, which would make wlroots forget the held
+/// button: a client-side move/resize must still see its release.)
 fn startGrab(server: *Server, cursor: [*:0]const u8) void {
+    server.pointer_node.set(null);
     server.seat.pointerClearFocus();
     server.cursor.setXcursor(server.cursor_mgr, cursor);
 }
@@ -330,30 +413,42 @@ pub fn button(listener: *wl.Listener(*wlr.Pointer.event.Button), event: *wlr.Poi
         endGrab(server);
         return;
     }
-    if (event.state == .pressed) if (surfaceAt(server, server.cursor.x, server.cursor.y)) |hit| if (hit.layer) |ls| {
-        const exclusive = if (server.layer_focus) |cur| cur.wlr_layer.current.keyboard_interactive == .exclusive else false;
-        if (ls.wantsKeyboard() and server.layer_focus != ls and !exclusive) server.focusLayer(ls);
-    } else if (hit.view) |view| {
-        server.focus(view);
-        const kb = server.seat.getKeyboard();
-        // On a managed window Super+click is an ordinary click.
-        if (kb != null and kb.?.getModifiers().logo and (event.button == BTN_LEFT or event.button == BTN_RIGHT) and !layoutManaged(server, view)) {
-            if (event.button == BTN_LEFT) {
-                beginMove(server, view, false);
+    // Only the first press of an interaction picks its target: focus,
+    // click-to-focus and compositor bindings. Later presses, while a
+    // client holds the implicit grab, belong to that client.
+    if (event.state == .pressed and !implicitGrab(server)) {
+        const hit = surfaceAt(server, server.cursor.x, server.cursor.y);
+        // Focus normally follows motion already; the scene may have changed
+        // since the last motion, so the press goes to what is shown now.
+        focusHit(server, hit, null);
+        if (hit) |h| if (h.layer) |ls| {
+            const exclusive = if (server.layer_focus) |cur| cur.wlr_layer.current.keyboard_interactive == .exclusive else false;
+            if (ls.wantsKeyboard() and server.layer_focus != ls and !exclusive) server.focusLayer(ls);
+        } else if (h.view) |view| {
+            server.focus(view);
+            const kb = server.seat.getKeyboard();
+            // On a managed window Super+click is an ordinary click.
+            if (kb != null and kb.?.getModifiers().logo and (event.button == BTN_LEFT or event.button == BTN_RIGHT) and !layoutManaged(server, view)) {
+                if (event.button == BTN_LEFT) {
+                    beginMove(server, view, false);
+                    server.grab.button = event.button;
+                    return;
+                }
+                const g = view.geometry();
+                const fx: i32 = @intFromFloat(server.cursor.x);
+                const fy: i32 = @intFromFloat(server.cursor.y);
+                const left = fx < g.x + @divTrunc(g.width, 2);
+                const top = fy < g.y + @divTrunc(g.height, 2);
+                beginResize(server, view, .{ .left = left, .right = !left, .top = top, .bottom = !top }, false);
                 server.grab.button = event.button;
                 return;
             }
-            const g = view.geometry();
-            const fx: i32 = @intFromFloat(server.cursor.x);
-            const fy: i32 = @intFromFloat(server.cursor.y);
-            const left = fx < g.x + @divTrunc(g.width, 2);
-            const top = fy < g.y + @divTrunc(g.height, 2);
-            beginResize(server, view, .{ .left = left, .right = !left, .top = top, .bottom = !top }, false);
-            server.grab.button = event.button;
-            return;
-        }
-    };
+        };
+    }
     _ = server.seat.pointerNotifyButton(event.time_msec, event.button, event.state);
+    // The last held button is up: the implicit grab is over and focus
+    // follows the cursor again.
+    if (event.state == .released and server.seat.pointer_state.button_count == 0) refocusPointer(server);
 }
 
 pub fn axis(listener: *wl.Listener(*wlr.Pointer.event.Axis), event: *wlr.Pointer.event.Axis) void {
