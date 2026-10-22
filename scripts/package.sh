@@ -1,11 +1,11 @@
 #!/bin/sh
 # Builds the release binary (ReleaseSafe) and the distributable archive:
 #   dist/raywm-<version>-linux-x86_64.tar.gz  and  dist/SHA256SUMS
-#   usage: [ZIG=/path/to/zig] scripts/package.sh v0.1.1
+#   usage: [ZIG=/path/to/zig] scripts/package.sh v0.1.2
 # The archive is reproducible for a given commit and toolchain (sorted
 # entries, fixed owner, mtime = commit time).
 set -eu
-version=${1:?usage: scripts/package.sh <version, e.g. v0.1.1>}
+version=${1:?usage: scripts/package.sh <version, e.g. v0.1.2>}
 zig=${ZIG:-zig}
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"

@@ -214,7 +214,7 @@ s4() {
 
 # ---- two outputs -------------------------------------------------------------
 s5() {
-    name="two outputs: full layout and a region on the second output"
+    name="two outputs: full layout, a region on the second, one across both"
     start 2
     drive move 1900 360 sleep 100   # window B maps on the output under the pointer
     launch b RAYWM_TEST_HOLD=1 RAYWM_TEST_PATTERN=1 RAYWM_TEST_ROUNDS=1
@@ -227,8 +227,14 @@ s5() {
     select_box 1840 300 1940 375
     wait_shots 2
     png "$(newest)" --size-near 100x75 --pixel 10,10,ff0000 --pixel 90,10,00ff00 --pixel 10,70,0000ff
-    # Not covered: a selection dragged across two outputs. The core has no
-    # implicit pointer grab yet, so slurp loses the drag at the border.
+    # A selection dragged across the border of the two outputs (slurp has
+    # one layer surface per output; the implicit pointer grab keeps the
+    # drag on the surface where it started). 640..1920 x 300..375: A's
+    # green quadrant on the first output, B's red one on the second.
+    press shift print
+    select_box 640 300 1920 375
+    wait_shots 3
+    png "$(newest)" --size-near 1280x75 --pixel 50,10,00ff00 --pixel 1230,10,ff0000 --pixel 640,10,000000
     stop
 }
 
