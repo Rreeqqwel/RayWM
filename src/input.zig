@@ -337,7 +337,9 @@ fn focusHit(server: *Server, hit: ?Hit, time_msec: ?u32) void {
     } else {
         server.pointer_node.set(null);
         server.cursor.setXcursor(server.cursor_mgr, "default");
-        server.seat.pointerNotifyClearFocus();
+        // The raw clear, as before 0.1.2: under a wlroots grab (xdg_popup)
+        // the notify_ variant would make the seat forget held buttons.
+        server.seat.pointerClearFocus();
     }
 }
 
