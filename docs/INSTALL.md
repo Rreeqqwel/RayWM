@@ -1,6 +1,6 @@
 # Installing RayWM
 
-RayWM v0.1.0 is an experimental Wayland compositor. It is safe to
+RayWM v0.1.1 is an experimental Wayland compositor. It is safe to
 install next to your current desktop:
 - nothing replaces your window manager or login screen;
 - nothing writes to an existing configuration;
@@ -34,6 +34,23 @@ Optional, but useful:
 - a panel such as `waybar`;
 - a launcher such as `fuzzel`.
 
+### Screenshot plugin (optional)
+
+The example configuration loads `plugins/screenshot.lua`. RayWM itself
+does not need these programs; only the plugin's actions do:
+
+| Program | Arch Linux package | Needed for |
+|---|---|---|
+| `grim` | `grim` | every screenshot |
+| `slurp` | `slurp` | region screenshots (Shift+Print, Ctrl+Shift+Print) |
+| `wl-copy` | `wl-clipboard` | clipboard screenshots (Ctrl+Print, Ctrl+Shift+Print) |
+| `notify-send` | `libnotify` | notifications (skipped when missing), plus a notification daemon such as `mako` |
+
+Without them RayWM starts normally; a screenshot key then only logs
+`raywm screenshot: grim is not installed (package: grim)` (and shows a
+notification if it can). To drop the plugin, remove
+`raywm.load("screenshot")` from `init.lua`.
+
 The binary is **not** static. It is not built for distributions without
 the libraries above (with these sonames).
 
@@ -41,11 +58,12 @@ the libraries above (with these sonames).
 
 ```sh
 sudo pacman -S --needed wlroots0.20 lua54 wayland libxkbcommon foot   # runtime
+sudo pacman -S --needed grim slurp wl-clipboard libnotify             # optional: screenshots
 
-# download raywm-v0.1.0-linux-x86_64.tar.gz and SHA256SUMS from the release page
+# download raywm-v0.1.1-linux-x86_64.tar.gz and SHA256SUMS from the release page
 sha256sum -c SHA256SUMS                                               # must print: OK
-tar -xzf raywm-v0.1.0-linux-x86_64.tar.gz
-cd raywm-v0.1.0
+tar -xzf raywm-v0.1.1-linux-x86_64.tar.gz
+cd raywm-v0.1.1
 ./install.sh
 ```
 
@@ -57,7 +75,10 @@ What `install.sh` does:
 - copies the example configuration to `~/.config/raywm/`, **only if that
   directory does not exist yet**. An existing configuration is never
   touched; `install.sh` prints the `diff` command to compare it with the
-  example;
+  example. **Upgrading from v0.1.0:** your configuration stays as it is;
+  to get screenshots, copy `config/plugins/screenshot.lua` to
+  `~/.config/raywm/plugins/` and add `raywm.load("screenshot")` to your
+  `init.lua`;
 - checks with `ldd` that all shared libraries are present.
 
 You can also skip the script and run `bin/raywm` directly from the
@@ -160,4 +181,6 @@ rm -r ~/.config/raywm            # only if you no longer want the config
 | Black screen, nothing happens | no config yet: press Super+Return for a terminal (fallback binding) |
 | `warning(lua): cannot open .../init.lua` | no config found: copy `config/` to `~/.config/raywm/` |
 | A plugin error in the log | only that plugin was unloaded; fix the file and reload (Ctrl+Alt+R or Super+Shift+R) |
+| `raywm screenshot: grim is not installed` | install `grim` (and `slurp`, `wl-clipboard` for regions and the clipboard) |
+| Print does nothing in a nested session | the outer compositor may keep Print for itself: use Ctrl+Alt+P |
 | From a TTY: `Could not get session` or similar | no seat access: make sure you are logged in on that VT with logind, or run `seatd` |

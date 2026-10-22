@@ -10,6 +10,7 @@ flowchart TB
     subgraph clients["External Wayland clients"]
         apps["applications<br/>(xdg-shell)"]
         panels["panels, docks, launchers<br/>(wlr-layer-shell)"]
+        tools["grim, slurp, wl-copy<br/>(wlr-screencopy, xdg-output,<br/>layer-shell, data device)"]
     end
 
     subgraph raywm["raywm process"]
@@ -27,6 +28,7 @@ flowchart TB
         subgraph plugins["Lua plugins (~/.config/raywm)"]
             dwindle["dwindle.lua<br/>tiling"]
             binds["binds.lua<br/>key bindings"]
+            shot["screenshot.lua<br/>Print keys"]
         end
         wlroots["wlroots 0.20<br/>(scene graph, renderer, backends)"]
     end
@@ -43,6 +45,8 @@ flowchart TB
     hostz --> view & server
     vm --- reg
     luahost <-->|ctx / raywm API v1| plugins
+    shot -.->|"raywm.spawn (background)"| tools
+    tools <-->|"screencopy (implemented by wlroots)"| wlroots
 ```
 
 ## Layers and responsibilities
@@ -99,6 +103,34 @@ RayWM draws only when wlroots emits `frame` for an output. That happens
 when the scene has damage or a client asked for a frame callback. An idle
 desktop does no rendering work and runs no Lua.
 
+### Screenshots: protocol in the core, policy in a plugin
+
+The core only creates two wlroots globals in `Server.init`:
+`wlr-screencopy-unstable-v1` and `xdg-output-unstable-v1`. wlroots
+implements them completely: it copies the output's committed frame into
+the client's buffer, schedules a frame when a copy is requested
+(`needs_frame`), and fails a pending copy whose output is destroyed.
+Both managers belong to the display and are freed with it, so the core
+keeps no pointer to them.
+
+Everything a user sees as "screenshots" is `config/plugins/screenshot.lua`:
+key bindings, file names and directories, the clipboard and
+notifications. It builds one command per key press and hands it to
+`raywm.spawn`, which double-forks into the background, so neither Lua
+nor the compositor waits for grim or slurp. File names are passed only
+as single-quoted positional arguments of a fixed `sh` script.
+
+### Popups and window geometry
+
+wlroots' xdg scene tree places a surface so that the tree's origin is
+the window geometry's top-left (excluding client-side shadows). A
+view's tree is therefore positioned at the view's `(x, y)`. Popups get
+a scene tree as a child of their parent's tree; that tree lives exactly
+as long as the popup role, and is forgotten if wlroots destroys it
+first together with the parent (a toplevel destroyed while its popup is
+open). When a toplevel unmaps, its popups are hidden before the pointer
+is refocused, because wlroots destroys them only after the unmap.
+
 ### Focus
 
 Lua handlers run while a window maps. During this time,
@@ -106,7 +138,14 @@ Lua handlers run while a window maps. During this time,
 tiler splits. The new window gets focus afterwards, unless a handler
 chose focus explicitly; `Server.focus_requests` counts focus calls to
 detect this.
-- Exclusive layer surfaces (launchers) keep the keyboard.
+- Exclusive layer surfaces (launchers, lock screens) keep the keyboard.
+  A newly mapped top/overlay surface takes it only from nobody, from an
+  on-demand surface, or, if it is exclusive itself, from an exclusive
+  surface in the same or a lower layer. When the holder goes away, the
+  remaining exclusive surface in the highest layer gets the keyboard
+  back before the focused window.
+- When the seat's active keyboard is unplugged, the seat switches to a
+  remaining keyboard.
 - Keys consumed by a binding are never reported as held to the next
   focused client.
 
@@ -120,17 +159,19 @@ processes:
 
 ## Source map
 
-| File | Lines (v0.1.0) | Content |
+| File | Lines (v0.1.1) | Content |
 |---|---|---|
 | `src/main.zig` | 77 | arguments, signals, config path, startup and teardown order |
-| `src/server.zig` | 417 | `Server`, `Output`, focus, spawn, layout changes |
-| `src/view.zig` | 276 | `View` (xdg toplevel), `Popup` |
-| `src/input.zig` | 362 | keyboards, bindings, pointer, grabs |
-| `src/layer.zig` | 167 | layer-shell surfaces and arrangement |
+| `src/server.zig` | 425 | `Server`, `Output`, focus, spawn, layout changes, screencopy/xdg-output globals |
+| `src/view.zig` | 311 | `View` (xdg toplevel), `Popup` |
+| `src/input.zig` | 367 | keyboards, bindings, pointer, grabs |
+| `src/layer.zig` | 200 | layer-shell surfaces, arrangement, keyboard rule |
 | `src/host.zig` | 126 | Lua-facing API implementation |
 | `src/lua.zig` | 740 | Lua runtime |
 
-Total: 2165 physical lines (`wc -l src/*.zig`), comments included.
+Total: 2246 physical lines (`wc -l src/*.zig`), comments included; v0.1.0
+had 2165 (v0.1.1: +103 / −22). Tests, documentation, CI and scripts are
+not counted.
 
 ## Extension points and their limits
 
@@ -141,7 +182,7 @@ bindings, timers and process spawning.
 Plugins cannot:
 - draw anything;
 - run code per frame;
-- see client contents;
+- see client contents (screenshots are taken by external programs);
 - change protocol behaviour.
 
 Per-frame hooks and decorations are planned for v0.2. Effects such as

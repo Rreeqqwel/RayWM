@@ -10,10 +10,11 @@ correctness ahead of artificial code reduction.
 - Everything that is policy is a Lua plugin: tiling, key bindings and
   window rules.
 
-> **Status: v0.1.0, first experimental release.** It is usable for
-> trying out and for development, nested in another session or from a
-> TTY. Expect missing features (see [Known limitations](#known-limitations))
-> and an evolving plugin API.
+> **Status: v0.1.1, experimental.** It is usable for trying out and for
+> development, nested in another session or from a TTY. Expect missing
+> features (see [Known limitations](#known-limitations)) and an evolving
+> plugin API. v0.1.1 adds screenshots and fixes several core issues
+> ([CHANGELOG](CHANGELOG.md)).
 
 ## Features
 
@@ -39,6 +40,11 @@ correctness ahead of artificial code reduction.
   - Respects panels, and keeps its layout across reloads.
   - Tiled windows are protected from accidental dragging through
     `ctx.manage`.
+- **Screenshots** (`config/plugins/screenshot.lua`, a plain Lua plugin):
+  full screen, interactive region, clipboard copy, PNG files with unique
+  names, notifications. The capturing is done by grim, slurp and
+  wl-clipboard; the core only provides the standard wlr-screencopy and
+  xdg-output protocols. See [Screenshots](#screenshots).
 - **Robust defaults.** Fallback bindings when the configuration is
   missing or broken, and clean shutdown.
 
@@ -73,7 +79,7 @@ zig build -Doptimize=ReleaseSafe      # -> zig-out/bin/raywm
 From a release archive (after checking `sha256sum -c SHA256SUMS`):
 
 ```sh
-tar -xzf raywm-v0.1.0-linux-x86_64.tar.gz && cd raywm-v0.1.0
+tar -xzf raywm-v0.1.1-linux-x86_64.tar.gz && cd raywm-v0.1.1
 ./install.sh        # ~/.local/bin/raywm; config copied only if ~/.config/raywm does not exist
 ```
 
@@ -113,6 +119,9 @@ With the example configuration (`config/`):
 | Super+J / Super+K | focus next / previous window |
 | Ctrl+Alt+R (or Super+Shift+R) | reload the configuration |
 | Super+Shift+E | quit |
+| Print / Shift+Print | save a screenshot of all outputs / of a selected region |
+| Ctrl+Print / Ctrl+Shift+Print | copy a screenshot / a region to the clipboard |
+| Ctrl+Alt+P | save a screenshot (for nested sessions, where the outer compositor may keep Print) |
 | Super + left / right drag | move / resize a floating window |
 | Ctrl+Alt+F1..F12 | switch VT (TTY sessions) |
 
@@ -133,12 +142,51 @@ Super+Shift+E.
 
 Details and options: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
+## Screenshots
+
+These are real screenshots of RayWM, taken with grim through RayWM's
+wlr-screencopy support in an isolated headless session
+(`scripts/gallery.sh` regenerates them). The clients are foot and
+fuzzel; the layout is the shipped dwindle plugin.
+
+| Dwindle tiling (three foot windows) | Layer-shell launcher (fuzzel) over the tiles |
+|---|---|
+| ![Dwindle tiling](docs/screenshots/tiling.png) | ![fuzzel launcher](docs/screenshots/launcher.png) |
+
+A region capture (`grim -g`, as Shift+Print saves it):
+
+![Region](docs/screenshots/region.png)
+
+### Taking screenshots
+
+The example configuration loads `screenshot.lua`. It needs these
+programs, which are **not** needed by RayWM itself:
+
+| Program | Arch Linux package | Used for | If missing |
+|---|---|---|---|
+| `grim` | `grim` | capturing | every action fails with a logged error and, if possible, a notification |
+| `slurp` | `slurp` | selecting a region | region actions fail the same way |
+| `wl-copy` | `wl-clipboard` | the clipboard | copy actions fail the same way |
+| `notify-send` | `libnotify` | notifications | silently skipped |
+
+Files go to `$XDG_PICTURES_DIR/Screenshots` (when that variable holds an
+absolute path) or `~/Pictures/Screenshots`, named
+`screenshot-YYYY-MM-DD_HH-MM-SS.png`; an existing file is never
+overwritten. Escape cancels a selection without saving anything.
+Options: [docs/CONFIGURATION.md](docs/CONFIGURATION.md#screenshots-pluginsscreenshotlua).
+
+**Privacy:** RayWM advertises wlr-screencopy to every client on its
+Wayland socket, whether or not the plugin is loaded. Any program you
+run inside RayWM can therefore read the screen, as on other wlroots
+compositors. See [SECURITY.md](SECURITY.md).
+
 ## Lua plugins
 
 ```lua
 -- ~/.config/raywm/init.lua
 raywm.load("dwindle")
 raywm.load("binds")
+raywm.load("screenshot")
 ```
 
 ```lua
@@ -162,12 +210,22 @@ Lua standard library. See [SECURITY.md](SECURITY.md). API reference:
 ## Known limitations
 
 - **No** Xwayland, workspaces, fullscreen or maximize (the requests are
-  answered and ignored), touch, tablets, HiDPI output scaling, or screen
-  capture.
+  answered and ignored), touch, tablets or HiDPI output scaling.
 - **No** animations, per-frame plugin hooks or decorations; these are
   planned for v0.2. Blur, shadows and rounded corners would need a
   custom renderer.
 - **No** per-window floating rules: dwindle tiles every window.
+- **Screen capture is open to every client** of the RayWM socket
+  (wlr-screencopy has no permission model). There is no switch to turn
+  it off in v0.1.1.
+- **Clipboard copies flash a helper window.** RayWM does not implement
+  the data-control protocols, so `wl-copy` (and `wl-paste`) briefly map a
+  tiny window to get keyboard focus. With dwindle, the tiles may jump for
+  a moment while that window exists.
+- **No implicit pointer grab:** while a button is held, the pointer
+  focus still follows the pointer. A selection dragged across two
+  outputs (slurp) is lost at the border, and drags that leave a window
+  stop reaching it.
 - **Optional protocols are not implemented**, so clients warn and fall
   back. With foot 1.28:
   - no primary selection (middle-click paste);
@@ -179,15 +237,9 @@ Lua standard library. See [SECURITY.md](SECURITY.md). API reference:
   - no xdg-decoration (clients always draw their own decorations).
 - The release binary targets Arch Linux sonames; other distributions
   should build from source.
-- Minor known issues:
-  - a grab ends only when its own mouse button is released, so if a
-    pointer device disappears in the middle of a drag, clicks are ignored
-    until the dragged window closes;
-  - a top/overlay layer surface that asks for the keyboard when it maps
-    takes it even from another exclusive layer surface;
-  - nothing tests a toplevel being destroyed while its popup is open.
-- Not verified on real hardware from a TTY, or with real monitor
-  hotplug, by the automated tests: see [docs/TESTING.md](docs/TESTING.md).
+- Not verified on real hardware from a TTY, with real monitor hotplug,
+  or by a manual GUI session with real input for the screenshot plugin:
+  see [docs/TESTING.md](docs/TESTING.md).
 
 ## Testing
 
@@ -195,10 +247,11 @@ All tests are headless and isolated from your session. The input tests
 use test-only virtual input inside a private compositor.
 
 ```sh
-zig build test                      # Zig unit tests (core + Lua host) and dwindle: 21 + 17 tests
+zig build test                      # Zig unit tests (core + Lua host), dwindle and screenshot plugin tests
 tests/smoke.sh && tests/focus.sh && tests/docs.sh
 zig build -Dtest-input -p zig-out/test-input
 tests/input.sh && tests/stress.sh   # real pointer/keyboard events, stress
+tests/screenshot.sh                 # real grim/slurp/wl-clipboard, PNGs checked pixel by pixel
 ```
 
 See [docs/TESTING.md](docs/TESTING.md) for every suite, CI, and the
@@ -208,7 +261,7 @@ container (`.github/workflows/ci.yml`).
 ## Project layout
 
 ```
-src/            Zig core (2165 lines in v0.1.0)
+src/            Zig core (2246 lines in v0.1.1)
   main.zig        startup, signals, config path
   server.zig      backend, scene, outputs, focus, spawn
   view.zig        xdg-shell toplevels/popups, configure/ack geometry
@@ -216,10 +269,10 @@ src/            Zig core (2165 lines in v0.1.0)
   layer.zig       wlr-layer-shell
   lua.zig         Lua 5.4 host: plugins, isolation, limits
   host.zig        compositor functions exposed to Lua (id-based)
-config/         example ~/.config/raywm (dwindle + bindings)
-docs/           INSTALL, CONFIGURATION, API, ARCHITECTURE, TESTING
-tests/          unit, integration, input and stress tests
-scripts/        package.sh (release archive), install.sh
+config/         example ~/.config/raywm (dwindle, bindings, screenshots)
+docs/           INSTALL, CONFIGURATION, API, ARCHITECTURE, TESTING, screenshots/
+tests/          unit, integration, input, screenshot and stress tests
+scripts/        package.sh (release archive), install.sh, gallery.sh
 ```
 
 ## Contributing
@@ -239,5 +292,9 @@ RayWM is licensed under the **GNU GPL v3** (see `LICENSE`).
 - Uses [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots) and
   [Lua](https://www.lua.org).
 - `protocol/wlr-layer-shell-unstable-v1.xml` is © Drew DeVault.
+- Screenshots are taken by [grim](https://gitlab.freedesktop.org/emersion/grim),
+  [slurp](https://github.com/emersion/slurp) and
+  [wl-clipboard](https://github.com/bugaevc/wl-clipboard), which are
+  separate programs.
 - The test-only protocol files in `tests/protocol/` keep their upstream
   licenses (inside each file).

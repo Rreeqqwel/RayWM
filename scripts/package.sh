@@ -31,6 +31,7 @@ cp -r config/plugins "$stage/config/plugins"
 chmod 0644 "$stage/config/plugins/"*.lua
 install -m 0644 README.md LICENSE CHANGELOG.md SECURITY.md "$stage/"
 install -m 0644 docs/*.md "$stage/docs/"
+mkdir -p "$stage/docs/screenshots" && install -m 0644 docs/screenshots/*.png "$stage/docs/screenshots/"
 install -m 0755 scripts/install.sh "$stage/install.sh"
 git rev-parse HEAD >"$stage/COMMIT"
 

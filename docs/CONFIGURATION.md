@@ -19,7 +19,8 @@ Plugins are loaded from `plugins/` in the same directory as `init.lua`.
 ├── init.lua
 └── plugins/
     ├── dwindle.lua
-    └── binds.lua
+    ├── binds.lua
+    └── screenshot.lua
 ```
 
 To start from the example, copy it from the repository or the release
@@ -35,11 +36,12 @@ cp -r config ~/.config/raywm
 `config/init.lua`:
 
 ```lua
-raywm.load("dwindle")   -- tiling
-raywm.load("binds")     -- key bindings
+raywm.load("dwindle")
+raywm.load("binds")
+raywm.load("screenshot") -- Print etc.; needs grim, slurp, wl-clipboard
 ```
 
-### Key bindings (`plugins/binds.lua` and `plugins/dwindle.lua`)
+### Key bindings (`plugins/binds.lua`, `plugins/dwindle.lua`, `plugins/screenshot.lua`)
 
 | Keys | Action | Defined in |
 |---|---|---|
@@ -49,6 +51,11 @@ raywm.load("binds")     -- key bindings
 | Super+Shift+R | reload (alternative) | binds.lua |
 | Super+Shift+E | quit RayWM | binds.lua |
 | Super+J / Super+K | focus the next / previous window | dwindle.lua |
+| Print | save a screenshot of all outputs | screenshot.lua |
+| Shift+Print | select a region with the mouse, save it | screenshot.lua |
+| Ctrl+Print | copy a screenshot of all outputs to the clipboard | screenshot.lua |
+| Ctrl+Shift+Print | select a region, copy it to the clipboard | screenshot.lua |
+| Ctrl+Alt+P | save a screenshot (same as Print) | screenshot.lua |
 | Super + left drag | move a floating window | core |
 | Super + right drag | resize a floating window | core |
 | Ctrl+Alt+F1..F12 | switch VT (only when started from a TTY) | core |
@@ -82,6 +89,51 @@ How dwindle works:
   `$XDG_RUNTIME_DIR/raywm-dwindle-$WAYLAND_DISPLAY.txt`, read once, and
   ignored in a new session. Without `XDG_RUNTIME_DIR` the tree shape is
   simply not kept.
+
+### Screenshots (`plugins/screenshot.lua`)
+
+The plugin runs external programs: `grim` captures, `slurp` selects a
+region, `wl-copy` (wl-clipboard) fills the clipboard, and `notify-send`
+reports results when it is installed. RayWM only provides the
+wlr-screencopy and xdg-output protocols these tools use. Every action
+runs in the background, so the compositor never waits for a capture or
+a selection.
+
+Edit the `options` table at the top of `plugins/screenshot.lua`:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `dir` | `nil` | where files are saved. `nil` means `$XDG_PICTURES_DIR/Screenshots` if `XDG_PICTURES_DIR` is an absolute path, otherwise `~/Pictures/Screenshots`. Must be absolute; created when needed |
+| `prefix` | `"screenshot"` | file names are `<prefix>-YYYY-MM-DD_HH-MM-SS.png` |
+| `notify` | `true` | show notifications with `notify-send` (skipped if it is not installed) |
+| `keys.full` | `{ "Print", "Ctrl+Alt+p" }` | save all outputs |
+| `keys.region` | `{ "Shift+Print" }` | save a selected region |
+| `keys.copy_full` | `{ "Ctrl+Print" }` | copy all outputs to the clipboard |
+| `keys.copy_region` | `{ "Ctrl+Shift+Print" }` | copy a selected region |
+
+An empty key list disables an action. Behaviour:
+- **Unique names:** an existing file is never overwritten; `-1`, `-2`,
+  ... is appended instead. Files are created with mode `0600` (only you
+  can read them); change it with `chmod` if needed.
+- **Cancel:** Escape in slurp cancels the selection.
+  Nothing is saved, copied or reported; the log says
+  `raywm screenshot: selection cancelled`.
+- **Errors** (a missing program, a directory that cannot be created,
+  grim failing) are written to the RayWM log as
+  `raywm screenshot: ...` and shown as a critical notification.
+- **Nested sessions:** the outer compositor (sway, for example) may
+  keep Print for itself; Ctrl+Alt+P works there.
+- **XDG_PICTURES_DIR** is read from the environment only; RayWM does
+  not parse `~/.config/user-dirs.dirs`. Set `dir` instead if needed.
+- Plugin messages go to RayWM's standard error, like all its logs.
+
+**Privacy.** The screen capture protocol is available to every client
+of RayWM's Wayland socket, whether this plugin is loaded or not. See
+[SECURITY.md](../SECURITY.md).
+
+To remove the plugin, delete `raywm.load("screenshot")` from
+`init.lua` and reload: its bindings disappear, the other plugins keep
+working.
 
 ### Panels, docks, wallpapers, launchers
 

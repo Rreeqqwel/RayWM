@@ -299,6 +299,10 @@ The shipped `config/plugins/dwindle.lua` is a complete layout plugin.
 - Blur, shadows, rounded corners and shaders. The wlroots scene renderer
   cannot do these; they would need a custom renderer.
 - Workspaces; maximize and fullscreen (the requests are answered but
-  ignored); Xwayland; touch; tablets; screen capture.
+  ignored); Xwayland; touch; tablets.
+- Reading screen contents from Lua. Screenshots are taken by external
+  programs through the wlr-screencopy protocol; the shipped
+  `config/plugins/screenshot.lua` starts them with `raywm.spawn`. API v1
+  is unchanged by this.
 - Docks and panels are separate programs that use layer-shell (waybar,
   yambar, fuzzel, swaybg, ...). They are not written in Lua.
