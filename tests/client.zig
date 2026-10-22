@@ -107,7 +107,9 @@ pub fn main() !void {
             var use: SeatUse = .{ .seat = globals.seat orelse return error.NoSeat, .surface = surface, .toplevel = toplevel };
             use.listen();
             // Keep the window (acking every configure) until the compositor
-            // goes away. Buffers are intentionally kept alive until exit.
+            // goes away. The previous buffer is released after each commit.
+            var prev: ?*wl.Buffer = null;
+            defer if (prev) |p| p.destroy();
             while (true) {
                 // A configure may already have arrived while waiting above.
                 if (!state.configured) {
@@ -116,12 +118,18 @@ pub fn main() !void {
                 }
                 state.configured = false;
                 xdg_surface.ackConfigure(state.serial);
+                var next: ?*wl.Buffer = null;
                 if (state.width > 0 and state.height > 0) {
-                    surface.attach(try makeBuffer(shm, state.width, state.height), 0, 0);
+                    next = try makeBuffer(shm, state.width, state.height);
+                    surface.attach(next, 0, 0);
                     surface.damageBuffer(0, 0, state.width, state.height);
                     step("hold resized {d}x{d}", .{ state.width, state.height });
                 }
                 surface.commit();
+                if (next) |n| {
+                    if (prev) |p| p.destroy();
+                    prev = n;
+                }
             }
             return;
         }

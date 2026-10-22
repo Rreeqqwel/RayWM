@@ -135,6 +135,30 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests (Lua host and dwindle plugin)");
     test_step.dependOn(&unit_run.step);
 
+    // Core unit tests: src/main.zig as a module (exposes srv, host).
+    const core = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    core.addImport("wayland", wayland);
+    core.addImport("xkbcommon", xkbcommon);
+    core.addImport("wlroots", wlroots);
+    core.addImport("lua", lua);
+    core.addOptions("build_options", options);
+    if (test_input) core.addImport("test_input", exe.root_module.import_table.get("test_input").?);
+    const core_tests_mod = b.createModule(.{
+        .root_source_file = b.path("tests/core_test.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    core_tests_mod.addImport("raywm", core);
+    for ([_][]const u8{ "wayland-server", "xkbcommon", "pixman-1" }) |lib| core_tests_mod.linkSystemLibrary(lib, .{});
+    const core_tests = b.addTest(.{ .root_module = core_tests_mod, .use_llvm = use_llvm, .use_lld = use_llvm });
+    test_step.dependOn(&b.addRunArtifact(core_tests).step);
+
     // The dwindle plugin is plain Lua, tested against a mock of the API.
     const dwindle = b.addSystemCommand(&.{ "lua5.4", "tests/dwindle_test.lua" });
     dwindle.setCwd(b.path("."));

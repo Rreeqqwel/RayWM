@@ -3,7 +3,7 @@
 //! given as arguments, with a roundtrip after each one:
 //!   move X Y          absolute pointer position in layout pixels
 //!   down|up left|right
-//!   key NAME down|up  NAME: super, f11, f12, j
+//!   key NAME down|up  NAME: super, ctrl, alt, f11, f12, j, r
 //!   sleep MS
 const std = @import("std");
 const posix = std.posix;
@@ -21,6 +21,20 @@ const BTN_RIGHT = 0x111;
 const KEY_F12 = 88;
 const KEY_F11 = 87;
 const KEY_J = 36;
+const KEY_R = 19;
+const KEY_LEFTCTRL = 29;
+const KEY_LEFTALT = 56;
+
+const Key = struct { name: []const u8, code: u32, mod: ?[*:0]const u8 = null };
+const keys = [_]Key{
+    .{ .name = "super", .code = KEY_LEFTMETA, .mod = "Mod4" },
+    .{ .name = "ctrl", .code = KEY_LEFTCTRL, .mod = "Control" },
+    .{ .name = "alt", .code = KEY_LEFTALT, .mod = "Mod1" },
+    .{ .name = "f11", .code = KEY_F11 },
+    .{ .name = "f12", .code = KEY_F12 },
+    .{ .name = "j", .code = KEY_J },
+    .{ .name = "r", .code = KEY_R },
+};
 const KEY_LEFTMETA = 125;
 
 const Globals = struct {
@@ -42,7 +56,9 @@ pub fn main(init: std.process.Init) !void {
     const keyboard = try (g.keyboard_mgr orelse return error.NoVirtualKeyboard).createVirtualKeyboard(seat);
     // wlroots does not derive modifiers from virtual key events, so the
     // driver sends them explicitly, like real virtual-keyboard clients.
-    const logo_mask = try uploadKeymap(keyboard);
+    const keymap = try uploadKeymap(keyboard);
+    defer keymap.unref();
+    var depressed: u32 = 0;
     if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
 
     var time: u32 = 1;
@@ -63,10 +79,18 @@ pub fn main(init: std.process.Init) !void {
             pointer.frame();
             i += 2;
         } else if (std.mem.eql(u8, cmd, "key")) {
-            const code: u32 = if (std.mem.eql(u8, a, "super")) KEY_LEFTMETA else if (std.mem.eql(u8, a, "f12")) KEY_F12 else if (std.mem.eql(u8, a, "f11")) KEY_F11 else if (std.mem.eql(u8, a, "j")) KEY_J else return error.UnknownKey;
+            const k = for (keys) |k| {
+                if (std.mem.eql(u8, k.name, a)) break k;
+            } else return error.UnknownKey;
             const down = std.mem.eql(u8, b, "down");
-            keyboard.key(time, code, if (down) 1 else 0);
-            if (code == KEY_LEFTMETA) keyboard.modifiers(if (down) logo_mask else 0, 0, 0, 0);
+            keyboard.key(time, k.code, if (down) 1 else 0);
+            if (k.mod) |m| {
+                const index = keymap.modGetIndex(m);
+                if (index >= 32) return error.UnknownModifier;
+                const bit = @as(u32, 1) << @intCast(index);
+                depressed = if (down) depressed | bit else depressed & ~bit;
+                keyboard.modifiers(depressed, 0, 0, 0);
+            }
             i += 3;
         } else if (std.mem.eql(u8, cmd, "sleep")) {
             const ms = try std.fmt.parseInt(u32, a, 10);
@@ -86,12 +110,12 @@ pub fn main(init: std.process.Init) !void {
 }
 
 /// The virtual keyboard needs a keymap before any key event. Returns the
-/// modifier mask of Super (Mod4) in that keymap.
-fn uploadKeymap(keyboard: *zwp.VirtualKeyboardV1) !u32 {
+/// keymap (caller unrefs) to look up modifier masks.
+fn uploadKeymap(keyboard: *zwp.VirtualKeyboardV1) !*xkb.Keymap {
     const ctx = xkb.Context.new(.no_flags) orelse return error.XkbContext;
     defer ctx.unref();
     const keymap = xkb.Keymap.newFromNames(ctx, null, .no_flags) orelse return error.XkbKeymap;
-    defer keymap.unref();
+    errdefer keymap.unref();
     const text: [*:0]u8 = keymap.getAsString(.text_v1) orelse return error.XkbKeymapString;
     defer std.c.free(text);
     const bytes = std.mem.span(text);
@@ -104,9 +128,7 @@ fn uploadKeymap(keyboard: *zwp.VirtualKeyboardV1) !u32 {
     @memcpy(map[0..bytes.len], bytes);
     map[bytes.len] = 0;
     keyboard.keymap(@intFromEnum(wl.Keyboard.KeymapFormat.xkb_v1), fd, @intCast(size));
-    const index = keymap.modGetIndex("Mod4");
-    if (index >= 32) return error.NoMod4;
-    return @as(u32, 1) << @intCast(index);
+    return keymap;
 }
 
 fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, g: *Globals) void {

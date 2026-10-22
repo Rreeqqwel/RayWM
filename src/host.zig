@@ -54,7 +54,7 @@ pub fn viewCmd(server: *Server, id: u32, cmd: lua.ViewCmd) bool {
 
 /// Lua may pass any i32; keep geometry far from overflow in later math.
 const max_coord = 1 << 24;
-fn coord(v: i32) i32 {
+pub fn coord(v: i32) i32 {
     return std.math.clamp(v, -max_coord, max_coord);
 }
 

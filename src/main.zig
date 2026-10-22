@@ -1,7 +1,8 @@
 const std = @import("std");
 const wlr = @import("wlroots");
-const srv = @import("server.zig");
-const host = @import("host.zig");
+// Public for tests/core_test.zig.
+pub const srv = @import("server.zig");
+pub const host = @import("host.zig");
 
 const usage =
     \\Usage: raywm [-c config.lua] [-s startup-command] [-d]
