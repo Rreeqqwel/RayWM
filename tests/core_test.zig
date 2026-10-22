@@ -140,3 +140,16 @@ test "spawn: child runs detached, no zombie, empty signal mask" {
     const mask = try std.fmt.parseInt(u64, hex, 16);
     try t.expectEqual(@as(u64, 0), mask & ((1 << 1) | (1 << 14))); // SIGINT=2, SIGTERM=15
 }
+
+test "RAYWM_OUTPUT_MODE specs parse and match the nearest mode" {
+    const spec = srv.parseModeSpec("1920x1080@240").?;
+    try t.expectEqual(srv.ModeSpec{ .width = 1920, .height = 1080, .refresh_mhz = 240000 }, spec);
+    try t.expectEqual(@as(i32, 59950), srv.parseModeSpec("2560x1440@59.95").?.refresh_mhz);
+    for ([_][]const u8{ "", "1920x1080", "1920@240", "x1080@240", "1920x@240", "0x1080@60", "1920x1080@", "1920x1080@0", "1920x1080@nan", "1920x1080@inf", "-1x1080@60", "1920x1080@60x" }) |bad| {
+        try t.expect(srv.parseModeSpec(bad) == null);
+    }
+    // EDID timings rarely land on whole Hz: 240.000699 Hz is 240001 mHz.
+    try t.expectEqual(@as(?u32, 1), srv.modeDistance(spec, 1920, 1080, 240001));
+    try t.expectEqual(@as(?u32, null), srv.modeDistance(spec, 1920, 1080, 180000));
+    try t.expectEqual(@as(?u32, null), srv.modeDistance(spec, 2560, 1440, 240000));
+}

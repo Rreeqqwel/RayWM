@@ -4,6 +4,16 @@ All notable changes to RayWM. Versions follow [Semantic
 Versioning](https://semver.org/); before 1.0, minor versions may break
 the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
+## [Unreleased]
+
+### Added
+
+- **`RAYWM_OUTPUT_MODE=WIDTHxHEIGHT@HZ`** (`src/server.zig`) picks an
+  output mode other than the monitor's preferred one, e.g.
+  `1920x1080@240`. The nearest mode within 1 Hz is used; a mode the
+  driver rejects falls back to the preferred mode with a warning. See
+  docs/CONFIGURATION.md.
+
 ## [v0.1.2] — 2026-10-22 — Input, focus and pointer reliability
 
 The Lua plugin API is still `api = 1`. Its additions are compatible

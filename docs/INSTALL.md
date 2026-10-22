@@ -169,6 +169,8 @@ Options:
 
 The keyboard layout comes from the standard xkb environment variables,
 for example `XKB_DEFAULT_LAYOUT=us,ru XKB_DEFAULT_OPTIONS=grp:alt_shift_toggle raywm`.
+The output mode can be set with `RAYWM_OUTPUT_MODE=1920x1080@240`; see
+[CONFIGURATION.md](CONFIGURATION.md#output-mode-resolution-and-refresh-rate).
 
 ## 5. Uninstall
 

@@ -85,6 +85,28 @@ the keymap: with Russian active, Super+J is still Super+J. (Before
 v0.1.2 they did not; see [Upgrading from v0.1.1](#upgrading-from-v011).)
 In a nested session the keymap comes from the outer compositor.
 
+### Output mode (resolution and refresh rate)
+
+By default each output uses the mode its monitor marks as preferred,
+which is often 60 Hz even on faster monitors. To pick another mode, set
+`RAYWM_OUTPUT_MODE=WIDTHxHEIGHT@HZ` before starting RayWM:
+
+```sh
+RAYWM_OUTPUT_MODE=1920x1080@240 raywm -s foot
+```
+
+- The mode applies to every output that has it; other outputs keep
+  their preferred mode.
+- `HZ` may have decimals (`59.95`). The nearest mode within 1 Hz is
+  used, since monitors rarely report exact values (240 Hz is often
+  240.0007 Hz).
+- If the driver rejects the mode, RayWM logs a warning and uses the
+  preferred mode.
+- Modes the monitor supports are listed by
+  `edid-decode /sys/class/drm/card*-*/edid` or, in another compositor,
+  `wlr-randr`. The mode is chosen once, when the output appears; there
+  is no runtime switching yet.
+
 ### Focus navigation (`plugins/focus.lua`)
 
 - **Super+H/J/K/L** focus the window to the left, below, above or to the

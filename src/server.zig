@@ -277,7 +277,15 @@ pub const Server = struct {
         var state = wlr.Output.State.init();
         defer state.finish();
         state.setEnabled(true);
-        if (wlr_output.preferredMode()) |mode| state.setMode(mode);
+        const preferred = wlr_output.preferredMode();
+        if (preferred) |mode| state.setMode(mode);
+        if (requestedMode(wlr_output)) |mode| {
+            state.setMode(mode);
+            if (!wlr_output.testState(&state)) {
+                log.warn("output {s}: mode {d}x{d}@{d}mHz rejected, using the preferred mode", .{ wlr_output.name, mode.width, mode.height, mode.refresh });
+                if (preferred) |p| state.setMode(p);
+            }
+        }
         if (!wlr_output.commitState(&state)) {
             log.err("failed to enable output {s}", .{wlr_output.name});
             return;
@@ -390,6 +398,53 @@ pub const Output = struct {
         gpa.destroy(output);
     }
 };
+
+/// A mode asked for with `RAYWM_OUTPUT_MODE=WIDTHxHEIGHT@HZ`.
+pub const ModeSpec = struct { width: i32, height: i32, refresh_mhz: i32 };
+
+/// Parses "1920x1080@240" or "2560x1440@59.95"; null if malformed.
+pub fn parseModeSpec(s: []const u8) ?ModeSpec {
+    const x = std.mem.indexOfScalar(u8, s, 'x') orelse return null;
+    const at = std.mem.indexOfScalarPos(u8, s, x + 1, '@') orelse return null;
+    const w = std.fmt.parseUnsigned(u16, s[0..x], 10) catch return null;
+    const h = std.fmt.parseUnsigned(u16, s[x + 1 .. at], 10) catch return null;
+    const hz = std.fmt.parseFloat(f64, s[at + 1 ..]) catch return null;
+    if (w == 0 or h == 0 or !(hz >= 1 and hz <= 1000)) return null;
+    return .{ .width = w, .height = h, .refresh_mhz = @intFromFloat(@round(hz * 1000)) };
+}
+
+/// How far a mode's refresh is from `spec`, in mHz; null if the size
+/// differs or the refresh is more than 1 Hz off (monitors report 240 Hz
+/// as e.g. 240001 mHz).
+pub fn modeDistance(spec: ModeSpec, width: i32, height: i32, refresh_mhz: i32) ?u32 {
+    if (width != spec.width or height != spec.height) return null;
+    const d = @abs(refresh_mhz - spec.refresh_mhz);
+    return if (d <= 1000) d else null;
+}
+
+/// The output's mode nearest to RAYWM_OUTPUT_MODE, or null (variable
+/// unset, malformed, or no such mode on this output).
+fn requestedMode(wlr_output: *wlr.Output) ?*wlr.Output.Mode {
+    const raw = std.c.getenv("RAYWM_OUTPUT_MODE") orelse return null;
+    const text = std.mem.span(raw);
+    if (text.len == 0) return null;
+    const spec = parseModeSpec(text) orelse {
+        log.warn("RAYWM_OUTPUT_MODE={s}: expected WIDTHxHEIGHT@HZ, e.g. 1920x1080@240", .{text});
+        return null;
+    };
+    var best: ?*wlr.Output.Mode = null;
+    var best_d: u32 = std.math.maxInt(u32);
+    var it = wlr_output.modes.iterator(.forward);
+    while (it.next()) |mode| {
+        const d = modeDistance(spec, mode.width, mode.height, mode.refresh) orelse continue;
+        if (d < best_d) {
+            best = mode;
+            best_d = d;
+        }
+    }
+    if (best == null) log.info("output {s} has no mode {s}, using the preferred mode", .{ wlr_output.name, text });
+    return best;
+}
 
 /// True when `serial` is at or past `want`, tolerant of u32 wrap-around.
 pub fn serialReached(serial: u32, want: u32) bool {
