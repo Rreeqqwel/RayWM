@@ -3,6 +3,9 @@ return {
   api = 1,
   setup = function(ctx)
     raywm.spawn("debug:" .. tostring(debug) .. ":" .. tostring(package.loaded.debug))
+    -- No route to native code: no loadlib, no C searchers.
+    local ok = pcall(require, "lpeg")
+    raywm.spawn("native:" .. tostring(package.loadlib) .. ":" .. tostring(#package.searchers) .. ":" .. tostring(ok))
     ctx.bind("Super+Return", function() raywm.spawn("bind:edge") end)
     ctx.bind("Super+x", function() raywm.reload() end)
     ctx.on("layout", function()

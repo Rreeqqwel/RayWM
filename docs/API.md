@@ -102,9 +102,9 @@ plugin. See [SECURITY.md](../SECURITY.md).
 | Limit | Default | Behaviour |
 |---|---|---|
 | Lua memory | 64 MiB, **shared by all plugins** | an allocation over the cap fails with a Lua memory error in whichever plugin is running, which need not be the plugin that used the memory |
-| Instructions | about 200 M per top-level callback | the running plugin gets `instruction budget exceeded`. Catching it with `pcall` or inside a coroutine does not help: the error is raised again on every instruction until control returns to RayWM |
-| Registrations | 65 536 at once (all plugins together) | `too many registrations` |
-| `debug` library | not available | it could rewrite internal upvalues and the registry |
+| Instructions | about 200 M per top-level callback | the running plugin gets `instruction budget exceeded`. Catching it with `pcall`, in any coroutine, does not help: the error is raised again on every instruction, in every Lua thread, until control returns to RayWM |
+| Registrations | 65 536 at once (all plugins together; registrations released during a callback count until it returns) | `too many registrations` |
+| `debug` library, native modules | not available: no `debug`, no `package.loadlib`, no C module searchers | they could rewrite internal upvalues and the registry, or load native code |
 
 ## Ids
 

@@ -45,7 +45,7 @@ Useful variables: `KEEP=1` keeps the temporary directory with all logs;
 | Suite | Kind | What it covers |
 |---|---|---|
 | `tests/core_test.zig` | Zig unit (4) | configure serial wrap-around, key spec parsing, coordinate clamping, `spawn` (no zombie, unblocked signals) |
-| `tests/lua_test.zig` | Zig unit (16), fake compositor | the plugin contract (api version, rejection), dispatch, error isolation, deferred cleanup, cancellation during dispatch, stale/invalid ids, timers (injected clock), memory and instruction limits incl. `pcall`/coroutine bypass attempts, no `debug` library, nested dispatch depth limit, duplicate bindings, setup/teardown failures, reload (from a binding, init.lua, teardown, 25× with flat memory, failed reload), `ctx.manage` lifecycle, registration cap |
+| `tests/lua_test.zig` | Zig unit (17), fake compositor | the plugin contract (api version, rejection), dispatch, error isolation, deferred cleanup, cancellation during dispatch, stale/invalid ids, timers (injected clock), memory and instruction limits incl. `pcall`/coroutine bypass attempts (also via a coroutine created before the budget ran out), no `debug` library and no native module loading, nested dispatch depth limit, duplicate bindings, setup/teardown failures, reload (from a binding, init.lua, teardown, 25× with flat memory, failed reload), `ctx.manage` lifecycle, registration cap |
 | `tests/dwindle_test.lua` | Lua (17), mock API that follows the core's rules | layouts with 1–5, 10 and 20 windows; focus-based insertion; closing in every order (tree collapse); output resize, panels, two outputs and unplugging; geometry cache and externally moved windows; managed-window registration; tiny geometries; stale windows; reload and hostile snapshot files; **20 fixed-seed random sequences × 300 operations**, checking after every step that each window has exactly one leaf, parent links hold, every leaf is a live window, managed set = tiled set, no negative sizes, everything inside the usable area, no overlaps except in deliberately shared sub-pixel areas |
 | `tests/smoke.sh` | Wayland, real client | connection, xdg toplevel configure/ack, buffer commit, frame callback, a toplevel re-created on the same `xdg_surface`, asynchronous resize by dwindle with position applied on ack, a layer-shell panel and its exclusive zone, Lua event order, children with unblocked signals, clean SIGTERM exit |
 | `tests/focus.sh` | Wayland, two clients at once | focus seen by clients (`xdg_toplevel` activated state): a new window takes focus, focus returns on close, a plugin overriding focus in `view_map`, dwindle insertion + focus |
@@ -73,7 +73,7 @@ with a GPU render node (GLES2 available):
 
 | Suite | Pixman | GLES2 |
 |---|---|---|
-| unit (Zig 20 + Lua 17) | pass | — |
+| unit (Zig 21 + Lua 17) | pass | — |
 | smoke | pass | pass |
 | focus | pass | pass |
 | docs | pass | — |

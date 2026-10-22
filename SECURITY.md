@@ -24,7 +24,7 @@ What RayWM *does* do, to contain mistakes rather than attacks:
 | Every callback runs under `pcall`; a failing plugin is unloaded | a buggy plugin taking the compositor down | stop a plugin from misbehaving without raising errors |
 | Memory cap (64 MiB, shared) | runaway allocation | per-plugin accounting; a hoarding plugin can cause another plugin's allocation to fail |
 | Instruction budget per callback, re-raised on every instruction once exceeded (so `pcall` cannot swallow it) | infinite loops freezing the compositor | limit total CPU time over many callbacks |
-| No `debug` library | accidental corruption of internal state through upvalues and the registry | prevent other ways of misbehaving (for example `load` with crafted bytecode) |
+| No `debug` library, no `package.loadlib`, no C module searchers | corrupting internal state through upvalues and the registry; loading native code from Lua | prevent other ways of misbehaving (for example `load` with crafted bytecode) |
 | Integer ids instead of native pointers; ids checked on every call | use-after-free through stale handles | — |
 | Coordinates clamped, geometry math saturating | arithmetic overflow from extreme values | — |
 

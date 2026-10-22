@@ -175,6 +175,16 @@ pub fn Runtime(comptime H: type) type {
             _ = c.lua_getfield(L, -1, "loaded");
             c.lua_pushnil(L);
             c.lua_setfield(L, -2, "debug");
+            c.lua_settop(L, -2);
+            // No native modules either: package.loadlib or a C searcher could
+            // load luaopen_debug (or anything else) from a shared library.
+            c.lua_pushnil(L);
+            c.lua_setfield(L, -2, "loadlib");
+            _ = c.lua_getfield(L, -1, "searchers");
+            c.lua_pushnil(L);
+            c.lua_rawseti(L, -2, 4);
+            c.lua_pushnil(L);
+            c.lua_rawseti(L, -2, 3);
             c.lua_settop(L, -3);
             c.lua_createtable(L, 0, globals.len + 1);
             c.lua_pushinteger(L, api_version);
@@ -388,6 +398,13 @@ pub fn Runtime(comptime H: type) type {
             // instead of charging a full step per instruction.
             if (!self.exhausted and c.lua_gethookcount(L) == 1) {
                 c.lua_sethook(L, hook, c.LUA_MASKCOUNT, hook_step);
+                return;
+            }
+            // Exhausted: every thread that runs gets a step of 1 too, also
+            // coroutines created before the budget ran out.
+            if (self.exhausted) {
+                if (c.lua_gethookcount(L) != 1) c.lua_sethook(L, hook, c.LUA_MASKCOUNT, 1);
+                _ = c.luaL_error(L, "instruction budget exceeded (runaway loop?)");
                 return;
             }
             if (self.budget > hook_step) {

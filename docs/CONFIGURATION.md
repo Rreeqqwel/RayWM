@@ -77,7 +77,8 @@ How dwindle works:
 - closing a window gives its area to its sibling;
 - windows are placed inside the output's usable area, i.e. without
   panel exclusive zones;
-- the tree shape survives a reload. It is stored in
+- the tree shape survives a reload (unless one spiral is deeper than
+  4096 windows; then the tree is rebuilt). It is stored in
   `$XDG_RUNTIME_DIR/raywm-dwindle-$WAYLAND_DISPLAY.txt`, read once, and
   ignored in a new session. Without `XDG_RUNTIME_DIR` the tree shape is
   simply not kept.

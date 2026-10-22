@@ -179,6 +179,13 @@ Lua standard library. See [SECURITY.md](SECURITY.md). API reference:
   - no xdg-decoration (clients always draw their own decorations).
 - The release binary targets Arch Linux sonames; other distributions
   should build from source.
+- Minor known issues:
+  - a grab ends only when its own mouse button is released, so if a
+    pointer device disappears in the middle of a drag, clicks are ignored
+    until the dragged window closes;
+  - a top/overlay layer surface that asks for the keyboard when it maps
+    takes it even from another exclusive layer surface;
+  - nothing tests a toplevel being destroyed while its popup is open.
 - Not verified on real hardware from a TTY, or with real monitor
   hotplug, by the automated tests: see [docs/TESTING.md](docs/TESTING.md).
 
@@ -188,7 +195,7 @@ All tests are headless and isolated from your session. The input tests
 use test-only virtual input inside a private compositor.
 
 ```sh
-zig build test                      # Zig unit tests + Lua host + dwindle (37 tests)
+zig build test                      # Zig unit tests (core + Lua host) and dwindle: 21 + 17 tests
 tests/smoke.sh && tests/focus.sh && tests/docs.sh
 zig build -Dtest-input -p zig-out/test-input
 tests/input.sh && tests/stress.sh   # real pointer/keyboard events, stress
@@ -201,7 +208,7 @@ container (`.github/workflows/ci.yml`).
 ## Project layout
 
 ```
-src/            Zig core (2148 lines in v0.1.0)
+src/            Zig core (2165 lines in v0.1.0)
   main.zig        startup, signals, config path
   server.zig      backend, scene, outputs, focus, spawn
   view.zig        xdg-shell toplevels/popups, configure/ack geometry

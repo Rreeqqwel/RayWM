@@ -52,8 +52,9 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ### Fixed before release (found by independent audits)
 
-- An instruction-budget bypass through `pcall` or coroutines could hang
-  the compositor.
+- An instruction-budget bypass through `pcall` or coroutines (including
+  coroutines created before the budget ran out) could hang the
+  compositor.
 - The key of a binding that changed focus was reported as held to the
   newly focused client.
 - A second `view_place` before the client's ack could be lost.
@@ -61,7 +62,8 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 - A drag continued after its window became managed.
 - Extra mouse buttons during a grab broke the grab state.
 - Layer surfaces changing keyboard interactivity after map were ignored.
-- The `debug` library exposed host internals.
+- The `debug` library exposed host internals, and `package.loadlib`
+  could load it again from the Lua shared library.
 - Registrations could grow without bound.
 - Windows beyond 256 were dropped by `raywm.views()`.
 - The dwindle reload snapshot was executed as code and parsed without

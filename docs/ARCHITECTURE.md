@@ -128,9 +128,9 @@ processes:
 | `src/input.zig` | 362 | keyboards, bindings, pointer, grabs |
 | `src/layer.zig` | 167 | layer-shell surfaces and arrangement |
 | `src/host.zig` | 126 | Lua-facing API implementation |
-| `src/lua.zig` | 723 | Lua runtime |
+| `src/lua.zig` | 740 | Lua runtime |
 
-Total: 2148 physical lines (`wc -l src/*.zig`), comments included.
+Total: 2165 physical lines (`wc -l src/*.zig`), comments included.
 
 ## Extension points and their limits
 

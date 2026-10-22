@@ -340,6 +340,7 @@ test "edge cases: no debug library, coroutines, invalid ids, nesting, duplicates
 
     // Plugins never get the debug library (it can reach host internals).
     try t.expectEqual(1, f.count("debug:nil:nil"));
+    try t.expectEqual(1, f.count("native:nil:2:false"));
     // A failing setup rejects the plugin; its teardown still runs; its
     // binding is released.
     try t.expectEqual(1, f.count("teardown:badsetup"));
@@ -443,5 +444,14 @@ test "registrations are capped" {
     rt.emit(.view_map, 1);
     try std.testing.expect(hasError("regcap: tests/lua/plugins/regcap.lua:6: too many registrations"));
     try std.testing.expect(rt.regs.items.len == 0); // swept with the plugin
+    try std.testing.expectEqual(1, takeErrors());
+}
+
+test "a coroutine created before the budget ran out cannot swallow it either" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/bypass.lua", .{ .instructions = 1_000_000, .report = report, .warn = warn });
+    defer rt.destroy();
+    rt.emit(.view_title, 1); // resumes the coroutine created in setup
     try std.testing.expectEqual(1, takeErrors());
 }
