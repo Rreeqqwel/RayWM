@@ -3,8 +3,11 @@
 //! given as arguments, with a roundtrip after each one:
 //!   move X Y          absolute pointer position in layout pixels
 //!   down|up left|right
-//!   key NAME down|up  NAME: super, ctrl, alt, f11, f12, j, r
+//!   key NAME down|up  NAME: super, ctrl, alt, shift, f11, f12, j, r, p,
+//!                     print, escape
 //!   sleep MS
+//! RAYWM_TEST_EXTENT=WxH: the layout size for absolute motion (default
+//! 1280x720, one headless output).
 const std = @import("std");
 const posix = std.posix;
 const wayland = @import("wayland");
@@ -13,9 +16,6 @@ const zwlr = wayland.client.zwlr;
 const zwp = wayland.client.zwp;
 const xkb = @import("xkbcommon");
 
-// Matches the single default headless output (WLR_HEADLESS_OUTPUTS=1).
-const extent_w = 1280;
-const extent_h = 720;
 const BTN_LEFT = 0x110;
 const BTN_RIGHT = 0x111;
 const KEY_F12 = 88;
@@ -24,12 +24,20 @@ const KEY_J = 36;
 const KEY_R = 19;
 const KEY_LEFTCTRL = 29;
 const KEY_LEFTALT = 56;
+const KEY_LEFTSHIFT = 42;
+const KEY_P = 25;
+const KEY_SYSRQ = 99; // the Print key
+const KEY_ESC = 1;
 
 const Key = struct { name: []const u8, code: u32, mod: ?[*:0]const u8 = null };
 const keys = [_]Key{
     .{ .name = "super", .code = KEY_LEFTMETA, .mod = "Mod4" },
     .{ .name = "ctrl", .code = KEY_LEFTCTRL, .mod = "Control" },
     .{ .name = "alt", .code = KEY_LEFTALT, .mod = "Mod1" },
+    .{ .name = "shift", .code = KEY_LEFTSHIFT, .mod = "Shift" },
+    .{ .name = "p", .code = KEY_P },
+    .{ .name = "print", .code = KEY_SYSRQ },
+    .{ .name = "escape", .code = KEY_ESC },
     .{ .name = "f11", .code = KEY_F11 },
     .{ .name = "f12", .code = KEY_F12 },
     .{ .name = "j", .code = KEY_J },
@@ -60,6 +68,15 @@ pub fn main(init: std.process.Init) !void {
     defer keymap.unref();
     var depressed: u32 = 0;
     if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
+
+    // Matches the single default headless output (WLR_HEADLESS_OUTPUTS=1).
+    var extent_w: u32 = 1280;
+    var extent_h: u32 = 720;
+    if (std.c.getenv("RAYWM_TEST_EXTENT")) |e| {
+        var it = std.mem.splitScalar(u8, std.mem.span(e), 'x');
+        extent_w = try std.fmt.parseInt(u32, it.next() orelse "", 10);
+        extent_h = try std.fmt.parseInt(u32, it.next() orelse "", 10);
+    }
 
     var time: u32 = 1;
     var i: usize = 1;

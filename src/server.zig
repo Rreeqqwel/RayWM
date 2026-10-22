@@ -100,6 +100,12 @@ pub const Server = struct {
         _ = try wlr.Compositor.create(wl_server, 6, renderer);
         _ = try wlr.Subcompositor.create(wl_server);
         _ = try wlr.DataDeviceManager.create(wl_server);
+        // Screen capture (grim, slurp's clients, ...): EVERY client of this
+        // socket may read the screen, see SECURITY.md. xdg-output gives
+        // capture tools output names and layout positions. wlroots frees
+        // both with the display; pending frames fail if their output dies.
+        _ = try wlr.ScreencopyManagerV1.create(wl_server);
+        _ = try wlr.XdgOutputManagerV1.create(wl_server, output_layout);
 
         server.views.init();
         server.outputs.init();

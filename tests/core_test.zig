@@ -26,6 +26,12 @@ test "key specs parse to modifiers and level-0 keysyms" {
     try t.expectEqual(lua_key(logo, 'a'), host.parseKey(s, "super+A").?); // case-insensitive
     try t.expectEqual(lua_key(logo, 0xffc9), host.parseKey(s, "Mod4+F12").?);
     try t.expectEqual(lua_key(alt, '1'), host.parseKey(s, "Mod1+1").?);
+    // screenshot.lua's bindings (XK_Print = 0xff61).
+    try t.expectEqual(lua_key(0, 0xff61), host.parseKey(s, "Print").?);
+    try t.expectEqual(lua_key(shift, 0xff61), host.parseKey(s, "Shift+Print").?);
+    try t.expectEqual(lua_key(ctrl, 0xff61), host.parseKey(s, "Ctrl+Print").?);
+    try t.expectEqual(lua_key(ctrl | shift, 0xff61), host.parseKey(s, "Ctrl+Shift+Print").?);
+    try t.expectEqual(lua_key(ctrl | alt, 'p'), host.parseKey(s, "Ctrl+Alt+p").?);
     for ([_][:0]const u8{ "", "Super+", "Hyper+x", "Super+NoSuchKey", "Super+Super", "+" }) |bad| {
         try t.expect(host.parseKey(s, bad) == null);
     }

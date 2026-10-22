@@ -21,6 +21,10 @@ pub fn build(b: *std.Build) void {
         scanner.addCustomProtocol(b.path("tests/protocol/virtual-keyboard-unstable-v1.xml"));
         scanner.generate("zwlr_virtual_pointer_manager_v1", 2);
         scanner.generate("zwp_virtual_keyboard_manager_v1", 1);
+        // Client side only (tests/screencopy_client.zig); the compositor
+        // side is wlroots' own implementation.
+        scanner.addCustomProtocol(b.path("tests/protocol/wlr-screencopy-unstable-v1.xml"));
+        scanner.generate("zwlr_screencopy_manager_v1", 3);
     }
 
     // Versions only control Zig code generation, not what wlroots implements.
@@ -96,6 +100,22 @@ pub fn build(b: *std.Build) void {
         driver.root_module.linkSystemLibrary("wayland-client", .{});
         driver.root_module.linkSystemLibrary("xkbcommon", .{});
         b.installArtifact(driver);
+
+        // Requests a capture while tests/screenshot.sh unplugs the output.
+        const copier = b.addExecutable(.{
+            .name = "raywm-test-screencopy",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("tests/screencopy_client.zig"),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+            }),
+            .use_llvm = use_llvm,
+            .use_lld = use_llvm,
+        });
+        copier.root_module.addImport("wayland", wayland);
+        copier.root_module.linkSystemLibrary("wayland-client", .{});
+        b.installArtifact(copier);
     }
     exe.root_module.linkSystemLibrary("wayland-server", .{});
     exe.root_module.linkSystemLibrary("xkbcommon", .{});
@@ -132,7 +152,7 @@ pub fn build(b: *std.Build) void {
     const unit = b.addTest(.{ .root_module = unit_mod, .use_llvm = use_llvm, .use_lld = use_llvm });
     const unit_run = b.addRunArtifact(unit);
     unit_run.setCwd(b.path(".")); // fixtures are referenced as tests/lua/...
-    const test_step = b.step("test", "Run unit tests (Lua host and dwindle plugin)");
+    const test_step = b.step("test", "Run unit tests (core, Lua host, dwindle and screenshot plugins)");
     test_step.dependOn(&unit_run.step);
 
     // Core unit tests: src/main.zig as a module (exposes srv, host).
@@ -166,4 +186,11 @@ pub fn build(b: *std.Build) void {
     dwindle.setEnvironmentVariable("WAYLAND_DISPLAY", "raywm-dwindle-test");
     dwindle.has_side_effects = true;
     test_step.dependOn(&dwindle.step);
+
+    // The screenshot plugin, against a mock API and fake grim/slurp/wl-copy.
+    const screenshot = b.addSystemCommand(&.{ "lua5.4", "tests/screenshot_test.lua" });
+    screenshot.setCwd(b.path("."));
+    screenshot.setEnvironmentVariable("XDG_RUNTIME_DIR", b.cache_root.path orelse ".");
+    screenshot.has_side_effects = true;
+    test_step.dependOn(&screenshot.step);
 }
