@@ -259,13 +259,22 @@ pub fn onCommit(server: *Server, view: *View) void {
     if (server.grab.view != view and srv.serialReached(view.xdg.base.current.configure_serial, a.serial)) view.anchor = null;
 }
 
+/// A layout plugin (ctx.manage) owns the geometry of this window, so free
+/// interactive move/resize must not start, whoever asks for it.
+fn layoutManaged(server: *Server, view: *View) bool {
+    const rt = server.rt orelse return false;
+    return rt.managed(view.id);
+}
+
 pub fn beginMove(server: *Server, view: *View, from_client: bool) void {
+    if (layoutManaged(server, view)) return;
     endGrab(server);
     server.grab = .{ .mode = .move, .view = view, .cx = server.cursor.x, .cy = server.cursor.y, .box = view.geometry(), .forward_release = from_client };
     startGrab(server, "grabbing");
 }
 
 pub fn beginResize(server: *Server, view: *View, edges: wlr.Edges, from_client: bool) void {
+    if (layoutManaged(server, view)) return;
     endGrab(server);
     view.pending = null;
     const box = view.geometry();
@@ -304,7 +313,8 @@ pub fn button(listener: *wl.Listener(*wlr.Pointer.event.Button), event: *wlr.Poi
     } else if (hit.view) |view| {
         server.focus(view);
         const kb = server.seat.getKeyboard();
-        if (kb != null and kb.?.getModifiers().logo and (event.button == BTN_LEFT or event.button == BTN_RIGHT)) {
+        // On a managed window Super+click is an ordinary click.
+        if (kb != null and kb.?.getModifiers().logo and (event.button == BTN_LEFT or event.button == BTN_RIGHT) and !layoutManaged(server, view)) {
             if (event.button == BTN_LEFT) return beginMove(server, view, false);
             const g = view.geometry();
             const fx: i32 = @intFromFloat(server.cursor.x);

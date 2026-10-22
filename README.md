@@ -46,7 +46,8 @@ Options: `-c config.lua`, `-s startup-command`, `-d` (verbose wlroots
 log). Keyboard layout comes from the standard `XKB_DEFAULT_*` variables.
 
 Default bindings of the example config: Super+Return terminal, Super+Q
-close, Super+J/K cycle focus, Super+Shift+R reload, Super+Shift+E quit. Super+left drag moves a window
+close, Super+J/K cycle focus, Ctrl+Alt+R reload (also Super+Shift+R),
+Super+Shift+E quit. Super+left drag moves a window
 and Super+right drag resizes it. Ctrl+Alt+F1..F12 switch VTs when running
 on a real session.
 
@@ -63,8 +64,12 @@ style of Hyprland's dwindle layout:
   to the first remaining one;
 - the usable area excludes panel exclusive zones, and an 8 px `gap` (outer
   margin and space between windows) can be changed at the top of the file;
-- only geometry is recomputed when outputs, panels or windows change, and
-  requests whose geometry did not change are skipped;
+- tiled windows are declared managed (`ctx.manage`), so Super+drag and
+  client move/resize requests do not apply to them, while clicking still
+  focuses them. Windows the plugin does not tile stay freely movable;
+- only geometry is recomputed when outputs, panels or windows change.
+  A request is skipped only if it was already sent and the window is at
+  that position, so a window moved by something else is put back;
 - across `raywm.reload()` the tree shape is kept in
   `$XDG_RUNTIME_DIR/raywm-dwindle-$WAYLAND_DISPLAY.lua`. The file is read
   once, and only if windows exist, so a new session never reuses it.
@@ -72,7 +77,8 @@ style of Hyprland's dwindle layout:
 Tested by `tests/dwindle_test.lua` (run by `zig build test`) against a mock
 of the plugin API. It covers 1–5 windows, closing the first, middle and
 last window, focus-based splits, output resize, panels, two outputs and
-unplugging, stale windows, reload, and minimum sizes.
+unplugging, stale windows, reload, minimum sizes, managed windows, and
+windows moved from outside.
 
 ## Focus
 
@@ -97,9 +103,6 @@ keeps that choice. Handlers still see the previous window in
   None of these affect basic use. Also not supported: maximize and
   fullscreen requests (answered, but ignored), Xwayland, workspaces,
   animations (planned for v0.2).
-- Tiled windows can still be moved or resized with Super+drag. The
-  dwindle plugin does not track this, so such a window stays out of place
-  until its own tile changes position or size.
 
 ## Layout
 

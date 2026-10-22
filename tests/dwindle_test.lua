@@ -6,9 +6,10 @@ local plugin_path = "config/plugins/dwindle.lua"
 
 local outputs, views, mru, focused, handlers, binds, errors, place_calls
 local focus_requests = 0 -- like the core's Server.focus_requests
+local managed = {} -- view id -> true, as tracked by the runtime for ctx.manage
 local function reset_world()
   outputs = { { id = 1, x = 0, y = 0, w = 1280, h = 720, usable = { x = 0, y = 0, w = 1280, h = 720 } } }
-  views, mru, focused, place_calls = {}, {}, nil, 0
+  views, mru, focused, place_calls, managed = {}, {}, nil, 0, {}
 end
 
 local function output_at(x, y)
@@ -73,6 +74,11 @@ local function load_plugin()
     bind = function(k, fn) binds[k] = fn end,
     timer = function() error("unused") end,
     cancel = function() end,
+    manage = function(id, on)
+      if not views[id] then return nil, "stale" end
+      managed[id] = (on == nil or on) or nil
+      return true
+    end,
   }
   plugin.setup(ctx)
 end
@@ -96,6 +102,7 @@ end
 
 local function unmap(id)
   views[id] = nil
+  managed[id] = nil -- the runtime drops ctx.manage on view_unmap
   for i, v in ipairs(mru) do if v == id then table.remove(mru, i) break end end
   if focused == id then focused = mru[1] end
   emit("view_unmap", id)
@@ -133,6 +140,30 @@ local function check_invariants(label)
 end
 
 local tests = {}
+
+tests["tiled windows are managed (no free move/resize)"] = function()
+  local a, b, c = map(), map(), map()
+  assert(managed[a] and managed[b] and managed[c], "tiled windows must be managed")
+  unmap(b)
+  assert(managed[a] and managed[c] and not managed[b])
+  plugin.teardown()
+  managed = {} -- reload: the runtime released everything
+  load_plugin()
+  assert(managed[a] and managed[c], "restored windows must be managed again")
+end
+
+tests["a window moved from outside is put back on the next layout"] = function()
+  local a, b = map(), map()
+  views[a].x, views[a].y = 400, 300 -- e.g. another plugin or a client
+  emit("layout", 1)
+  expect(a, "8,8 628x704", "external move undone")
+  -- Pending resize: same request, position not yet applied -> re-sent.
+  local before = place_calls
+  views[b].x = 0
+  emit("layout", 1)
+  assert(place_calls == before + 1, "stale position should re-send exactly one request")
+  check_invariants("external move")
+end
 
 tests["1-5 windows spiral (dwindle) and focus follows new windows"] = function()
   local a = map()

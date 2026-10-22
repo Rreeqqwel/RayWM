@@ -22,6 +22,7 @@ local snapshot_path = runtime_dir .. "/raywm-dwindle-" .. (os.getenv("WAYLAND_DI
 local trees = {} -- output id -> root node (root.out = output id)
 local leaves = {} -- view id -> leaf
 local placed = {} -- view id -> last requested geometry, to skip no-op requests
+local manage = function() end -- ctx.manage once setup has run
 
 local function root_of(node)
   while node.parent do node = node.parent end
@@ -62,6 +63,7 @@ end
 local function insert(id, out, target)
   local leaf = { view = id }
   leaves[id] = leaf
+  manage(id) -- no free Super+drag move/resize for tiled windows
   local root = trees[out]
   if not root then
     leaf.out = out
@@ -92,10 +94,17 @@ local function remove(id)
   return out
 end
 
+-- Skips a request only if it was already sent and the window really is at
+-- that position (something else may have moved it). The size is not
+-- compared: clients may round it, e.g. terminals to whole cells.
 local function place(id, x, y, w, h)
   w, h = math.max(min_size, w), math.max(min_size, h)
   local key = x .. "," .. y .. "," .. w .. "," .. h
-  if placed[id] == key then return true end
+  if placed[id] == key then
+    local v = raywm.view(id)
+    if not v then return nil end
+    if v.x == x and v.y == y then return true end
+  end
   placed[id] = key
   return raywm.view_place(id, x, y, w, h)
 end
@@ -225,6 +234,7 @@ local function build(t, parent, alive)
     if not alive[t.v] or leaves[t.v] then return nil end
     local leaf = { view = t.v, parent = parent }
     leaves[t.v] = leaf
+    manage(t.v)
     return leaf
   end
   if t.s ~= "h" and t.s ~= "v" then return nil end
@@ -261,6 +271,7 @@ end
 return {
   api = 1,
   setup = function(ctx)
+    manage = ctx.manage
     local alive, views = {}, raywm.views()
     for _, id in ipairs(views) do alive[id] = true end
     load_snapshot(alive)

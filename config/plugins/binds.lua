@@ -10,7 +10,8 @@ return {
       local id = raywm.focused()
       if id then raywm.view_close(id) end
     end)
-    ctx.bind("Super+Shift+r", raywm.reload)
+    ctx.bind("Ctrl+Alt+r", raywm.reload)
+    ctx.bind("Super+Shift+r", raywm.reload) -- alternative
     ctx.bind("Super+Shift+e", raywm.quit)
   end,
 }

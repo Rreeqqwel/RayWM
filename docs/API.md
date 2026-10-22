@@ -112,6 +112,16 @@ geometry.
 | `ctx.bind(keys, fn)` | registration id | e.g. `"Super+Shift+Return"` |
 | `ctx.timer(ms, fn)` | registration id | one-shot; re-arm inside `fn` to repeat |
 | `ctx.cancel(id)` | `true` or `nil, "stale"` | cancels a handler, binding or timer |
+| `ctx.manage(view, on)` | `true` or `nil, "stale"` | `on` defaults to `true`; see below |
+
+**Managed windows.** A layout plugin calls `ctx.manage(view)` for windows
+whose geometry it controls. While any live plugin manages a window, the
+core refuses free interactive move/resize for it: both Super+drag (which
+then acts as a normal click, so focus still works) and the client's own
+xdg move/resize requests. Programmatic `view_move`/`view_place` are not
+affected. A window stops being managed with `ctx.manage(view, false)`,
+when it unmaps, and when the managing plugin is unloaded or reloaded.
+Unmanaged windows float, so they can be moved and resized freely.
 
 Key syntax: modifiers `Super`/`Logo`/`Mod4`, `Shift`, `Ctrl`/`Control`,
 `Alt`/`Mod1`, joined with `+`, followed by an xkb keysym name. Bindings

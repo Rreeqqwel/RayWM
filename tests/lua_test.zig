@@ -265,3 +265,37 @@ test "instruction budget is per callback" {
     try std.testing.expectEqual(2, f.count("slow_b"));
     try std.testing.expectEqual(0, takeErrors());
 }
+
+test "ctx.manage: owned by the plugin, released on request, unmap, reload and unload" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try RT.create(&f, "tests/lua/manage.lua", opts);
+    defer rt.destroy();
+    const t = std.testing;
+    try t.expectEqual(1, f.count("manage999:nil:stale"));
+    try t.expect(!rt.managed(1));
+
+    rt.emit(.layout, 0); // tiled: managed
+    try t.expectEqual(1, f.count("manage1:true"));
+    try t.expect(rt.managed(1));
+    try t.expect(!rt.managed(2)); // floating: never managed
+    rt.emit(.layout, 0); // managing twice is harmless
+    try t.expect(rt.managed(1));
+
+    rt.emit(.view_title, 1); // explicit release
+    try t.expect(!rt.managed(1));
+
+    rt.emit(.layout, 0);
+    rt.emit(.view_unmap, 1); // the window is gone
+    try t.expect(!rt.managed(1));
+
+    rt.emit(.layout, 0);
+    rt.requestReload(); // fresh state: nothing managed until the plugin says so
+    try t.expect(!rt.managed(1));
+
+    rt.emit(.layout, 0);
+    try t.expect(rt.managed(1));
+    rt.emit(.view_resized, 1); // the plugin errors and is unloaded
+    try t.expect(!rt.managed(1));
+    try t.expectEqual(1, takeErrors());
+}

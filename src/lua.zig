@@ -59,7 +59,8 @@ pub fn Runtime(comptime H: type) type {
         const Api = H.Api;
 
         const Plugin = struct { name: [:0]u8, teardown: c_int, dead: bool = false, torn_down: bool = false };
-        const Kind = union(enum) { event: Event, bind: Key, timer: u64 };
+        /// `manage`: the plugin lays out this view (no free move/resize).
+        const Kind = union(enum) { event: Event, bind: Key, timer: u64, manage: u32 };
         /// Every resource a plugin registers. Removed only by sweep(), never
         /// while a dispatch loop may be iterating.
         const Reg = struct { id: u32, plugin: u32, ref: c_int, kind: Kind, dead: bool = false };
@@ -98,6 +99,13 @@ pub fn Runtime(comptime H: type) type {
             self.regs.deinit(gpa);
             gpa.free(self.config_path);
             gpa.destroy(self);
+        }
+
+        /// True when a live plugin manages the layout of view `id`.
+        pub fn managed(self: *Self, id: u32) bool {
+            if (!self.alive) return false;
+            for (self.regs.items) |r| if (self.live(r) and r.kind == .manage and r.kind.manage == id) return true;
+            return false;
         }
 
         /// True when some live plugin registered a key binding; otherwise the
@@ -235,7 +243,7 @@ pub fn Runtime(comptime H: type) type {
                         self.regs.items[j] = r;
                         j += 1;
                     } else {
-                        c.luaL_unref(self.L, c.LUA_REGISTRYINDEX, r.ref);
+                        if (r.ref != no_ref) c.luaL_unref(self.L, c.LUA_REGISTRYINDEX, r.ref);
                     }
                 }
                 self.regs.shrinkRetainingCapacity(j);
@@ -270,6 +278,11 @@ pub fn Runtime(comptime H: type) type {
             // While init.lua runs, events are not delivered (same as on the
             // first start, before the runtime is attached to the compositor).
             if (!self.alive or self.in_config) return;
+            // A window that is gone is no longer managed by anyone.
+            if (ev == .view_unmap) for (self.regs.items) |*r| if (r.kind == .manage and r.kind.manage == id) {
+                r.dead = true;
+                self.sweep_needed = true;
+            };
             if (!self.enter()) return;
             defer self.leave();
             const n = self.regs.items.len; // later registrations wait for the next event
@@ -409,8 +422,9 @@ pub fn Runtime(comptime H: type) type {
         };
 
         const ctx_fns = .{
-            .{ "on", ctxOn },       .{ "bind", ctxBind },
-            .{ "timer", ctxTimer }, .{ "cancel", ctxCancel },
+            .{ "on", ctxOn },         .{ "bind", ctxBind },
+            .{ "timer", ctxTimer },   .{ "cancel", ctxCancel },
+            .{ "manage", ctxManage },
         };
 
         /// raywm.load(name): loads plugins/<name>.lua next to the config.
@@ -583,14 +597,17 @@ pub fn Runtime(comptime H: type) type {
         }
 
         /// Stores the function at stack index `fn_index` as a registration.
+        /// `fn_index` 0 registers a resource without a callback.
         fn register(L: ?*c.lua_State, fn_index: c_int, kind: Kind) c_int {
             const self = get(L);
             const plugin = owner(L);
             if (self.plugins.items[plugin].dead) return c.luaL_error(L, "plugin is unloaded");
-            c.luaL_checktype(L, fn_index, c.LUA_TFUNCTION);
+            if (fn_index != 0) c.luaL_checktype(L, fn_index, c.LUA_TFUNCTION);
             self.regs.ensureUnusedCapacity(gpa, 1) catch return c.luaL_error(L, "out of memory");
-            c.lua_pushvalue(L, fn_index);
-            const ref = c.luaL_ref(L, c.LUA_REGISTRYINDEX);
+            const ref = if (fn_index == 0) no_ref else blk: {
+                c.lua_pushvalue(L, fn_index);
+                break :blk c.luaL_ref(L, c.LUA_REGISTRYINDEX);
+            };
             const rid = self.next_id;
             self.next_id = if (self.next_id == std.math.maxInt(u32)) 1 else self.next_id + 1;
             self.regs.appendAssumeCapacity(.{ .id = rid, .plugin = plugin, .ref = ref, .kind = kind });
@@ -617,6 +634,30 @@ pub fn Runtime(comptime H: type) type {
             const rc = register(L, 2, .{ .timer = self.clock() + @as(u64, @intCast(ms)) * std.time.ns_per_ms });
             self.armTimer();
             return rc;
+        }
+
+        /// ctx.manage(view, on = true): while on, this plugin lays out the view
+        /// and the core refuses free interactive move/resize for it. Released
+        /// with ctx.manage(view, false), on unmap, unload and reload.
+        fn ctxManage(L: ?*c.lua_State) callconv(.c) c_int {
+            const self = get(L);
+            const vid = checkId(L, 1);
+            const on = c.lua_type(L, 2) <= c.LUA_TNIL or c.lua_toboolean(L, 2) != 0;
+            if (Api.view(self.host, vid) == null) return stale(L);
+            for (self.regs.items) |*r| if (r.kind == .manage and r.kind.manage == vid and r.plugin == owner(L) and !r.dead) {
+                if (!on) {
+                    r.dead = true;
+                    self.sweep_needed = true;
+                }
+                c.lua_pushboolean(L, 1);
+                return 1;
+            };
+            if (on) {
+                _ = register(L, 0, .{ .manage = vid });
+                c.lua_settop(L, -2);
+            }
+            c.lua_pushboolean(L, 1);
+            return 1;
         }
 
         /// ctx.cancel(id): drops a timer, event handler or binding.
