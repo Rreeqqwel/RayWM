@@ -15,6 +15,10 @@ const Globals = struct {
     wm_base: ?*xdg.WmBase = null,
     layer_shell: ?*zwlr.LayerShellV1 = null,
     seat: ?*wl.Seat = null,
+    /// The seat's capabilities arrive right after binding, before any
+    /// SeatUse exists: kept here and applied by SeatUse.listen().
+    seat_caps: ?wl.Seat.Capability = null,
+    seat_use: ?*SeatUse = null,
 };
 
 /// Seat use by a held window or panel:
@@ -34,8 +38,9 @@ const SeatUse = struct {
     /// Surface under the pointer, as last reported by wl_pointer.enter.
     ptr_on: ?*wl.Surface = null,
 
-    fn listen(use: *SeatUse) void {
-        use.seat.setListener(*SeatUse, seatListener, use);
+    fn listen(use: *SeatUse, g: *Globals) void {
+        g.seat_use = use;
+        if (g.seat_caps) |caps| applyCaps(use, caps);
     }
 };
 
@@ -66,7 +71,7 @@ pub fn main() !void {
     const shm = globals.shm orelse return error.NoWlShm;
     const compositor = globals.compositor orelse return error.NoWlCompositor;
     if (std.c.getenv("RAYWM_TEST_LAYER") != null)
-        return panel(display, shm, compositor, globals.layer_shell orelse return error.NoLayerShell, globals.seat);
+        return panel(display, shm, compositor, globals.layer_shell orelse return error.NoLayerShell, &globals);
     const wm_base = globals.wm_base orelse return error.NoXdgWmBase;
     wm_base.setListener(?*anyopaque, wmBaseListener, null);
 
@@ -114,7 +119,7 @@ pub fn main() !void {
                 try popup_test.open(xdg_surface);
                 use.popup = &popup_test;
             }
-            use.listen();
+            use.listen(&globals);
             // Keep the window (acking every configure) until the compositor
             // goes away. The previous buffer is released after each commit.
             var prev: ?*wl.Buffer = null;
@@ -175,7 +180,7 @@ pub fn main() !void {
 
 /// RAYWM_TEST_LAYER=1: a 30 px top panel with an exclusive zone. Stays mapped until the
 /// compositor goes away.
-fn panel(display: *wl.Display, shm: *wl.Shm, compositor: *wl.Compositor, layer_shell: *zwlr.LayerShellV1, seat: ?*wl.Seat) !void {
+fn panel(display: *wl.Display, shm: *wl.Shm, compositor: *wl.Compositor, layer_shell: *zwlr.LayerShellV1, globals: *Globals) !void {
     var state: State = .{};
     const surface = try compositor.createSurface();
     // RAYWM_TEST_LAYER_LEVEL=overlay: a 30 px bar at the bottom of the
@@ -190,8 +195,8 @@ fn panel(display: *wl.Display, shm: *wl.Shm, compositor: *wl.Compositor, layer_s
     // (=on_demand: one that takes it only when chosen).
     if (std.c.getenv("RAYWM_TEST_LAYER_KBD")) |k|
         layer.setKeyboardInteractivity(if (std.mem.eql(u8, std.mem.span(k), "on_demand")) .on_demand else .exclusive);
-    var use: SeatUse = .{ .seat = seat orelse return error.NoSeat, .surface = surface, .layer = layer };
-    use.listen();
+    var use: SeatUse = .{ .seat = globals.seat orelse return error.NoSeat, .surface = surface, .layer = layer };
+    use.listen(globals);
     surface.commit();
     while (!state.configured) {
         if (display.dispatch() != .SUCCESS) return error.DispatchFailed;
@@ -222,27 +227,33 @@ fn layerListener(_: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Event, stat
     }
 }
 
-/// Devices may only be requested once the seat has them.
-fn seatListener(seat: *wl.Seat, event: wl.Seat.Event, use: *SeatUse) void {
+fn seatListener(_: *wl.Seat, event: wl.Seat.Event, g: *Globals) void {
     switch (event) {
         .capabilities => |c| {
-            const wants_pointer = std.c.getenv("RAYWM_TEST_CSD_MOVE") != null or std.c.getenv("RAYWM_TEST_PTR") != null or use.popup != null;
-            if (c.capabilities.pointer and use.pointer == null and use.toplevel != null and wants_pointer) {
-                use.pointer = seat.getPointer() catch return;
-                use.pointer.?.setListener(*SeatUse, pointerListener, use);
-            }
-            // wlroots makes a wl_keyboard inert when the seat loses its
-            // keyboard (the test driver exits): drop it, ask again later.
-            if (!c.capabilities.keyboard) if (use.keyboard) |k| {
-                k.destroy();
-                use.keyboard = null;
-            };
-            if (c.capabilities.keyboard and use.keyboard == null and std.c.getenv("RAYWM_TEST_KBD") != null) {
-                use.keyboard = seat.getKeyboard() catch return;
-                use.keyboard.?.setListener(*SeatUse, keyboardListener, use);
-            }
+            g.seat_caps = c.capabilities;
+            if (g.seat_use) |use| applyCaps(use, c.capabilities);
         },
         else => {},
+    }
+}
+
+/// Devices may only be requested once the seat has them.
+fn applyCaps(use: *SeatUse, caps: wl.Seat.Capability) void {
+    const seat = use.seat;
+    const wants_pointer = std.c.getenv("RAYWM_TEST_CSD_MOVE") != null or std.c.getenv("RAYWM_TEST_PTR") != null or use.popup != null;
+    if (caps.pointer and use.pointer == null and use.toplevel != null and wants_pointer) {
+        use.pointer = seat.getPointer() catch return;
+        use.pointer.?.setListener(*SeatUse, pointerListener, use);
+    }
+    // wlroots makes a wl_keyboard inert when the seat loses its
+    // keyboard (the test driver exits): drop it, ask again later.
+    if (!caps.keyboard) if (use.keyboard) |k| {
+        k.destroy();
+        use.keyboard = null;
+    };
+    if (caps.keyboard and use.keyboard == null and std.c.getenv("RAYWM_TEST_KBD") != null) {
+        use.keyboard = seat.getKeyboard() catch return;
+        use.keyboard.?.setListener(*SeatUse, keyboardListener, use);
     }
 }
 
@@ -344,7 +355,10 @@ fn popupListener(_: *xdg.Popup, event: xdg.Popup.Event, _: ?*anyopaque) void {
 
 fn keyboardListener(_: *wl.Keyboard, event: wl.Keyboard.Event, use: *SeatUse) void {
     switch (event) {
-        .keymap => |k| _ = posix.system.close(k.fd),
+        .keymap => |k| {
+            _ = posix.system.close(k.fd);
+            step("kbd keymap", .{});
+        },
         .enter => |e| {
             var buf: [256]u8 = undefined;
             var w: std.Io.Writer = .fixed(&buf);
@@ -372,7 +386,17 @@ fn makeBuffer(shm: *wl.Shm, w: i32, h: i32) !*wl.Buffer {
     if (posix.errno(posix.system.ftruncate(fd, @intCast(size))) != .SUCCESS) return error.FtruncateFailed;
     const data = try posix.mmap(null, size, .{ .READ = true, .WRITE = true }, .{ .TYPE = .SHARED }, fd, 0);
     defer posix.munmap(data);
-    @memset(data, 0x80);
+    // RAYWM_TEST_PATTERN: opaque quadrants, top-left red, top-right green,
+    // bottom-left blue, bottom-right white (checked in screenshots).
+    if (std.c.getenv("RAYWM_TEST_PATTERN") != null) {
+        const px = std.mem.bytesAsSlice(u32, data);
+        const uw: usize = @intCast(w);
+        for (px, 0..) |*p, i| {
+            const right = i % uw >= uw / 2;
+            const bottom = i / uw >= @as(usize, @intCast(h)) / 2;
+            p.* = if (bottom) (if (right) 0xffffffff else 0xff0000ff) else if (right) 0xff00ff00 else 0xffff0000;
+        }
+    } else @memset(data, 0x80);
     const pool = try shm.createPool(fd, @intCast(size));
     defer pool.destroy();
     return pool.createBuffer(0, w, h, stride, .argb8888);
@@ -389,7 +413,9 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, g: *Global
             } else if (std.mem.eql(u8, name, std.mem.span(xdg.WmBase.interface.name))) {
                 g.wm_base = registry.bind(global.name, xdg.WmBase, 2) catch return;
             } else if (std.mem.eql(u8, name, std.mem.span(wl.Seat.interface.name))) {
-                g.seat = registry.bind(global.name, wl.Seat, 1) catch return;
+                const seat = registry.bind(global.name, wl.Seat, 1) catch return;
+                seat.setListener(*Globals, seatListener, g);
+                g.seat = seat;
             } else if (std.mem.eql(u8, name, std.mem.span(zwlr.LayerShellV1.interface.name))) {
                 g.layer_shell = registry.bind(global.name, zwlr.LayerShellV1, 4) catch return;
             }

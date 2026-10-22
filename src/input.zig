@@ -122,8 +122,13 @@ pub const Keyboard = struct {
 
     fn handleDestroy(listener: *wl.Listener(*wlr.InputDevice), _: *wlr.InputDevice) void {
         const kb: *Keyboard = @fieldParentPtr("destroy", listener);
+        const seat = kb.server.seat;
         kb.link.remove();
-        kb.server.seat.setCapabilities(.{ .pointer = true, .keyboard = kb.server.keyboards.length() > 0 });
+        // Otherwise wlroots leaves the seat without a keyboard although
+        // another one remains: new clients would get no keymap and no focus.
+        if (seat.getKeyboard() == kb.device.toKeyboard())
+            seat.setKeyboard(if (kb.server.keyboards.first()) |other| other.device.toKeyboard() else null);
+        seat.setCapabilities(.{ .pointer = true, .keyboard = kb.server.keyboards.length() > 0 });
         kb.modifiers.link.remove();
         kb.key.link.remove();
         kb.destroy.link.remove();

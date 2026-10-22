@@ -304,8 +304,27 @@ s11() {
     stop
 }
 
+# ---- the seat's active keyboard is unplugged, another one remains ---------
+s12() {
+    name="unplugging the active keyboard keeps the other one usable"
+    start "$root/tests/input/floating.lua" 1
+    # K1 stays; K2 (created later, so the seat's active keyboard) goes away.
+    env -i PATH="$PATH" XDG_RUNTIME_DIR="$tmp" WAYLAND_DISPLAY="$(cat "$tmp/display")" \
+        "$bin/raywm-test-input" sleep 3000 key j down key j up sleep 300 >>"$tmp/k1.log" 2>&1 &
+    sleep 0.5
+    drive key ctrl down key ctrl up sleep 100
+    # A client started now must still get a keymap and keyboard focus.
+    launch c RAYWM_TEST_HOLD=1 RAYWM_TEST_KBD=1 RAYWM_TEST_ROUNDS=1
+    wait_log c "kbd enter"
+    grep -q "kbd keymap" "$tmp/c.log" || fail "new client got no keymap"
+    # ... and keys typed on the remaining keyboard reach it.
+    wait_log k1 "driver: done"
+    grep -q "kbd key 36 pressed" "$tmp/c.log" || fail "key from the remaining keyboard not delivered"
+    stop
+}
+
 # Runs every scenario, or only those whose name contains $ONLY.
-for s in s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11; do
+for s in s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11 s12; do
     name=$(sed -n "s/^    name=\"\(.*\)\"$/\1/p" "$0" | sed -n "${s#s}p")
     case "$name" in *"${ONLY:-}"*) $s ;; esac
 done
