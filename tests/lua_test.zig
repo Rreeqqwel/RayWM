@@ -40,6 +40,8 @@ const Fake = struct {
             const s = std.mem.span(spec);
             if (std.mem.eql(u8, s, "Super+Return")) return .{ .mods = 64, .sym = 0xff0d };
             if (std.mem.eql(u8, s, "Super+x")) return .{ .mods = 64, .sym = 'x' };
+            // "Super+U4E01".. (tests/lua/plugins/bindloop.lua): distinct keys.
+            if (std.mem.startsWith(u8, s, "Super+U")) return .{ .mods = 64, .sym = 0x0100_0000 + (std.fmt.parseInt(u32, s[7..], 16) catch return null) };
             return null;
         }
         pub fn spawn(f: *Fake, cmd: [*:0]const u8) void {
@@ -277,6 +279,19 @@ test "v0.1.2 additions: pointer, pointer_warp, view_border, visible" {
     try t.expectEqual(1, f.count("staleborder:nil"));
     try t.expectEqual(6, f.count("bad:false"));
     try t.expectEqual(1, f.count("badwarp:false"));
+}
+
+test "bindings in a loop: one duplicate warning, bounded native work" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const start_ns = lua.monotonicNs();
+    const rt = try start(&f, "tests/lua/bindloop.lua", opts);
+    defer rt.destroy();
+    try std.testing.expectEqual(0, takeErrors());
+    try std.testing.expectEqual(1, takeWarnings());
+    try std.testing.expect(rt.hasBindings());
+    // 23000 registrations; a quadratic scan would take seconds.
+    try std.testing.expect(lua.monotonicNs() - start_ns < 2 * std.time.ns_per_s);
 }
 
 test "colors parse to premultiplied RGBA" {

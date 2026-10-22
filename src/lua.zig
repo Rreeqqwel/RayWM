@@ -54,6 +54,8 @@ const hook_step = 10_000;
 const no_ref = c.LUA_NOREF;
 /// Most ids returned by raywm.views() / raywm.outputs().
 pub const max_list = 4096;
+/// Duplicate key bindings are only looked for up to this many registrations.
+const dup_check_limit = 4096;
 
 /// Lua string at `i`, or `default` if it is not a string or number.
 fn str(L: ?*c.lua_State, i: c_int, default: [:0]const u8) [:0]const u8 {
@@ -90,7 +92,8 @@ pub fn Runtime(comptime H: type) type {
         const Self = @This();
         const Api = H.Api;
 
-        const Plugin = struct { name: [:0]u8, teardown: c_int, dead: bool = false, torn_down: bool = false };
+        /// `warned_dup`: a duplicate binding of this plugin was reported.
+        const Plugin = struct { name: [:0]u8, teardown: c_int, dead: bool = false, torn_down: bool = false, warned_dup: bool = false };
         /// `manage`: the plugin lays out this view (no free move/resize).
         const Kind = union(enum) { event: Event, bind: Key, timer: u64, manage: u32 };
         /// Every resource a plugin registers. Removed only by sweep(), never
@@ -759,12 +762,16 @@ pub fn Runtime(comptime H: type) type {
             const spec = c.luaL_checklstring(L, 1, null);
             const k = Api.parseKey(self.host, spec) orelse return c.luaL_argerror(L, 1, "bad key, e.g. \"Super+Shift+Return\"");
             // Allowed (the first registration wins, see key()), but almost
-            // always a configuration mistake.
-            for (self.regs.items) |r| if (self.live(r) and r.kind == .bind and std.meta.eql(r.kind.bind, k)) {
+            // always a configuration mistake. Reported once per plugin, and
+            // only checked while the list is small: this native scan is not
+            // covered by the instruction budget.
+            const me = &self.plugins.items[owner(L)];
+            if (!me.warned_dup and self.regs.items.len <= dup_check_limit) for (self.regs.items) |r| {
+                if (!self.live(r) or r.kind != .bind or !std.meta.eql(r.kind.bind, k)) continue;
                 var buf: [256]u8 = undefined;
-                const me = self.plugins.items[owner(L)].name;
-                const msg = std.fmt.bufPrint(&buf, "plugin {s}: key {s} is already bound by plugin {s}, whose binding is used", .{ me, std.mem.span(spec), self.plugins.items[r.plugin].name }) catch "a key is bound twice";
+                const msg = std.fmt.bufPrint(&buf, "plugin {s}: key {s} is already bound by plugin {s}, whose binding is used", .{ me.name, std.mem.span(spec), self.plugins.items[r.plugin].name }) catch "a key is bound twice";
                 self.limits.warn(msg);
+                me.warned_dup = true;
                 break;
             };
             return register(L, 2, .{ .bind = k });

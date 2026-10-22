@@ -202,4 +202,29 @@ n8() {
     stop
 }
 
-run_scenarios navigation n1 n2 n3 n4 n5 n6 n7 n8
+# ---- existing v0.1.1 configurations -----------------------------------------
+n9() {
+    name="an unchanged v0.1.1 config keeps its Super+J/K (dwindle order)"
+    PLUGINS="$root/tests/compat/v0.1.1/plugins" WIN=$kbd_win start "$root/tests/compat/v0.1.1/init.lua" 3
+    f12=$(key f12 super)
+    # shellcheck disable=SC2046
+    drive sleep 300 $(key j super) $f12 $(key k super) $f12
+    focused 1 2   # next in tree order from C wraps to A
+    focused 2 4   # previous: C
+    if grep -q "already bound\|no plugin registered" "$tmp/raywm.log"; then fail "warnings with the old config"; fi
+    stop
+}
+
+n10() {
+    name="old dwindle.lua plus the new focus.lua: the clash is reported"
+    PLUGINS="$root/tests/compat/v0.1.1/plugins" WIN=$kbd_win start "$root/tests/compat/v0.1.1/mixed.lua" 2
+    grep -q "plugin focus: key Super+j is already bound by plugin dwindle, whose binding is used" "$tmp/raywm.log" ||
+        fail "no duplicate binding warning"
+    [ "$(grep -c "already bound" "$tmp/raywm.log")" -eq 1 ] || fail "more than one warning for one plugin"
+    # Super+H/L (not bound by the old dwindle) work.
+    drive sleep 300 $(key h super) $(key f12 super)
+    focused 1 2
+    stop
+}
+
+run_scenarios navigation n1 n2 n3 n4 n5 n6 n7 n8 n9 n10
