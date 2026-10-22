@@ -83,7 +83,7 @@ echo "   RSS after reload 20: ${rss_reload20} KiB, after reload 40: $(rss) KiB"
 # 4. High-frequency geometry changes on a live, acking client.
 cbg "$tmp/jitter.log" RAYWM_TEST_HOLD=1 RAYWM_TEST_ROUNDS=1 "$client"
 jpid=$!
-j=0; until grep -q 'frame done' "$tmp/jitter.log"; do j=$((j + 1)); [ $j -gt 100 ] && break; sleep 0.05; done
+j=0; until grep -q 'frame done' "$tmp/jitter.log" 2>/dev/null; do j=$((j + 1)); [ $j -gt 100 ] && break; sleep 0.05; done
 cenv "$bin/raywm-test-input" key super down key f12 down key f12 up key super up sleep 3500 >>"$tmp/driver.log" 2>&1 || fail "driver (jitter)"
 acks=$(grep -c "hold resized" "$tmp/jitter.log" || true)
 [ "$acks" -ge 100 ] || fail "jitter: only $acks resizes acked"
