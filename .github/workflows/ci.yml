@@ -63,6 +63,9 @@ jobs:
       - name: Focus tests (pixman)
         run: tests/focus.sh
 
+      - name: API.md examples (pixman)
+        run: tests/docs.sh
+
       - name: Input interaction tests (pixman, virtual input)
         run: tests/input.sh
 

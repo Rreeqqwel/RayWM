@@ -1,125 +1,236 @@
 # RayWM
 
-A small Wayland compositor written in Zig on top of wlroots. The native
-core handles protocols, input, outputs and rendering, and everything else
-is a Lua plugin. Philosophy: a minimal architecture with explicit
-boundaries, not a contest for the fewest lines.
+A lightweight Wayland compositor written in Zig on top of wlroots, with
+its window-management policy written in Lua.
 
-Status: **v0.1, early**. It has floating windows, Dwindle tiling (a Lua
-plugin), Lua key bindings, reload, and layer-shell panels. See
-[docs/API.md](docs/API.md) for the plugin API and what is not supported
-yet.
+**Philosophy:** a minimal core and maximum extensibility, with
+correctness ahead of artificial code reduction.
+- The native core does what must be correct and fast: Wayland protocols,
+  input, outputs, rendering and resource lifetimes.
+- Everything that is policy is a Lua plugin: tiling, key bindings and
+  window rules.
+
+> **Status: v0.1.0, first experimental release.** It is usable for
+> trying out and for development, nested in another session or from a
+> TTY. Expect missing features (see [Known limitations](#known-limitations))
+> and an evolving plugin API.
+
+## Features
+
+- **Wayland compositor on wlroots 0.20.**
+  - xdg-shell windows and popups, with correct configure/ack handling.
+  - Keyboard and pointer, click-to-focus.
+  - Multiple outputs with hotplug.
+  - VT switching on a real session.
+- **Layer-shell** (wlr-layer-shell v4) for external panels, docks,
+  launchers and wallpapers: exclusive zones, keyboard interactivity,
+  popups.
+- **Floating windows** with interactive move/resize (Super + drag, or
+  the client's own title bar).
+- **Lua 5.4 plugin system (API v1).**
+  - One clear loading contract.
+  - Per-plugin ownership of every handler, binding and timer.
+  - A failing plugin is unloaded without affecting the others.
+  - Memory and instruction limits.
+  - Integer ids instead of pointers.
+  - Live reload.
+- **Dwindle tiling** (Hyprland-style), written entirely in Lua.
+  - Per-output binary trees, focus-based splits and gaps.
+  - Respects panels, and keeps its layout across reloads.
+  - Tiled windows are protected from accidental dragging through
+    `ctx.manage`.
+- **Robust defaults.** Fallback bindings when the configuration is
+  missing or broken, and clean shutdown.
+
+## Supported platforms
+
+- Linux, **x86_64**. The release binary is built on Arch Linux and
+  dynamically linked.
+- Needs **wlroots 0.20.x**, **Lua 5.4**, wayland-server, xkbcommon and
+  **glibc ≥ 2.36** at runtime, with the sonames listed in
+  [docs/INSTALL.md](docs/INSTALL.md).
+- On other distributions, build from source. Only Arch Linux was
+  tested.
 
 ## Build
 
-Pinned versions (see `build.zig.zon` for hashes):
+```sh
+# Arch Linux build dependencies
+sudo pacman -S --needed git wlroots0.20 wayland wayland-protocols libxkbcommon pixman lua54 pkgconf
+# Zig 0.16.0 exactly (see docs/INSTALL.md for the checksum-verified download)
+zig build -Doptimize=ReleaseSafe      # -> zig-out/bin/raywm
+```
 
-| | version |
+| Component | Version |
 |---|---|
 | Zig | 0.16.0 |
 | wlroots (system) | 0.20.x |
-| zig-wlroots | 0.20.1 |
-| zig-wayland / zig-xkbcommon / zig-pixman | 0.6.0 / 0.3.0 / 0.3.0 |
-| Lua (system) | 5.4 (`pkg-config lua5.4`) |
+| zig-wlroots / zig-wayland / zig-xkbcommon / zig-pixman | 0.20.1 / 0.6.0 / 0.3.0 / 0.3.0 (hashes in `build.zig.zon`) |
+| Lua (system) | 5.4 |
 
-System packages: wlroots 0.20, wayland, wayland-protocols, libxkbcommon,
-pixman, lua5.4.
+## Install
+
+From a release archive (after checking `sha256sum -c SHA256SUMS`):
 
 ```sh
-zig build                 # zig-out/bin/raywm
-zig build test            # Lua host unit tests
-tests/smoke.sh            # headless end-to-end test (no GPU, isolated)
-tests/focus.sh            # headless focus tests with two windows
+tar -xzf raywm-v0.1.0-linux-x86_64.tar.gz && cd raywm-v0.1.0
+./install.sh        # ~/.local/bin/raywm; config copied only if ~/.config/raywm does not exist
 ```
 
-LLVM and LLD are used by default because the Zig 0.16 linker cannot handle
-SFrame sections in recent GCC crt objects (`-Dllvm=false` to opt out).
+`install.sh` needs no root. It does not replace your current window
+manager, and it never overwrites an existing binary (without `--force`)
+or configuration. Full guide: [docs/INSTALL.md](docs/INSTALL.md).
 
 ## Run
 
+**Nested**, inside an existing Wayland session (the safest way to try it):
+
 ```sh
-cp -r config ~/.config/raywm     # example config: dwindle + bindings
-raywm -s waybar                  # from a TTY, or nested in another session
+raywm -s foot
 ```
 
-Options: `-c config.lua`, `-s startup-command`, `-d` (verbose wlroots
-log). Keyboard layout comes from the standard `XKB_DEFAULT_*` variables.
+**From a TTY:** log in on a free VT (e.g. Ctrl+Alt+F3) and run
+`raywm -s foot`. Seat access comes from systemd-logind or seatd. Quit
+with Super+Shift+E. TTY use is not covered by the automated tests.
 
-Default bindings of the example config: Super+Return terminal, Super+Q
-close, Super+J/K cycle focus, Ctrl+Alt+R reload (also Super+Shift+R),
-Super+Shift+E quit. Super+left drag moves a window
-and Super+right drag resizes it. Ctrl+Alt+F1..F12 switch VTs when running
-on a real session.
+Options:
+- `-c FILE`: use another config file;
+- `-s CMD`: startup command, e.g. `-s 'waybar & foot'`;
+- `-d`: verbose wlroots log;
+- `-h`: help.
+
+The keyboard layout comes from `XKB_DEFAULT_LAYOUT`, `XKB_DEFAULT_OPTIONS`
+and the other xkb variables.
+
+## Default key bindings
+
+With the example configuration (`config/`):
+
+| Keys | Action |
+|---|---|
+| Super+Return | terminal (`$TERMINAL`, default `foot`) |
+| Super+Q | close the focused window |
+| Super+J / Super+K | focus next / previous window |
+| Ctrl+Alt+R (or Super+Shift+R) | reload the configuration |
+| Super+Shift+E | quit |
+| Super + left / right drag | move / resize a floating window |
+| Ctrl+Alt+F1..F12 | switch VT (TTY sessions) |
+
+Without a configuration, or when no plugin binds keys, the core keeps
+three **fallback bindings**: Super+Return, Super+Shift+R and
+Super+Shift+E.
 
 ## Dwindle tiling
 
-`config/plugins/dwindle.lua` tiles each output with a binary tree, in the
-style of Hyprland's dwindle layout:
+`config/plugins/dwindle.lua` gives each output a binary tree:
+- a new window splits the focused window's area along its longer side
+  and takes focus, so windows spiral inwards;
+- closing a window gives its area to its sibling;
+- the tree is edited in place, and only geometry is recomputed when
+  windows, outputs or panels change;
+- gaps default to 8 px;
+- the tree shape survives `raywm.reload()`.
 
-- a new window splits the focused window's area in two, along that area's
-  longer side. It then gets focus (core default, see below), so repeated
-  windows spiral inwards;
-- closing a window gives its area to its sibling, and the tree collapses;
-- each output has its own tree, and windows from an unplugged output move
-  to the first remaining one;
-- the usable area excludes panel exclusive zones, and an 8 px `gap` (outer
-  margin and space between windows) can be changed at the top of the file;
-- tiled windows are declared managed (`ctx.manage`), so Super+drag and
-  client move/resize requests do not apply to them, while clicking still
-  focuses them. Windows the plugin does not tile stay freely movable;
-- only geometry is recomputed when outputs, panels or windows change.
-  A request is skipped only if it was already sent and the window is at
-  that position, so a window moved by something else is put back;
-- across `raywm.reload()` the tree shape is kept in
-  `$XDG_RUNTIME_DIR/raywm-dwindle-$WAYLAND_DISPLAY.lua`. The file is read
-  once, and only if windows exist, so a new session never reuses it.
+Details and options: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
-Tested by `tests/dwindle_test.lua` (run by `zig build test`) against a mock
-of the plugin API. It covers 1–5 windows, closing the first, middle and
-last window, focus-based splits, output resize, panels, two outputs and
-unplugging, stale windows, reload, minimum sizes, managed windows, and
-windows moved from outside.
+## Lua plugins
 
-## Focus
-
-A newly mapped window gets keyboard focus, even when another window is
-focused. A plugin can override this: if any `view_map` handler calls
-`raywm.view_focus` (even on the previously focused window), the core
-keeps that choice. Handlers still see the previous window in
-`raywm.focused()`, which is what dwindle splits.
-
-## Known limitations (v0.1)
-
-- **Optional Wayland protocols are not implemented**, so clients log
-  warnings and fall back. With foot 1.28:
-  - primary selection (middle-click paste) is unavailable;
-  - XDG activation is missing, so the urgency bell falls back to red window margins;
-  - fractional scaling is missing, so integer scale is used;
-  - cursor-shape is missing, so clients draw their own cursors;
-  - xdg-toplevel-icon is missing, so windows have no icons;
-  - text-input is missing, so IME is disabled;
-  - xdg-decoration is missing, so clients always draw their own decorations.
-
-  None of these affect basic use. Also not supported: maximize and
-  fullscreen requests (answered, but ignored), Xwayland, workspaces,
-  animations (planned for v0.2).
-
-## Layout
-
-```
-src/main.zig     startup, signals, config path
-src/server.zig   backend, scene, outputs, focus, spawn
-src/view.zig     xdg-shell toplevels/popups, configure/ack geometry
-src/input.zig    keyboard, bindings, pointer, move/resize
-src/layer.zig    wlr-layer-shell
-src/lua.zig      Lua 5.4 host: plugin registry, isolation, limits
-src/host.zig     compositor functions exposed to Lua (id-based)
-config/          example ~/.config/raywm
-tests/           unit tests, test client, headless smoke test
+```lua
+-- ~/.config/raywm/init.lua
+raywm.load("dwindle")
+raywm.load("binds")
 ```
 
-## Credits
+```lua
+-- ~/.config/raywm/plugins/hello.lua
+return {
+  api = 1,
+  setup = function(ctx)
+    ctx.on("view_map", function(id)
+      local v = raywm.view(id)
+      if v then raywm.log("new window: " .. v.app_id) end
+    end)
+    ctx.bind("Super+d", function() raywm.spawn("fuzzel") end)
+  end,
+}
+```
 
-The core started from `tinywl` in zig-wlroots (© Isaac Freund, permissive
-license). `protocol/wlr-layer-shell-unstable-v1.xml` is © Drew DeVault
-(license inside the file).
+Plugins are **trusted code**. They are not sandboxed, and get the full
+Lua standard library. See [SECURITY.md](SECURITY.md). API reference:
+[docs/API.md](docs/API.md). Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Known limitations
+
+- **No** Xwayland, workspaces, fullscreen or maximize (the requests are
+  answered and ignored), touch, tablets, HiDPI output scaling, or screen
+  capture.
+- **No** animations, per-frame plugin hooks or decorations; these are
+  planned for v0.2. Blur, shadows and rounded corners would need a
+  custom renderer.
+- **No** per-window floating rules: dwindle tiles every window.
+- **Optional protocols are not implemented**, so clients warn and fall
+  back. With foot 1.28:
+  - no primary selection (middle-click paste);
+  - no XDG activation (the bell falls back to red margins);
+  - no fractional scaling;
+  - no cursor-shape (client-drawn cursors);
+  - no xdg-toplevel-icon;
+  - no text-input (IME disabled);
+  - no xdg-decoration (clients always draw their own decorations).
+- The release binary targets Arch Linux sonames; other distributions
+  should build from source.
+- Not verified on real hardware from a TTY, or with real monitor
+  hotplug, by the automated tests: see [docs/TESTING.md](docs/TESTING.md).
+
+## Testing
+
+All tests are headless and isolated from your session. The input tests
+use test-only virtual input inside a private compositor.
+
+```sh
+zig build test                      # Zig unit tests + Lua host + dwindle (37 tests)
+tests/smoke.sh && tests/focus.sh && tests/docs.sh
+zig build -Dtest-input -p zig-out/test-input
+tests/input.sh && tests/stress.sh   # real pointer/keyboard events, stress
+```
+
+See [docs/TESTING.md](docs/TESTING.md) for every suite, CI, and the
+known coverage gaps. CI runs on GitHub Actions in an Arch Linux
+container (`.github/workflows/ci.yml`).
+
+## Project layout
+
+```
+src/            Zig core (2148 lines in v0.1.0)
+  main.zig        startup, signals, config path
+  server.zig      backend, scene, outputs, focus, spawn
+  view.zig        xdg-shell toplevels/popups, configure/ack geometry
+  input.zig       keyboard, bindings, pointer, move/resize
+  layer.zig       wlr-layer-shell
+  lua.zig         Lua 5.4 host: plugins, isolation, limits
+  host.zig        compositor functions exposed to Lua (id-based)
+config/         example ~/.config/raywm (dwindle + bindings)
+docs/           INSTALL, CONFIGURATION, API, ARCHITECTURE, TESTING
+tests/          unit, integration, input and stress tests
+scripts/        package.sh (release archive), install.sh
+```
+
+## Contributing
+
+Issues and pull requests are welcome.
+- Keep the core minimal and put policy in plugins.
+- Add a test with every fix; reverting the fix should make that test fail.
+- Before sending changes, run the CI commands from docs/TESTING.md.
+- Use Conventional Commits (`fix(core): ...`, `feat(lua): ...`).
+
+## License and credits
+
+RayWM is licensed under the **GNU GPL v3** (see `LICENSE`).
+
+- The core started from `tinywl` in zig-wlroots (© Isaac Freund,
+  permissive license).
+- Uses [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots) and
+  [Lua](https://www.lua.org).
+- `protocol/wlr-layer-shell-unstable-v1.xml` is © Drew DeVault.
+- The test-only protocol files in `tests/protocol/` keep their upstream
+  licenses (inside each file).
