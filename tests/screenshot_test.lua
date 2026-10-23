@@ -101,12 +101,12 @@ check(keyset("screenshot") == "Ctrl+Alt+p | Ctrl+Print | Ctrl+Shift+Print | Prin
 env.XDG_RUNTIME_DIR = real_getenv("XDG_RUNTIME_DIR")
 env.WAYLAND_DISPLAY = "raywm-screenshot-test"
 local others = {}
-for _, name in ipairs({ "binds", "dwindle", "focus" }) do
+for _, name in ipairs({ "binds", "dwindle", "focus", "floating" }) do
   others[name] = load(name, "config/plugins/" .. name .. ".lua")
   setup(name, others[name])
 end
 local seen = {}
-for _, name in ipairs({ "binds", "dwindle", "focus", "screenshot" }) do
+for _, name in ipairs({ "binds", "dwindle", "focus", "floating", "screenshot" }) do
   for _, b in ipairs(regs[name].binds) do
     local k = normalize(b.key)
     check(not seen[k], ("key %s bound by %s and %s"):format(b.key, seen[k] or "", name))
@@ -124,13 +124,15 @@ for n = 1, 12 do check(not seen["alt+ctrl+f" .. n], "VT switch key bound") end
 
 unload("screenshot", shot)
 check(regs.screenshot == nil, "unload leaves bindings")
-check(#regs.binds.binds == 5 and #regs.dwindle.binds == 0 and #regs.focus.binds == 6, "unloading screenshot touched other plugins")
+check(#regs.binds.binds == 5 and #regs.dwindle.binds == 9 and #regs.focus.binds == 6 and #regs.floating.binds == 1,
+  "unloading screenshot touched other plugins")
 shot = load("screenshot", plugin_path)
 setup("screenshot", shot)
 check(#regs.screenshot.binds == 5, "reload: expected 5 bindings, got " .. #regs.screenshot.binds)
 unload("binds", others.binds)
 unload("dwindle", others.dwindle)
 unload("focus", others.focus)
+unload("floating", others.floating)
 
 -- ---- 3. callbacks only build a command and spawn it ----------------------
 

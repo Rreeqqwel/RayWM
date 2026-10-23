@@ -42,7 +42,8 @@ raywm = {
     local v = views[id]
     if not v then return nil, "stale" end
     return { id = id, x = v.x, y = v.y, w = v.w, h = v.h, title = "t", app_id = "a",
-      focused = focused == id, output = output_at(v.x + v.w // 2, v.y + v.h // 2) }
+      focused = focused == id, output = output_at(v.x + v.w // 2, v.y + v.h // 2),
+      floating = v.floating or false, min_w = v.min_w or 0, min_h = v.min_h or 0, workspace = 0 }
   end,
   view_place = function(id, x, y, w, h)
     assert(math.type(x) == "integer" and math.type(w) == "integer", "non-integer geometry")
@@ -116,6 +117,11 @@ local function unmap(id)
   emit("view_unmap", id)
 end
 
+local function leaves_of(id)
+  local _, leaves = plugin.inspect()
+  return leaves[id]
+end
+
 local function geo(id)
   local v = views[id]
   return ("%d,%d %dx%d"):format(v.x, v.y, v.w, v.h)
@@ -132,9 +138,9 @@ end
 local function check_tree(label)
   local trees, leaves = plugin.inspect()
   local seen, count = {}, 0
-  for out, root in pairs(trees) do
+  for key, root in pairs(trees) do
     assert(root.parent == nil, label .. ": root has a parent")
-    assert(root.out == out, label .. ": root.out mismatch")
+    assert(root.space == key, label .. ": root.space mismatch")
     local stack, steps = { root }, 0
     while #stack > 0 do
       local node = table.remove(stack)
@@ -194,6 +200,12 @@ local function check_invariants(label)
 end
 
 local tests = {}
+
+-- The core's floating toggle, as seen by a layout: state, then view_state.
+local function set_floating(id, on)
+  views[id].floating = on
+  emit("view_state", id)
+end
 
 tests["tiled windows are managed (no free move/resize)"] = function()
   local a, b, c = map(), map(), map()
@@ -342,9 +354,14 @@ tests["fresh session ignores a leftover snapshot"] = function()
   check_invariants("fresh")
 end
 
-tests["focus_step cycles focus in tree order; no keys bound by default"] = function()
+tests["focus_step cycles focus in tree order; focus.lua's keys stay free"] = function()
   local a, b, c = map(), map(), map()
-  assert(next(binds) == nil, "dwindle binds no keys by default (focus.lua does)")
+  for _, k in ipairs({ "Super+h", "Super+j", "Super+k", "Super+l", "Super+Tab", "Super+Shift+Tab" }) do
+    assert(not binds[k], "dwindle binds " .. k .. ", which focus.lua owns")
+  end
+  for _, k in ipairs({ "Super+Ctrl+h", "Super+Ctrl+l", "Super+Shift+h", "Super+Shift+l", "Super+t" }) do
+    assert(binds[k], "dwindle should bind " .. k)
+  end
   assert(focused == c)
   plugin.focus_step(1)
   assert(focused == a, "next wraps to first")
@@ -472,6 +489,104 @@ tests["a truncated views() list never leaves managed windows untiled"] = functio
   emit("layout", 1) -- two windows look gone: removed from the tree and released
   check_tree("truncated")
   views_cap = nil
+end
+
+tests["floating windows leave the tiling and come back"] = function()
+  local a, b, c = map(), map(), map()
+  set_floating(b, true)
+  assert(not managed[b], "a floating window is not managed")
+  expect(a, "8,8 628x704", "a keeps its half")
+  expect(c, "644,8 628x704", "c takes b's area")
+  check_tree("float")
+  -- A floating window mapping is never tiled.
+  views[next_id] = nil
+  local d = next_id
+  next_id = next_id + 1
+  views[d] = { x = 100, y = 100, w = 300, h = 200, floating = true }
+  table.insert(mru, 1, d)
+  emit("view_map", d)
+  assert(not leaves_of(d) and not managed[d], "floating map tiled")
+  expect(d, "100,100 300x200", "floating keeps its geometry")
+  set_floating(b, false)
+  assert(managed[b], "tiled again")
+  check_tree("unfloat")
+  assert(check_tree("count") == 3)
+end
+
+tests["resize moves the split next to the focused window"] = function()
+  local a, b = map(), map()
+  raywm.view_focus(a)
+  plugin.resize("right") -- a's right edge moves right: a grows
+  expect(a, "8,8 668x704", "grow right")
+  expect(b, "684,8 588x704", "neighbour shrinks")
+  plugin.resize("left")
+  plugin.resize("left") -- now past the middle: a shrinks
+  expect(a, "8,8 588x704", "shrink left")
+  raywm.view_focus(b)
+  plugin.resize("left") -- b's left edge moves left: b grows
+  expect(b, "564,8 708x704", "b grows left")
+  plugin.resize("up") -- no vertical split: nothing happens
+  expect(b, "564,8 708x704", "no vertical split")
+  for _ = 1, 100 do plugin.resize("right") end -- clamped
+  check_invariants("resize clamp")
+  assert(views[b].w >= 1 and views[a].w > 600, "ratio clamped")
+end
+
+tests["swap exchanges the focused window with its neighbour"] = function()
+  local a, b, c = map(), map(), map() -- a left; b top right; c bottom right
+  raywm.view_focus(a)
+  plugin.swap("right") -- the neighbour to the right overlapping a: b (top)
+  expect(a, "644,8 628x348", "a moved to b's tile")
+  expect(b, "8,8 628x704", "b moved to a's tile")
+  assert(focused == a, "focus stays on the moved window")
+  plugin.swap("down")
+  expect(a, "644,364 628x348", "a below")
+  expect(c, "644,8 628x348", "c above")
+  plugin.swap("down") -- nothing below
+  expect(a, "644,364 628x348", "no neighbour")
+  check_invariants("swap")
+end
+
+tests["toggle split turns side by side into stacked"] = function()
+  local a, b = map(), map()
+  plugin.toggle_split()
+  expect(a, "8,8 1264x348", "stacked")
+  expect(b, "8,364 1264x348", "stacked")
+  plugin.toggle_split()
+  expect(a, "8,8 628x704", "side by side again")
+  check_invariants("toggle")
+end
+
+tests["minimum sizes are respected when they fit"] = function()
+  local a, b = map(), map()
+  views[b].min_w = 900
+  emit("layout", 1)
+  expect(b, "372,8 900x704", "b gets exactly its minimum width") -- a: 1256 - 900 = 356
+  check_invariants("min size")
+  views[a].min_w = 900 -- both cannot fit: back to the ratio
+  emit("layout", 1)
+  expect(a, "8,8 628x704", "impossible minimums ignored")
+end
+
+tests["inner and outer gaps are separate options"] = function()
+  plugin.options.gaps_in, plugin.options.gaps_out = 2, 20
+  local a, b = map(), map()
+  expect(a, "20,20 619x680", "outer 20, inner 2")
+  expect(b, "641,20 619x680", "outer 20, inner 2")
+  plugin.options.gaps_in, plugin.options.gaps_out = 8, 8
+end
+
+tests["a v0.1 snapshot is read after an upgrade"] = function()
+  local path = os.getenv("XDG_RUNTIME_DIR") .. "/raywm-dwindle-" .. os.getenv("WAYLAND_DISPLAY") .. ".txt"
+  local a, b = map(), map()
+  plugin.teardown()
+  local f = assert(io.open(path, "w"))
+  f:write(("raywm-dwindle 1\noutput 1\nv 0.250000\nleaf %d\nleaf %d\n"):format(a, b))
+  f:close()
+  managed = {}
+  load_plugin()
+  expect(a, "8,8 1264x174", "v1 tree shape applied") -- 696 * 0.25
+  check_invariants("v1 snapshot")
 end
 
 local names = {}

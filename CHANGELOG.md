@@ -8,11 +8,54 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ### Added
 
-- **`RAYWM_OUTPUT_MODE=WIDTHxHEIGHT@HZ`** (`src/server.zig`) picks an
+- **Floating windows** (`config/plugins/floating.lua`, loaded by the
+  example `init.lua`): Super+Shift+Space toggles the focused window
+  between tiled and floating. Floating is window state kept by the core
+  (`raywm.view_floating(id, on)`, `raywm.view(id).floating`), so it
+  survives reloads and every layout plugin sees it. A window floats where
+  it last floated; the first time, centred at the size it chose itself.
+  Floating windows always stay above tiled ones.
+- **Dwindle** (`config/plugins/dwindle.lua`):
+  - Super+Ctrl+H/J/K/L move the split next to the focused window
+    (`resize_step`, 40 px);
+  - Super+Shift+H/J/K/L swap the focused window with its neighbour;
+  - Super+T switches the focused window's split between side by side
+    and stacked;
+  - separate `gaps_in` and `gaps_out`; clients' minimum sizes are
+    respected when they fit;
+  - floating windows leave the tiling and come back;
+  - one tree per space (an output, or a workspace once a workspace
+    plugin is loaded); the reload snapshot format is now version 2, and
+    a v0.1 snapshot is still read once after an upgrade.
+- **Lua API** (still `api = 1`, additions only): `raywm.version`;
+  `raywm.view(id)` also reports `parent`, `min_w`, `min_h`, `max_w`,
+  `max_h`, `floating`, `managed`, `pid` (and `fullscreen`,
+  `fullscreen_output`, `maximized`, `workspace`, `urgent`, `xwayland`,
+  filled in by later features); events `view_new` (a window mapped,
+  before `view_map`, for window rules), `view_state` and `view_app_id`;
+  handlers may receive arguments after the id.
+- `RAYWM_OUTPUT_MODE=WIDTHxHEIGHT@HZ` (`src/server.zig`) picks an
   output mode other than the monitor's preferred one, e.g.
   `1920x1080@240`. The nearest mode within 1 Hz is used; a mode the
   driver rejects falls back to the preferred mode with a warning. See
   docs/CONFIGURATION.md.
+
+### Changed
+
+- **New windows are shown only once they have the size a plugin gave
+  them** while they mapped (or after 150 ms), so a tiled window no longer
+  flashes at its own size in the middle of the screen before jumping
+  into its tile.
+- **Stacking:** windows a layout manages (`ctx.manage`) are kept below
+  floating ones; focusing a tiled window no longer raises it above
+  floating windows.
+- `raywm.view_show(id, true)` only undoes a plugin's own hiding; it does
+  not show windows the core hides (needed for workspaces).
+
+### Fixed
+
+- tests: the "client-side move and resize" pointer scenario raced its
+  own client and failed about 1 run in 10.
 
 ## [v0.1.2] — 2026-10-22 — Input, focus and pointer reliability
 

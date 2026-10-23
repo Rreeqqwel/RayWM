@@ -4,7 +4,8 @@
 //!   move X Y          absolute pointer position in layout pixels
 //!   down|up left|right|middle
 //!   key NAME down|up  NAME: super, ctrl, alt, shift, f9, f10, f11, f12,
-//!                     h, j, k, l, q, r, p, tab, print, escape
+//!                     a-z, 0-9, tab, print, escape, space, return,
+//!                     left, right, up, down, comma, period
 //!   group N           locks keyboard layout group N (0 = first layout), as
 //!                     a layout switch key does
 //!   sleep MS
@@ -60,6 +61,44 @@ const keys = [_]Key{
     .{ .name = "q", .code = KEY_Q },
     .{ .name = "tab", .code = KEY_TAB },
     .{ .name = "r", .code = KEY_R },
+    // Evdev codes (linux/input-event-codes.h).
+    .{ .name = "space", .code = 57 },
+    .{ .name = "return", .code = 28 },
+    .{ .name = "left", .code = 105 },
+    .{ .name = "right", .code = 106 },
+    .{ .name = "up", .code = 103 },
+    .{ .name = "down", .code = 108 },
+    .{ .name = "comma", .code = 51 },
+    .{ .name = "period", .code = 52 },
+    .{ .name = "1", .code = 2 },
+    .{ .name = "2", .code = 3 },
+    .{ .name = "3", .code = 4 },
+    .{ .name = "4", .code = 5 },
+    .{ .name = "5", .code = 6 },
+    .{ .name = "6", .code = 7 },
+    .{ .name = "7", .code = 8 },
+    .{ .name = "8", .code = 9 },
+    .{ .name = "9", .code = 10 },
+    .{ .name = "0", .code = 11 },
+    .{ .name = "a", .code = 30 },
+    .{ .name = "b", .code = 48 },
+    .{ .name = "c", .code = 46 },
+    .{ .name = "d", .code = 32 },
+    .{ .name = "e", .code = 18 },
+    .{ .name = "f", .code = 33 },
+    .{ .name = "g", .code = 34 },
+    .{ .name = "i", .code = 23 },
+    .{ .name = "m", .code = 50 },
+    .{ .name = "n", .code = 49 },
+    .{ .name = "o", .code = 24 },
+    .{ .name = "s", .code = 31 },
+    .{ .name = "t", .code = 20 },
+    .{ .name = "u", .code = 22 },
+    .{ .name = "v", .code = 47 },
+    .{ .name = "w", .code = 17 },
+    .{ .name = "x", .code = 45 },
+    .{ .name = "y", .code = 21 },
+    .{ .name = "z", .code = 44 },
 };
 const KEY_LEFTMETA = 125;
 
