@@ -430,15 +430,20 @@ fn layoutManaged(_: *Server, view: *View) bool {
     return view.managed();
 }
 
+/// Fullscreen and maximized windows are not moved or resized by hand.
+fn fixedGeometry(view: *View) bool {
+    return view.isFullscreen() or view.maximized;
+}
+
 pub fn beginMove(server: *Server, view: *View, from_client: bool) void {
-    if (layoutManaged(server, view)) return;
+    if (layoutManaged(server, view) or fixedGeometry(view)) return;
     endGrab(server);
     server.grab = .{ .mode = .move, .view = view, .cx = server.cursor.x, .cy = server.cursor.y, .box = view.geometry(), .forward_release = from_client, .button = server.seat.pointer_state.grab_button };
     startGrab(server, "grabbing");
 }
 
 pub fn beginResize(server: *Server, view: *View, edges: wlr.Edges, from_client: bool) void {
-    if (layoutManaged(server, view)) return;
+    if (layoutManaged(server, view) or fixedGeometry(view)) return;
     endGrab(server);
     view.pending = null;
     const box = view.geometry();
@@ -490,7 +495,7 @@ pub fn button(listener: *wl.Listener(*wlr.Pointer.event.Button), event: *wlr.Poi
             server.focus(view);
             const kb = server.seat.getKeyboard();
             // On a managed window Super+click is an ordinary click.
-            if (kb != null and kb.?.getModifiers().logo and (event.button == BTN_LEFT or event.button == BTN_RIGHT) and !layoutManaged(server, view)) {
+            if (kb != null and kb.?.getModifiers().logo and (event.button == BTN_LEFT or event.button == BTN_RIGHT) and !layoutManaged(server, view) and !fixedGeometry(view)) {
                 if (event.button == BTN_LEFT) {
                     beginMove(server, view, false);
                     server.grab.button = event.button;

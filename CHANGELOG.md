@@ -15,6 +15,33 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
   survives reloads and every layout plugin sees it. A window floats where
   it last floated; the first time, centred at the size it chose itself.
   Floating windows always stay above tiled ones.
+- **Fullscreen and maximize**, implemented in the core (before, the
+  requests were answered and ignored):
+  - Super+F and Super+M (binds.lua) toggle them for the focused window;
+    `raywm.view_fullscreen(id, on [, output])`,
+    `raywm.view_maximize(id, on)`; `view(id).fullscreen`,
+    `fullscreen_output`, `maximized`;
+  - client requests (also before the window maps: it then starts
+    fullscreen or maximized) are granted unless a plugin decides
+    otherwise in `view_request_fullscreen(id, on, output)` /
+    `view_request_maximize(id, on)`; every request gets a configure;
+  - a fullscreen window covers its output, panels included (a black
+    backdrop fills what a smaller buffer leaves free); overlay surfaces
+    stay above it; its border is not drawn;
+  - leaving either state restores the previous geometry and layout
+    place; while fullscreen or maximized, layout requests are only
+    remembered, so the client gets no extra resizes;
+  - output-aware: a fullscreen window follows its output when outputs
+    move, and moves to another output when its output is unplugged; a
+    maximized window follows the usable area (panels appearing);
+  - keyboard focus never goes to a window hidden behind a fullscreen
+    one: new windows open behind it and focus keys do not reach them,
+    until it leaves fullscreen. Its dialogs are shown above it and can be
+    focused;
+  - fullscreen and maximized windows are not moved or resized by hand
+    (Super+drag, title bars).
+- Dialogs (windows with a parent) are kept above their parent window
+  when it is raised.
 - **Dwindle** (`config/plugins/dwindle.lua`):
   - Super+Ctrl+H/J/K/L move the split next to the focused window
     (`resize_step`, 40 px);

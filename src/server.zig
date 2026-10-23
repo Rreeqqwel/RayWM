@@ -236,9 +236,25 @@ pub const Server = struct {
         return null;
     }
 
-    /// Moves keyboard focus to `view` (must be mapped) or clears it.
+    /// A visible fullscreen window covers `v` (on the same output, and
+    /// `v` is neither it nor one of its dialogs).
+    pub fn coveredByFullscreen(server: *Server, v: *View) bool {
+        if (v.isFullscreen()) return false;
+        const out = v.output() orelse return false;
+        var it = server.views.iterator(.forward);
+        while (it.next()) |f| {
+            if (f == v or f.fullscreen_output != out.id or !f.visible()) continue;
+            if (!v.isDescendantOf(f)) return true;
+        }
+        return false;
+    }
+
+    /// Moves keyboard focus to `view` (must be mapped) or clears it. A
+    /// window hidden behind a fullscreen one never gets it: the fullscreen
+    /// window keeps the keyboard until it leaves fullscreen.
     pub fn focus(server: *Server, view: ?*View) void {
         server.focus_requests +%= 1;
+        if (view) |v| if (server.coveredByFullscreen(v)) return;
         if (view != null and view == server.focused) {
             // Clicking the focused window takes the keyboard back from an
             // on-demand layer surface (but never from an exclusive one).
@@ -257,7 +273,7 @@ pub const Server = struct {
         std.debug.assert(v.mapped);
         v.link.remove();
         server.views.prepend(v);
-        v.tree.node.raiseToTop();
+        v.raise();
         v.setActivated(true);
         // An exclusive layer surface (e.g. a launcher) keeps the keyboard;
         // an on-demand one gives it up when a window is chosen.
@@ -283,6 +299,20 @@ pub const Server = struct {
         } else {
             server.seat.keyboardNotifyEnter(surface, &.{}, null);
         }
+    }
+
+    /// The output under the cursor, falling back to the first output.
+    pub fn activeOutput(server: *Server) ?*Output {
+        if (server.output_layout.outputAt(server.cursor.x, server.cursor.y)) |wo| if (server.outputByWlr(wo)) |o| return o;
+        var it = server.outputs.iterator(.forward);
+        while (it.next()) |o| if (o.inLayout()) return o;
+        return null;
+    }
+
+    /// Fullscreen and maximized windows follow output and panel changes.
+    pub fn refitViews(server: *Server) void {
+        var it = server.views.iterator(.forward);
+        while (it.next()) |v| v.refit();
     }
 
     /// Box of the output under the cursor, falling back to the first output.
@@ -340,6 +370,7 @@ pub const Server = struct {
                 if (server.output_layout.outputAt(cx, cy) == null) v.move(box.x, box.y);
             }
         }
+        server.refitViews();
         server.emit(.layout, 0);
     }
 
@@ -398,6 +429,12 @@ pub const Output = struct {
         var b: wlr.Box = undefined;
         output.server.output_layout.getBox(output.wlr_output, &b);
         return b;
+    }
+
+    /// The usable area in layout coordinates.
+    pub fn usableBox(output: *Output) wlr.Box {
+        const b = output.box();
+        return .{ .x = b.x + output.usable.x, .y = b.y + output.usable.y, .width = output.usable.width, .height = output.usable.height };
     }
 
     /// wlroots only emits frame when the output needs a repaint (damage or

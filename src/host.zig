@@ -38,6 +38,9 @@ pub fn view(server: *Server, id: u32) ?lua.ViewInfo {
         .max_w = hints.max[0],
         .max_h = hints.max[1],
         .floating = v.floating,
+        .fullscreen = v.isFullscreen(),
+        .fullscreen_output = v.fullscreen_output,
+        .maximized = v.maximized,
         .managed = v.managed(),
         .pid = v.pid(),
     };
@@ -46,10 +49,10 @@ pub fn view(server: *Server, id: u32) ?lua.ViewInfo {
 pub fn viewCmd(server: *Server, id: u32, cmd: lua.ViewCmd) bool {
     const v = server.viewById(id) orelse return false;
     switch (cmd) {
-        .move => |p| v.move(coord(p[0]), coord(p[1])),
-        .place => |b| v.place(coord(b.x), coord(b.y), std.math.clamp(b.w, 1, max_coord), std.math.clamp(b.h, 1, max_coord)),
+        .move => |p| v.requestMove(coord(p[0]), coord(p[1])),
+        .place => |b| v.request(coord(b.x), coord(b.y), std.math.clamp(b.w, 1, max_coord), std.math.clamp(b.h, 1, max_coord)),
         .opacity => |a| v.setOpacity(a),
-        .raise => v.tree.node.raiseToTop(),
+        .raise => v.raise(),
         .focus => if (v.visible()) server.focus(v),
         .close => v.close(),
         .show => |on| {
@@ -59,6 +62,15 @@ pub fn viewCmd(server: *Server, id: u32, cmd: lua.ViewCmd) bool {
         },
         .border => |b| v.setBorder(b.width, &b.color) catch std.log.err("out of memory", .{}),
         .floating => |on| v.setFloating(on),
+        .fullscreen => |f| {
+            v.decisions +%= 1;
+            const out = if (f.output != 0) server.outputById(f.output) else null;
+            v.setFullscreen(f.on, if (out != null and out.?.inLayout()) out else null);
+        },
+        .maximize => |on| {
+            v.decisions +%= 1;
+            v.setMaximized(on);
+        },
     }
     input.refocusPointer(server);
     return true;

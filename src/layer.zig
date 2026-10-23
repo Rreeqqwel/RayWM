@@ -195,7 +195,10 @@ pub fn arrange(output: *Output) void {
     const new: wlr.Box = .{ .x = usable.x - full.x, .y = usable.y - full.y, .width = usable.width, .height = usable.height };
     const changed = !std.meta.eql(new, output.usable);
     output.usable = new;
-    if (changed) output.server.emit(.layout, output.id);
+    if (changed) {
+        output.server.refitViews(); // maximized windows follow the usable area
+        output.server.emit(.layout, output.id);
+    }
 }
 
 /// Closes every layer surface of a disappearing output.

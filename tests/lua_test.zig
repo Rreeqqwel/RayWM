@@ -14,6 +14,8 @@ const Fake = struct {
     /// Host hooks of v0.2.0: managed-state changes, last view command.
     managed_changes: usize = 0,
     last_cmd: ?std.meta.Tag(lua.ViewCmd) = null,
+    fs_outputs: [4]u32 = @splat(99),
+    n_fs: usize = 0,
 
     pub const Api = struct {
         pub fn views(_: *Fake, buf: []u32) usize {
@@ -27,6 +29,10 @@ const Fake = struct {
         pub fn viewCmd(f: *Fake, id: u32, cmd: lua.ViewCmd) bool {
             if (id != 1) return false;
             f.last_cmd = cmd;
+            if (cmd == .fullscreen and f.n_fs < f.fs_outputs.len) {
+                f.fs_outputs[f.n_fs] = cmd.fullscreen.output;
+                f.n_fs += 1;
+            }
             if (cmd == .focus) if (f.rt) |rt| rt.emit(.view_focus, id);
             return true;
         }
@@ -542,7 +548,15 @@ test "v0.2.0 foundation: version, view metadata, event arguments, managed hook" 
     try t.expectEqual(1, f.count("meta:false:false:0:0:false:false:0"));
     try t.expectEqual(1, f.count("floating:true"));
     try t.expectEqual(1, f.count("floatingstale:nil"));
-    try t.expectEqual(.floating, f.last_cmd.?);
+    // view_fullscreen(id, on, output?) and view_maximize(id, on).
+    try t.expectEqual(1, f.count("fs:true"));
+    try t.expectEqual(1, f.count("fsdefault:true"));
+    try t.expectEqual(1, f.count("max:true"));
+    try t.expectEqual(1, f.count("badfs:false")); // the output must be an id
+    try t.expectEqual(2, f.n_fs);
+    try t.expectEqual(@as(u32, 7), f.fs_outputs[0]);
+    try t.expectEqual(@as(u32, 0), f.fs_outputs[1]); // 0: the window's output
+    try t.expectEqual(.maximize, f.last_cmd.?);
 
     // Extra handler arguments arrive after the id, in order.
     rt.emitArgs(.view_state, 1, &.{ .{ .int = 5 }, .{ .boolean = true }, .nil });

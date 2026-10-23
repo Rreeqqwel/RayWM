@@ -20,6 +20,9 @@ const Globals = struct {
     /// SeatUse exists: kept here and applied by SeatUse.listen().
     seat_caps: ?wl.Seat.Capability = null,
     seat_use: ?*SeatUse = null,
+    /// wl_outputs in the order they were announced.
+    outputs: [8]?*wl.Output = @splat(null),
+    n_outputs: usize = 0,
 };
 
 /// Seat use by a held window or panel:
@@ -47,6 +50,9 @@ const SeatUse = struct {
     popup_request: ?u32 = null,
     /// Surface under the pointer, as last reported by wl_pointer.enter.
     ptr_on: ?*wl.Surface = null,
+    /// The window's state, for RAYWM_TEST_REQUEST_KEYS (F9/F10 toggle
+    /// fullscreen/maximized requests).
+    state: ?*State = null,
 
     /// What a pointer event's surface is, for the log.
     fn kind(use: *SeatUse, surface: ?*wl.Surface) []const u8 {
@@ -70,6 +76,11 @@ const State = struct {
     frame_done: bool = false,
     /// xdg_toplevel "activated" state, i.e. whether the window has focus.
     activated: bool = false,
+    /// Last fullscreen/maximized states received (logged on change).
+    fullscreen: bool = false,
+    maximized: bool = false,
+    /// Prefix of logged state changes ("" for the window, "child " ...).
+    who: []const u8 = "",
     /// The compositor asked to close the window (RAYWM_TEST_CLOSE honours it).
     close_requested: bool = false,
 };
@@ -108,8 +119,17 @@ pub fn main() !void {
         state = .{};
         const toplevel = try xdg_surface.getToplevel();
         toplevel.setListener(*State, toplevelListener, &state);
-        toplevel.setTitle("raywm-test");
-        toplevel.setAppId("raywm-test");
+        toplevel.setTitle(if (std.c.getenv("RAYWM_TEST_TITLE")) |v| v else "raywm-test");
+        toplevel.setAppId(if (std.c.getenv("RAYWM_TEST_APP_ID")) |v| v else "raywm-test");
+        // Requests made before the initial commit (answered by the initial
+        // configure), and size limits.
+        if (std.c.getenv("RAYWM_TEST_FULLSCREEN_OUTPUT")) |v| {
+            const i = std.fmt.parseInt(usize, std.mem.span(v), 10) catch 0;
+            toplevel.setFullscreen(if (i < globals.n_outputs) globals.outputs[i] else null);
+        } else if (std.c.getenv("RAYWM_TEST_FULLSCREEN") != null) toplevel.setFullscreen(null);
+        if (std.c.getenv("RAYWM_TEST_MAXIMIZED") != null) toplevel.setMaximized();
+        if (sizeEnv("RAYWM_TEST_MIN")) |m| toplevel.setMinSize(m[0], m[1]);
+        if (sizeEnv("RAYWM_TEST_MAX")) |m| toplevel.setMaxSize(m[0], m[1]);
         surface.attach(null, 0, 0);
         surface.commit();
 
@@ -118,8 +138,9 @@ pub fn main() !void {
         }
         xdg_surface.ackConfigure(state.serial);
         step("round {d} configured {d}x{d}", .{ round, state.width, state.height });
-        const w: i32 = if (state.width > 0) state.width else 200;
-        const h: i32 = if (state.height > 0) state.height else 150;
+        const natural = sizeEnv("RAYWM_TEST_SIZE") orelse .{ 200, 150 };
+        const w: i32 = if (state.width > 0) state.width else natural[0];
+        const h: i32 = if (state.height > 0) state.height else natural[1];
         state.configured = false; // detect the next configure
         state.width = 0;
         const buffer = try windowBuffer(shm, xdg_surface, w, h);
@@ -135,7 +156,7 @@ pub fn main() !void {
         }
         step("round {d} frame done", .{round});
         if (std.c.getenv("RAYWM_TEST_HOLD") != null) {
-            var use: SeatUse = .{ .seat = globals.seat orelse return error.NoSeat, .surface = surface, .toplevel = toplevel };
+            var use: SeatUse = .{ .seat = globals.seat orelse return error.NoSeat, .surface = surface, .toplevel = toplevel, .state = &state };
             var popup_test: PopupTest = .{ .display = display, .wm_base = wm_base, .compositor = compositor, .shm = shm };
             if (std.c.getenv("RAYWM_TEST_POPUP") != null) {
                 try popup_test.open(xdg_surface);
@@ -154,11 +175,15 @@ pub fn main() !void {
                 step("subsurface mapped", .{});
             }
             use.listen(&globals);
+            // RAYWM_TEST_CHILD: a second toplevel, a dialog of this one.
+            var child: Child = .{ .shm = shm };
+            if (std.c.getenv("RAYWM_TEST_CHILD") != null) try child.open(display, compositor, wm_base, toplevel);
             // Keep the window (acking every configure) until the compositor
             // goes away. The previous buffer is released after each commit.
             var prev: ?*wl.Buffer = null;
             defer if (prev) |p| p.destroy();
             while (true) {
+                if (child.toplevel != null and child.state.configured) try child.ackAndDraw();
                 if (use.popup_request) |serial| {
                     use.popup_request = null;
                     try popup_test.openWith(xdg_surface, .{ .seat = use.seat, .serial = serial });
@@ -170,10 +195,11 @@ pub fn main() !void {
                     return;
                 }
                 // A configure may already have arrived while waiting above.
-                if (!state.configured) {
+                if (!state.configured and !(child.toplevel != null and child.state.configured)) {
                     if (display.dispatch() != .SUCCESS) break;
                     continue;
                 }
+                if (!state.configured) continue;
                 state.configured = false;
                 xdg_surface.ackConfigure(state.serial);
                 var next: ?*wl.Buffer = null;
@@ -449,6 +475,17 @@ fn keyboardListener(_: *wl.Keyboard, event: wl.Keyboard.Event, use: *SeatUse) vo
         .leave => step("kbd leave", .{}),
         .key => |k| {
             step("kbd key {d} {s}", .{ k.key, @tagName(k.state) });
+            // RAYWM_TEST_REQUEST_KEYS: F9 toggles a fullscreen request, F10
+            // a maximize request.
+            if (k.state == .pressed and std.c.getenv("RAYWM_TEST_REQUEST_KEYS") != null) if (use.toplevel) |t| if (use.state) |st| {
+                if (k.key == 67) {
+                    if (st.fullscreen) t.unsetFullscreen() else t.setFullscreen(null);
+                    step("fullscreen requested {s}", .{if (st.fullscreen) "off" else "on"});
+                } else if (k.key == 68) {
+                    if (st.maximized) t.unsetMaximized() else t.setMaximized();
+                    step("maximize requested {s}", .{if (st.maximized) "off" else "on"});
+                }
+            };
             if (use.layer) |layer| if (k.key == 87 and k.state == .pressed) {
                 layer.setKeyboardInteractivity(.none);
                 use.surface.commit();
@@ -523,8 +560,13 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, g: *Global
             } else if (std.mem.eql(u8, name, std.mem.span(zwlr.LayerShellV1.interface.name))) {
                 g.layer_shell = registry.bind(global.name, zwlr.LayerShellV1, 4) catch return;
             } else if (std.mem.eql(u8, name, std.mem.span(wl.Output.interface.name))) {
-                // Bound so that wl_surface.enter can name the output.
-                _ = registry.bind(global.name, wl.Output, 1) catch return;
+                // Bound so that wl_surface.enter can name the output, and
+                // for fullscreen requests on a given output.
+                const o = registry.bind(global.name, wl.Output, 1) catch return;
+                if (g.n_outputs < g.outputs.len) {
+                    g.outputs[g.n_outputs] = o;
+                    g.n_outputs += 1;
+                }
             }
         },
         .global_remove => {},
@@ -552,9 +594,19 @@ fn toplevelListener(_: *xdg.Toplevel, event: xdg.Toplevel.Event, state: *State) 
             state.width = c.width;
             state.height = c.height;
             var active = false;
-            for (c.states.slice(u32)) |s| active = active or s == @intFromEnum(xdg.Toplevel.State.activated);
-            if (active != state.activated) step("{s}", .{if (active) "activated" else "deactivated"});
+            var fullscreen = false;
+            var maximized = false;
+            for (c.states.slice(u32)) |st| {
+                active = active or st == @intFromEnum(xdg.Toplevel.State.activated);
+                fullscreen = fullscreen or st == @intFromEnum(xdg.Toplevel.State.fullscreen);
+                maximized = maximized or st == @intFromEnum(xdg.Toplevel.State.maximized);
+            }
+            if (active != state.activated) step("{s}{s}", .{ state.who, if (active) "activated" else "deactivated" });
+            if (fullscreen != state.fullscreen) step("{s}fullscreen {s} {d}x{d}", .{ state.who, if (fullscreen) "on" else "off", c.width, c.height });
+            if (maximized != state.maximized) step("{s}maximized {s} {d}x{d}", .{ state.who, if (maximized) "on" else "off", c.width, c.height });
             state.activated = active;
+            state.fullscreen = fullscreen;
+            state.maximized = maximized;
         },
         .close => {
             step("close requested", .{});
@@ -562,6 +614,59 @@ fn toplevelListener(_: *xdg.Toplevel, event: xdg.Toplevel.Event, state: *State) 
         },
     }
 }
+
+/// "WxH" from an environment variable.
+fn sizeEnv(name: [*:0]const u8) ?[2]i32 {
+    const v = std.mem.span(std.c.getenv(name) orelse return null);
+    const x = std.mem.indexOfScalar(u8, v, 'x') orelse return null;
+    const w = std.fmt.parseInt(i32, v[0..x], 10) catch return null;
+    const h = std.fmt.parseInt(i32, v[x + 1 ..], 10) catch return null;
+    return .{ w, h };
+}
+
+/// RAYWM_TEST_CHILD: a dialog (xdg_toplevel.set_parent) of the window,
+/// 120x90 unless configured otherwise. Logs its state as "child ...".
+const Child = struct {
+    shm: *wl.Shm,
+    surface: ?*wl.Surface = null,
+    xdg_surface: ?*xdg.Surface = null,
+    toplevel: ?*xdg.Toplevel = null,
+    state: State = .{ .who = "child " },
+    buffer: ?*wl.Buffer = null,
+
+    fn open(c: *Child, display: *wl.Display, compositor: *wl.Compositor, wm_base: *xdg.WmBase, parent: *xdg.Toplevel) !void {
+        const surface = try compositor.createSurface();
+        const xs = try wm_base.getXdgSurface(surface);
+        xs.setListener(*State, xdgSurfaceListener, &c.state);
+        const t = try xs.getToplevel();
+        t.setListener(*State, toplevelListener, &c.state);
+        t.setTitle("raywm-test-child");
+        t.setAppId("raywm-test-child");
+        t.setParent(parent);
+        c.surface = surface;
+        c.xdg_surface = xs;
+        c.toplevel = t;
+        surface.commit();
+        while (!c.state.configured) {
+            if (display.dispatch() != .SUCCESS) return error.DispatchFailed;
+        }
+        try c.ackAndDraw();
+        step("child mapped", .{});
+    }
+
+    fn ackAndDraw(c: *Child) !void {
+        c.state.configured = false;
+        c.xdg_surface.?.ackConfigure(c.state.serial);
+        const w: i32 = if (c.state.width > 0) c.state.width else 120;
+        const h: i32 = if (c.state.height > 0) c.state.height else 90;
+        const next = try makeBuffer(c.shm, w, h);
+        c.surface.?.attach(next, 0, 0);
+        c.surface.?.damageBuffer(0, 0, w, h);
+        c.surface.?.commit();
+        if (c.buffer) |b| b.destroy();
+        c.buffer = next;
+    }
+};
 
 fn surfaceListener(_: *wl.Surface, event: wl.Surface.Event, _: ?*anyopaque) void {
     switch (event) {

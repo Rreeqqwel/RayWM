@@ -122,10 +122,13 @@ for n = 1, 12 do check(not seen["alt+ctrl+f" .. n], "VT switch key bound") end
 
 -- ---- 2. unload and reload ----------------------------------------------
 
+local counts = {}
+for name in pairs(others) do counts[name] = #regs[name].binds end
 unload("screenshot", shot)
 check(regs.screenshot == nil, "unload leaves bindings")
-check(#regs.binds.binds == 5 and #regs.dwindle.binds == 9 and #regs.focus.binds == 6 and #regs.floating.binds == 1,
-  "unloading screenshot touched other plugins")
+for name, n in pairs(counts) do
+  check(#regs[name].binds == n and n > 0, "unloading screenshot touched plugin " .. name)
+end
 shot = load("screenshot", plugin_path)
 setup("screenshot", shot)
 check(#regs.screenshot.binds == 5, "reload: expected 5 bindings, got " .. #regs.screenshot.binds)

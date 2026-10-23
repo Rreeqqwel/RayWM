@@ -32,6 +32,10 @@ pub const Event = enum {
     /// floating, fullscreen, maximized or urgent changed (after view_map).
     view_state,
     view_app_id,
+    /// The client asks for fullscreen: (id, on, output id or 0).
+    view_request_fullscreen,
+    /// The client asks to be maximized: (id, on).
+    view_request_maximize,
 };
 /// Extra handler arguments after the id (most events have none).
 pub const Arg = union(enum) { int: i64, boolean: bool, nil };
@@ -66,7 +70,20 @@ pub const OutputInfo = struct { box: Box, usable: Box };
 /// premultiplied RGBA color.
 pub const Border = struct { width: i32, color: [4]f32 };
 pub const max_border = 64;
-pub const ViewCmd = union(enum) { move: [2]i32, place: Box, opacity: f32, raise, focus, close, show: bool, border: Border, floating: bool };
+pub const ViewCmd = union(enum) {
+    move: [2]i32,
+    place: Box,
+    opacity: f32,
+    raise,
+    focus,
+    close,
+    show: bool,
+    border: Border,
+    floating: bool,
+    /// `output` 0: the output the window is on.
+    fullscreen: struct { on: bool, output: u32 },
+    maximize: bool,
+};
 /// `busy`: a pointer grab is active (compositor move/resize, a held button
 /// or a client's popup grab); warping is refused then.
 pub const PointerInfo = struct { x: i32, y: i32, busy: bool };
@@ -563,18 +580,19 @@ pub fn Runtime(comptime H: type) type {
         }
 
         const globals = .{
-            .{ "load", lLoad },                   .{ "views", lViews },
-            .{ "view", lView },                   .{ "focused", lFocused },
-            .{ "outputs", lOutputs },             .{ "view_move", viewCmd(.move) },
-            .{ "view_place", viewCmd(.place) },   .{ "view_opacity", viewCmd(.opacity) },
-            .{ "view_raise", viewCmd(.raise) },   .{ "view_focus", viewCmd(.focus) },
-            .{ "view_close", viewCmd(.close) },   .{ "view_show", viewCmd(.show) },
-            .{ "view_border", viewCmd(.border) }, .{ "pointer", lPointer },
-            .{ "pointer_warp", lPointerWarp },    .{ "spawn", lSpawn },
-            .{ "quit", lQuit },                   .{ "reload", lReload },
+            .{ "load", lLoad },                           .{ "views", lViews },
+            .{ "view", lView },                           .{ "focused", lFocused },
+            .{ "outputs", lOutputs },                     .{ "view_move", viewCmd(.move) },
+            .{ "view_place", viewCmd(.place) },           .{ "view_opacity", viewCmd(.opacity) },
+            .{ "view_raise", viewCmd(.raise) },           .{ "view_focus", viewCmd(.focus) },
+            .{ "view_close", viewCmd(.close) },           .{ "view_show", viewCmd(.show) },
+            .{ "view_border", viewCmd(.border) },         .{ "pointer", lPointer },
+            .{ "pointer_warp", lPointerWarp },            .{ "spawn", lSpawn },
+            .{ "quit", lQuit },                           .{ "reload", lReload },
             .{ "log", lLog },
             // v0.2.0
-                                .{ "view_floating", viewCmd(.floating) },
+                                        .{ "view_floating", viewCmd(.floating) },
+            .{ "view_fullscreen", viewCmd(.fullscreen) }, .{ "view_maximize", viewCmd(.maximize) },
         };
 
         const ctx_fns = .{
@@ -759,6 +777,11 @@ pub fn Runtime(comptime H: type) type {
                         .opacity => .{ .opacity = @floatCast(c.luaL_checknumber(L, 2)) },
                         .show => .{ .show = c.lua_toboolean(L, 2) != 0 },
                         .floating => .{ .floating = c.lua_toboolean(L, 2) != 0 },
+                        .fullscreen => .{ .fullscreen = .{
+                            .on = c.lua_toboolean(L, 2) != 0,
+                            .output = if (c.lua_type(L, 3) <= c.LUA_TNIL) 0 else checkId(L, 3),
+                        } },
+                        .maximize => .{ .maximize = c.lua_toboolean(L, 2) != 0 },
                         .border => .{ .border = border(L) },
                         inline else => |t| t,
                     };

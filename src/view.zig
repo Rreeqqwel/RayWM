@@ -14,6 +14,13 @@
 //! size is revealed only once the client has drawn that size (or after
 //! `reveal_timeout_ms`), so it never shows up at a wrong size or place.
 //!
+//! Fullscreen and maximized are native states. While one is set, layout
+//! requests from plugins (`request`, `requestMove`) only update `normal`,
+//! the geometry restored when the state ends, so no extra configures are
+//! sent. A fullscreen window covers its output (a black backdrop fills
+//! what its buffer does not, as xdg-shell requires) and is stacked above
+//! panels; its dialogs are stacked above it.
+//!
 //! Other code uses the methods here, never `impl` directly, so that
 //! another window backend (Xwayland) fits in without touching it.
 const std = @import("std");
@@ -49,7 +56,9 @@ pub const View = struct {
     announced: bool = false,
     x: i32 = 0,
     y: i32 = 0,
-    pending: ?struct { serial: u32, x: i32, y: i32 } = null,
+    /// A size asked for and not yet acknowledged, and where the window goes
+    /// once it is (`center`: centred on its output, the client picks the size).
+    pending: ?struct { serial: u32, x: i32, y: i32, w: i32, h: i32, center: bool = false } = null,
     /// Interactive resize: keeps the edges opposite to `edges` fixed.
     anchor: ?struct { serial: u32, edges: wlr.Edges, box: wlr.Box } = null,
     opacity: f32 = 1.0,
@@ -68,6 +77,17 @@ pub const View = struct {
     natural: [2]i32 = .{ 0, 0 },
     /// Stacking layer `tree` is in.
     layer: srv.Layer = .floating,
+    /// Id of the output the window is fullscreen on; 0 when not fullscreen.
+    fullscreen_output: u32 = 0,
+    maximized: bool = false,
+    /// Geometry restored when fullscreen/maximized ends. Null: the client
+    /// picks its size and the window is centred.
+    normal: ?wlr.Box = null,
+    /// Counts state changes plugins asked for, so that a client request
+    /// nobody decided on gets the default answer.
+    decisions: u32 = 0,
+    /// Black rectangle under a fullscreen window, covering its output.
+    backdrop: ?*wlr.SceneRect = null,
 
     commit: wl.Listener(*wlr.Surface) = .init(handleCommit),
     map: wl.Listener(void) = .init(handleMap),
@@ -75,8 +95,8 @@ pub const View = struct {
     destroy: wl.Listener(void) = .init(handleDestroy),
     request_move: wl.Listener(*wlr.XdgToplevel.event.Move) = .init(handleRequestMove),
     request_resize: wl.Listener(*wlr.XdgToplevel.event.Resize) = .init(handleRequestResize),
-    request_maximize: wl.Listener(void) = .init(handleRequestState("request_maximize")),
-    request_fullscreen: wl.Listener(void) = .init(handleRequestState("request_fullscreen")),
+    request_maximize: wl.Listener(void) = .init(handleRequestMaximize),
+    request_fullscreen: wl.Listener(void) = .init(handleRequestFullscreen),
     set_title: wl.Listener(void) = .init(handleSetTitle),
     set_app_id: wl.Listener(void) = .init(handleSetAppId),
 
@@ -213,6 +233,28 @@ pub const View = struct {
         };
     }
 
+    fn setFullscreenState(view: *View, on: bool) void {
+        switch (view.impl) {
+            .xdg => |t| _ = t.setFullscreen(on),
+        }
+    }
+
+    fn setMaximizedState(view: *View, on: bool) void {
+        switch (view.impl) {
+            .xdg => |t| _ = t.setMaximized(on),
+        }
+    }
+
+    /// Answers a client request that changed nothing (xdg-shell requires a
+    /// configure in reply once the surface is initialized).
+    fn ackRequest(view: *View) void {
+        switch (view.impl) {
+            .xdg => |t| if (t.base.initialized) {
+                _ = t.base.scheduleConfigure();
+            },
+        }
+    }
+
     // ---- geometry -------------------------------------------------------------
 
     pub fn geometry(view: *View) wlr.Box {
@@ -238,7 +280,33 @@ pub const View = struct {
         if (view.pending == null and view.anchor == null and w == g.width and h == g.height) return view.move(x, y);
         const serial = view.configureSize(@max(w, 1), @max(h, 1));
         view.anchor = null;
-        view.pending = .{ .serial = serial, .x = x, .y = y };
+        view.pending = .{ .serial = serial, .x = x, .y = y, .w = @max(w, 1), .h = @max(h, 1) };
+    }
+
+    /// Where the window is going: the pending geometry, else the current.
+    fn targetBox(view: *View) wlr.Box {
+        if (view.pending) |p| if (!p.center) return .{ .x = p.x, .y = p.y, .width = p.w, .height = p.h };
+        return view.geometry();
+    }
+
+    /// Geometry asked for by a plugin (raywm.view_place). While fullscreen
+    /// or maximized it is only remembered, for when that state ends.
+    pub fn request(view: *View, x: i32, y: i32, w: i32, h: i32) void {
+        if (view.isFullscreen() or view.maximized) {
+            view.normal = .{ .x = x, .y = y, .width = w, .height = h };
+            return;
+        }
+        view.place(x, y, w, h);
+    }
+
+    /// raywm.view_move: like `request`, keeping the size.
+    pub fn requestMove(view: *View, x: i32, y: i32) void {
+        if (view.isFullscreen() or view.maximized) {
+            const n = view.normal orelse view.geometry();
+            view.normal = .{ .x = x, .y = y, .width = n.width, .height = n.height };
+            return;
+        }
+        view.move(x, y);
     }
 
     /// Continues an interactive resize (input.zig): asks for a size and
@@ -296,13 +364,174 @@ pub const View = struct {
     }
 
     /// Puts the window in the stacking layer its state calls for: tiled
-    /// (managed by a layout) below floating.
+    /// (managed by a layout) below floating, fullscreen windows and their
+    /// dialogs above panels.
     pub fn restack(view: *View) void {
-        const want: srv.Layer = if (view.managed()) .tiled else .floating;
+        const want: srv.Layer = if (view.isFullscreen() or view.fullscreenAncestor() != null)
+            .fullscreen
+        else if (view.managed()) .tiled else .floating;
         if (want == view.layer) return;
         view.layer = want;
         // Lands on top of the new layer.
         view.tree.node.reparent(view.server.layer(want));
+    }
+
+    /// Top of its layer, with its dialogs above it (they would be out of
+    /// reach below a fullscreen window).
+    pub fn raise(view: *View) void {
+        view.tree.node.raiseToTop();
+        // Oldest focus first, so the most recently focused dialog ends on top.
+        var it = view.server.views.iterator(.reverse);
+        while (it.next()) |v| if (v != view and v.layer == view.layer and v.isDescendantOf(view)) v.tree.node.raiseToTop();
+    }
+
+    /// Restacks the dialogs (and their dialogs) of this window.
+    fn restackChildren(view: *View) void {
+        var it = view.server.views.iterator(.forward);
+        while (it.next()) |v| if (v != view and v.isDescendantOf(view)) v.restack();
+    }
+
+    /// Whether `ancestor` is this window's parent, grandparent, ...
+    pub fn isDescendantOf(view: *View, ancestor: *View) bool {
+        var p = view.parent();
+        var depth: usize = 0;
+        while (p) |pv| : (p = pv.parent()) {
+            if (pv == ancestor) return true;
+            depth += 1;
+            if (depth > 64) return false; // a parent cycle (clients cannot make one, but be safe)
+        }
+        return false;
+    }
+
+    fn fullscreenAncestor(view: *View) ?*View {
+        var p = view.parent();
+        var depth: usize = 0;
+        while (p) |pv| : (p = pv.parent()) {
+            if (pv.isFullscreen()) return pv;
+            depth += 1;
+            if (depth > 64) return null;
+        }
+        return null;
+    }
+
+    // ---- fullscreen and maximize ---------------------------------------------
+
+    pub fn isFullscreen(view: *View) bool {
+        return view.fullscreen_output != 0;
+    }
+
+    /// The output under the window's centre.
+    pub fn output(view: *View) ?*srv.Output {
+        const g = view.geometry();
+        return view.server.outputAt(g.x +| @divTrunc(g.width, 2), g.y +| @divTrunc(g.height, 2));
+    }
+
+    /// `out` null: the output the window is on (else under the pointer).
+    pub fn setFullscreen(view: *View, on: bool, out: ?*srv.Output) void {
+        if (on) {
+            const o = out orelse view.output() orelse view.server.activeOutput() orelse return;
+            if (view.fullscreen_output == o.id) return;
+            if (!view.isFullscreen() and !view.maximized) view.normal = view.targetBox();
+            view.fullscreen_output = o.id;
+            view.setFullscreenState(true);
+            const b = o.box();
+            view.place(b.x, b.y, b.width, b.height);
+            if (view.pending == null) view.fitFullscreen();
+        } else {
+            if (!view.isFullscreen()) return;
+            view.fullscreen_output = 0;
+            view.setFullscreenState(false);
+            view.removeBackdrop();
+            if (view.maximized) view.applyMaximized() else view.restoreNormal();
+        }
+        view.restack();
+        view.restackChildren();
+        if (on) {
+            view.raise();
+            // The focused window may now be hidden behind this one.
+            const server = view.server;
+            if (server.focused) |f| if (f != view and server.coveredByFullscreen(f)) server.focus(view);
+        }
+        view.layoutBorder();
+        view.stateChanged();
+        input.refocusPointer(view.server);
+    }
+
+    pub fn setMaximized(view: *View, on: bool) void {
+        if (view.maximized == on) return;
+        if (on) {
+            if (!view.isFullscreen()) view.normal = view.targetBox();
+            view.maximized = true;
+            view.setMaximizedState(true);
+            if (!view.isFullscreen()) view.applyMaximized();
+        } else {
+            view.maximized = false;
+            view.setMaximizedState(false);
+            if (!view.isFullscreen()) view.restoreNormal();
+        }
+        view.stateChanged();
+        input.refocusPointer(view.server);
+    }
+
+    /// Fills the usable area (without panels) of the window's output.
+    fn applyMaximized(view: *View) void {
+        const o = view.output() orelse view.server.activeOutput() orelse return;
+        const u = o.usableBox();
+        view.place(u.x, u.y, u.width, u.height);
+    }
+
+    fn restoreNormal(view: *View) void {
+        if (view.normal) |n| {
+            view.normal = null;
+            return view.place(n.x, n.y, n.width, n.height);
+        }
+        // Unknown (fullscreen or maximized before it mapped): the client
+        // picks its size, and the window is centred once it has.
+        const serial = view.configureSize(0, 0);
+        view.anchor = null;
+        view.pending = .{ .serial = serial, .x = view.x, .y = view.y, .w = 0, .h = 0, .center = true };
+    }
+
+    /// After outputs or panels changed: fullscreen and maximized windows
+    /// follow their output's new size, or move to another output.
+    pub fn refit(view: *View) void {
+        if (view.isFullscreen()) {
+            const o = view.server.outputById(view.fullscreen_output);
+            const target = if (o != null and o.?.inLayout()) o.? else view.output() orelse view.server.activeOutput() orelse return;
+            const b = target.box();
+            view.fullscreen_output = target.id;
+            const t = view.targetBox();
+            if (!std.meta.eql(t, b)) view.place(b.x, b.y, b.width, b.height);
+            if (view.pending == null) view.fitFullscreen();
+        } else if (view.maximized) {
+            const o = view.output() orelse return;
+            const u = o.usableBox();
+            if (!std.meta.eql(view.targetBox(), u)) view.place(u.x, u.y, u.width, u.height);
+        }
+    }
+
+    /// Centres the committed buffer on the fullscreen output (when smaller
+    /// than it) and keeps the backdrop over the whole output.
+    fn fitFullscreen(view: *View) void {
+        const o = view.server.outputById(view.fullscreen_output) orelse return;
+        const b = o.box();
+        const g = view.windowBox();
+        view.x = b.x +| @max(0, @divTrunc(b.width -| g.width, 2));
+        view.y = b.y +| @max(0, @divTrunc(b.height -| g.height, 2));
+        view.syncPosition();
+        if (view.backdrop == null) {
+            const black = [4]f32{ 0, 0, 0, 1 };
+            view.backdrop = view.tree.createSceneRect(b.width, b.height, &black) catch return;
+            view.backdrop.?.node.lowerToBottom();
+        }
+        const r = view.backdrop.?;
+        r.setSize(b.width, b.height);
+        r.node.setPosition(b.x - view.x, b.y - view.y);
+    }
+
+    fn removeBackdrop(view: *View) void {
+        if (view.backdrop) |r| r.node.destroy();
+        view.backdrop = null;
     }
 
     fn stateChanged(view: *View) void {
@@ -314,7 +543,7 @@ pub const View = struct {
         if (on) {
             view.floating = true;
             const box = view.float_box orelse view.defaultFloatBox();
-            view.place(box.x, box.y, box.width, box.height);
+            view.request(box.x, box.y, box.width, box.height);
         } else {
             // Remembered for the next time it floats (unless a layout had
             // already taken it over, then its tile is not a floating place).
@@ -416,9 +645,11 @@ pub const View = struct {
         view.layoutBorder();
     }
 
-    /// Follows the window's size; cheap when it did not change.
+    /// Follows the window's size; cheap when it did not change. Not drawn
+    /// while fullscreen (it would be outside the output).
     fn layoutBorder(view: *View) void {
         const b = if (view.border) |*b| b else return;
+        for (b.rects) |r| r.node.setEnabled(!view.isFullscreen());
         const g = view.windowBox();
         if (b.laid_out[0] == g.width and b.laid_out[1] == g.height) return;
         b.laid_out = .{ g.width, g.height };
@@ -454,11 +685,7 @@ pub const View = struct {
     fn handleCommit(listener: *wl.Listener(*wlr.Surface), _: *wlr.Surface) void {
         const view: *View = @fieldParentPtr("commit", listener);
         switch (view.impl) {
-            .xdg => |t| if (t.base.initial_commit) {
-                // Initial configure: let the client choose its size.
-                _ = t.setSize(0, 0);
-                return;
-            },
+            .xdg => |t| if (t.base.initial_commit) return view.initialConfigure(),
         }
         if (!view.mapped) return;
         if (view.pending) |p| {
@@ -466,9 +693,11 @@ pub const View = struct {
                 view.pending = null;
                 view.x = p.x;
                 view.y = p.y;
+                if (p.center) view.centerOnOutput();
                 view.server.emit(.view_resized, view.id);
             }
         }
+        if (view.isFullscreen() and view.pending == null) view.fitFullscreen();
         view.followAnchor();
         view.syncPosition();
         view.layoutBorder();
@@ -478,12 +707,58 @@ pub const View = struct {
         }
     }
 
+    /// The first configure: fullscreen or maximized if the client asked
+    /// for it before mapping (the default answer; rules may change it in
+    /// view_new), otherwise the client chooses its size.
+    fn initialConfigure(view: *View) void {
+        const server = view.server;
+        switch (view.impl) {
+            .xdg => |t| {
+                if (t.requested.fullscreen) {
+                    const asked = if (t.requested.fullscreen_output) |o| server.outputByWlr(o) else null;
+                    if (asked orelse server.activeOutput()) |o| {
+                        view.fullscreen_output = o.id;
+                        _ = t.setFullscreen(true);
+                        const b = o.box();
+                        _ = t.setSize(b.width, b.height);
+                        return;
+                    }
+                }
+                if (t.requested.maximized) if (server.activeOutput()) |o| {
+                    view.maximized = true;
+                    _ = t.setMaximized(true);
+                    const u = o.usableBox();
+                    _ = t.setSize(u.width, u.height);
+                    return;
+                };
+                _ = t.setSize(0, 0);
+            },
+        }
+    }
+
+    /// Centred on the output under the pointer (on map), or on its own.
+    fn centerOnOutput(view: *View) void {
+        const o = view.output() orelse view.server.activeOutput() orelse return;
+        const box = o.box();
+        const g = view.windowBox();
+        view.x = box.x +| @divTrunc(box.width -| g.width, 2);
+        view.y = box.y +| @divTrunc(box.height -| g.height, 2);
+    }
+
     fn handleMap(listener: *wl.Listener(void)) void {
         const view: *View = @fieldParentPtr("map", listener);
         const server = view.server;
         const g = view.windowBox();
         view.natural = .{ g.width, g.height };
-        if (server.activeOutputBox()) |box| {
+        if (view.isFullscreen()) {
+            view.fitFullscreen();
+        } else if (view.maximized) {
+            if (server.activeOutput()) |o| {
+                const u = o.usableBox();
+                view.x = u.x;
+                view.y = u.y;
+            }
+        } else if (server.activeOutputBox()) |box| {
             view.x = box.x +| @divTrunc(box.width -| g.width, 2);
             view.y = box.y +| @divTrunc(box.height -| g.height, 2);
         }
@@ -516,6 +791,11 @@ pub const View = struct {
         view.announced = false;
         view.pending = null;
         view.anchor = null;
+        // A window that maps again starts afresh (the client re-requests).
+        view.fullscreen_output = 0;
+        view.maximized = false;
+        view.normal = null;
+        view.removeBackdrop();
         if (view.reveal_timer) |t| t.remove();
         view.reveal_timer = null;
         view.revealed = false;
@@ -570,19 +850,35 @@ pub const View = struct {
         input.beginResize(view.server, view, event.edges, true);
     }
 
-    /// Maximize/fullscreen are unsupported, but xdg-shell requires a
-    /// configure in reply once the surface is initialized.
-    fn handleRequestState(comptime field: []const u8) fn (*wl.Listener(void)) void {
-        return struct {
-            fn f(listener: *wl.Listener(void)) void {
-                const view: *View = @fieldParentPtr(field, listener);
-                switch (view.impl) {
-                    .xdg => |t| if (t.base.initialized) {
-                        _ = t.base.scheduleConfigure();
-                    },
-                }
-            }
-        }.f;
+    /// The client asks for fullscreen on or off (and maybe an output).
+    /// Plugins see view_request_fullscreen(id, on, output); if none
+    /// decided (raywm.view_fullscreen), the request is granted.
+    fn handleRequestFullscreen(listener: *wl.Listener(void)) void {
+        const view: *View = @fieldParentPtr("request_fullscreen", listener);
+        const t = view.impl.xdg;
+        // Before the initial commit: answered by the initial configure.
+        if (!t.base.initialized) return;
+        const want = t.requested.fullscreen;
+        const out = if (t.requested.fullscreen_output) |o| view.server.outputByWlr(o) else null;
+        if (view.mapped) {
+            const before = view.decisions;
+            view.server.emitArgs(.view_request_fullscreen, view.id, &.{ .{ .boolean = want }, .{ .int = if (out) |o| o.id else 0 } });
+            if (view.mapped and view.decisions == before) view.setFullscreen(want, out);
+        }
+        view.ackRequest();
+    }
+
+    fn handleRequestMaximize(listener: *wl.Listener(void)) void {
+        const view: *View = @fieldParentPtr("request_maximize", listener);
+        const t = view.impl.xdg;
+        if (!t.base.initialized) return;
+        const want = t.requested.maximized;
+        if (view.mapped) {
+            const before = view.decisions;
+            view.server.emitArgs(.view_request_maximize, view.id, &.{.{ .boolean = want }});
+            if (view.mapped and view.decisions == before) view.setMaximized(want);
+        }
+        view.ackRequest();
     }
 
     fn handleSetTitle(listener: *wl.Listener(void)) void {
