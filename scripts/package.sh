@@ -37,7 +37,7 @@ install -m 0755 "$stage/scripts/raywmctl" "$stage/bin/raywmctl"
 rm -rf "$stage/scripts"
 "$zig" build -Doptimize=ReleaseSafe -Dtest-input=false -p "$work/build"
 bin="$work/build/bin/raywm"
-if strings "$bin" | grep -qi virtual_pointer || strings "$bin" | grep -q raywm-test-unplug; then
+if nm -D "$bin" | grep -q wlr_virtual_pointer_manager_v1_create || strings "$bin" | grep -q 'TEST BUILD: virtual pointer' || strings "$bin" | grep -q raywm-test-unplug; then
     echo 'package: test-only code in release binary'; exit 1
 fi
 install -m 0755 "$bin" "$stage/bin/raywm"

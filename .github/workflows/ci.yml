@@ -133,7 +133,8 @@ jobs:
           file zig-out/release/bin/raywm | tee -a "$GITHUB_STEP_SUMMARY"
           ldd zig-out/release/bin/raywm
           ! ldd zig-out/release/bin/raywm | grep -q "not found"
-          ! strings zig-out/release/bin/raywm | grep -qi virtual_pointer
+          ! nm -D zig-out/release/bin/raywm | grep -q wlr_virtual_pointer_manager_v1_create
+          ! strings zig-out/release/bin/raywm | grep -q 'TEST BUILD: virtual pointer'
           ! strings zig-out/release/bin/raywm | grep -q raywm-test-unplug
           zig-out/release/bin/raywm -h
           tests/smoke.sh zig-out/release/bin

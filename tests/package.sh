@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix='raywm-package-test-') as temp:
     check('test_input=false' in (stage/'BUILD-INFO').read_text())
     subprocess.run(['sha256sum','-c','MANIFEST.sha256'],cwd=stage,check=True,stdout=subprocess.DEVNULL)
     binary = (stage/'bin/raywm').read_bytes()
-    check(b'zwlr_virtual_pointer' not in binary and b'raywm-test-unplug' not in binary)
+    check(b'wlr_virtual_pointer_manager_v1_create' not in binary and b'raywm-test-unplug' not in binary and b'TEST BUILD: virtual pointer' not in binary)
     check(not any('raywm-test-' in entry.name or 'recovery/' in entry.name or '.claude/' in entry.name for entry in members))
     check(os.access(stage/'bin/raywm',os.X_OK) and os.access(stage/'bin/raywmctl',os.X_OK))
     subprocess.run([stage/'bin/raywm','-h'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)

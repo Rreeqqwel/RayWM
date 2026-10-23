@@ -131,4 +131,12 @@ e6() {
     pixel removed 1263,15,00ff00
     stop
 }
-run_scenarios effects e1 e2 e3 e4 e5 e6
+e7() {
+    name="initial rule opacity survives deferred configure and scene reveal"
+    WIN="$plain RAYWM_TEST_PATTERN=1" RULES="$root/tests/effects/opacity-rules.lua" \
+        start "$root/tests/rules/init.lua" 1
+    capture opacity
+    pixel opacity 100,100,800000
+    stop
+}
+run_scenarios effects e1 e2 e3 e4 e5 e6 e7
