@@ -45,6 +45,11 @@ raywm = {
   view_fullscreen = function(_, on) calls[#calls + 1] = "fullscreen " .. tostring(on); return true end,
   view_maximize = function(_, on) calls[#calls + 1] = "maximize " .. tostring(on); return true end,
   view_focus = function(id) calls[#calls + 1] = "focus " .. id; focused = id; return true end,
+  view_decoration = function(_, mode)
+    assert(mode == "server" or mode == "client" or mode == "auto", "bad mode reached the core")
+    calls[#calls + 1] = "decoration " .. mode
+    return true
+  end,
   log = function(msg) logs[#logs + 1] = msg end,
 }
 
@@ -171,6 +176,16 @@ test("bad rules are reported and dropped, the others kept", function()
   eq(#logs, 3, "three bad rules reported")
   local _, c = new({ app_id = "ok" })
   eq(c, "floating true")
+end)
+
+test("decoration action; a bad decoration rule is dropped before any window", function()
+  load({ { match = { app_id = "^kde$" }, decoration = "client" }, { match = { app_id = "^x$" }, decoration = "fancy" } })
+  eq(#logs, 1, "bad decoration reported")
+  assert(logs[1]:find("decoration must be"), logs[1])
+  local _, c = new({ app_id = "kde" })
+  eq(c, "decoration client")
+  _, c = new({ app_id = "x" })
+  eq(c, "", "dropped rule does nothing")
 end)
 
 test("rules.lua in the config directory: rules and options", function()

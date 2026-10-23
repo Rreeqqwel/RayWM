@@ -9,5 +9,6 @@ return {
   -- { match = { app_id = "^firefox$", title = "^Picture%-in%-Picture$" }, float = true, focus = false },
   -- { match = { app_id = "^mpv$" }, workspace = "5" },
   -- { match = { app_id = "^foot$" }, opacity = 0.95 },
+  -- { match = { app_id = "^org%.kde%." }, decoration = "client" },
   -- { match = { app_id = "^steam_app_%d+$" }, fullscreen = true },
 }

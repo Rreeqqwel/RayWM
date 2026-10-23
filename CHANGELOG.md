@@ -8,6 +8,39 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ### Added
 
+- **Window states and requests** (`tests/shell.sh` checks each with real
+  clients):
+  - xdg-shell v7 (was v2): clients learn what RayWM supports (maximize,
+    fullscreen, minimize; no window menu), the largest useful size of a
+    new window (the usable area), that they are tiled (tiled and v7
+    constrained edges; clients then drop shadows and resize handles), and
+    that they are suspended while hidden (another workspace, minimized,
+    hidden by a plugin), so they may stop drawing;
+  - xdg-decoration: the client's choice is honoured; a client without a
+    preference gets server-side, which with RayWM means no title bar
+    (RayWM draws none; borders come from plugins).
+    `raywm.view_decoration(id, "server" | "client" | "auto")`,
+    `view(id).decoration`, and a window rule action `decoration`. GTK
+    clients do not use this protocol and always draw their own;
+  - minimize, in the core: a minimized window is hidden (and suspended)
+    until restored. Client requests (a title bar button) are granted
+    unless a plugin decides otherwise in `view_request_minimize(id)`.
+    `raywm.view_minimize(id, on)`, `view(id).minimized`. binds.lua:
+    Super+N minimizes the focused window, Super+Shift+N restores the
+    most recently minimized window of the shown workspaces; dwindle
+    stops tiling minimized windows and tiles them again when restored;
+  - xdg-activation: a window may ask for focus with a token. If the token
+    came from user input in a focused window (a link clicked in a
+    terminal) and the window is on a shown workspace, it is restored and
+    focused; otherwise it is marked urgent (`view(id).urgent`; its
+    workspace's `urgent` too, until the window is focused). Plugins
+    decide first in `view_request_activate(id, user)`;
+    `raywm.view_urgent(id, on)`. workspaces.lua option `activation =
+    "switch"` shows the workspace of such a window instead;
+  - a dialog whose parent changes is stacked again (above a fullscreen
+    parent);
+  - layer-shell v5 (was v4): panels may choose the edge of their
+    exclusive zone.
 - **More Wayland protocols** (wlroots implements them; RayWM creates and
   connects them), each checked with real requests in `tests/protocols.sh`:
   - clipboard managers: wlr data control and ext-data-control (`wl-copy`

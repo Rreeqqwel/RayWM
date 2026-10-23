@@ -28,6 +28,12 @@ local options = {
   names = {},
   -- After moving a window to another workspace, show that workspace.
   follow = false,
+  -- A window on a hidden workspace that asks for focus because of
+  -- something you did (a link clicked in a terminal opens in a browser
+  -- there): "urgent" marks it and its workspace urgent; "switch" shows
+  -- that workspace and focuses it. Requests without user input only ever
+  -- mark the window urgent.
+  activation = "urgent",
   keys = {
     -- "%d" is replaced by 1..count (the key 0 for 10).
     switch = "Super+%d",
@@ -209,6 +215,17 @@ return {
     ctx.on("view_focus", function(id)
       local v = id ~= 0 and raywm.view(id)
       if v and v.output ~= 0 then current_out = v.output end
+    end)
+    assert(options.activation == "urgent" or options.activation == "switch", 'options.activation must be "urgent" or "switch"')
+    ctx.on("view_request_activate", function(id, user)
+      if options.activation ~= "switch" or not user then return end
+      local v = raywm.view(id)
+      local w = v and v.workspace ~= 0 and raywm.workspace(v.workspace)
+      if not w or w.active then return end -- the core's default does the rest
+      current_out = w.output
+      raywm.workspace_activate(w.id)
+      if v.minimized then raywm.view_minimize(id, false) end
+      raywm.view_focus(id)
     end)
 
     local function key(spec, i)

@@ -43,7 +43,8 @@ raywm = {
     if not v then return nil, "stale" end
     return { id = id, x = v.x, y = v.y, w = v.w, h = v.h, title = "t", app_id = "a",
       focused = focused == id, output = output_at(v.x + v.w // 2, v.y + v.h // 2),
-      floating = v.floating or false, min_w = v.min_w or 0, min_h = v.min_h or 0, workspace = 0 }
+      floating = v.floating or false, minimized = v.minimized or false, min_w = v.min_w or 0, min_h = v.min_h or 0,
+      workspace = 0 }
   end,
   view_place = function(id, x, y, w, h)
     assert(math.type(x) == "integer" and math.type(w) == "integer", "non-integer geometry")
@@ -511,6 +512,34 @@ tests["floating windows leave the tiling and come back"] = function()
   assert(managed[b], "tiled again")
   check_tree("unfloat")
   assert(check_tree("count") == 3)
+end
+
+tests["minimized windows leave the tiling and come back like new ones"] = function()
+  local a, b, c = map(), map(), map()
+  -- The core's minimize: state, then view_state.
+  views[b].minimized = true
+  emit("view_state", b)
+  assert(not leaves_of(b) and not managed[b], "a minimized window is not tiled")
+  expect(a, "8,8 628x704", "a keeps its half")
+  expect(c, "644,8 628x704", "c takes b's area")
+  check_tree("minimized")
+  -- Restored: it splits the focused window, like a new window.
+  raywm.view_focus(a)
+  views[b].minimized = false
+  emit("view_state", b)
+  assert(leaves_of(b) and managed[b], "tiled again")
+  expect(c, "644,8 628x704", "c keeps its area")
+  expect(a, "8,8 628x348", "a is split along its longer side")
+  expect(b, "8,364 628x348", "b below a")
+  assert(check_tree("restored") == 3)
+  -- A window mapping minimized (state kept across a reload) is not tiled.
+  local d = next_id
+  next_id = next_id + 1
+  views[d] = { x = 100, y = 100, w = 300, h = 200, minimized = true }
+  table.insert(mru, 1, d)
+  emit("view_map", d)
+  assert(not leaves_of(d) and not managed[d], "minimized map tiled")
+  check_tree("minimized map")
 end
 
 tests["resize moves the split next to the focused window"] = function()

@@ -100,6 +100,9 @@ jobs:
       - name: Protocol tests (wl-clipboard, cliphist, wlr-randr, grim)
         run: tests/protocols.sh
 
+      - name: Window state tests (xdg-shell v7, decorations, minimize, activation)
+        run: tests/shell.sh
+
       - name: Screenshot tests (pixman, real grim/slurp/wl-clipboard)
         run: tests/screenshot.sh
 
@@ -155,7 +158,7 @@ jobs:
           RENDERER: gles2
         run: |
           zig build && zig build -Dtest-input -p zig-out/test-input
-          tests/smoke.sh && tests/focus.sh && tests/input.sh && tests/pointer.sh && tests/navigation.sh && tests/screenshot.sh && tests/windows.sh && tests/workspaces.sh && tests/rules.sh && tests/session.sh && tests/outputs.sh && tests/devices.sh && tests/protocols.sh
+          tests/smoke.sh && tests/focus.sh && tests/input.sh && tests/pointer.sh && tests/navigation.sh && tests/screenshot.sh && tests/windows.sh && tests/workspaces.sh && tests/rules.sh && tests/session.sh && tests/outputs.sh && tests/devices.sh && tests/protocols.sh && tests/shell.sh
 
   package:
     name: release package

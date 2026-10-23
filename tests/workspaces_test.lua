@@ -76,7 +76,7 @@ raywm = {
   view = function(id)
     local v = views[id]
     if not v then return nil, "stale" end
-    return { id = id, output = v.output, workspace = v.workspace or 0, visible = true }
+    return { id = id, output = v.output, workspace = v.workspace or 0, visible = true, minimized = v.minimized or false }
   end,
   view_workspace = function(id, wid)
     local v = views[id]
@@ -87,6 +87,11 @@ raywm = {
     return true
   end,
   view_focus = function(id) focused = id return true end,
+  view_minimize = function(id, on)
+    if not views[id] then return nil, "stale" end
+    views[id].minimized = on
+    return true
+  end,
   focused = function() return focused end,
   pointer = function() return { x = pointer.x, y = pointer.y, busy = false } end,
   log = function() end,
@@ -264,6 +269,29 @@ test("custom names, ten workspaces with the key 0", function()
   eq(active_name(1), "10@DP-1")
   press("Super+2")
   eq(active_name(1), "code@DP-1")
+end)
+
+test("activation: urgent by default; switch shows the workspace for user requests only", function()
+  two_outputs()
+  load_plugin()
+  local w3 = plugin.find(out_by_id(2), 3)
+  views[60] = { output = 2, workspace = w3.id, minimized = true }
+  emit("view_request_activate", 60, true)
+  eq(active_name(2), "1@DP-2", "default: the core marks it urgent, nothing switches")
+  eq(focused, nil, "not focused")
+  load_plugin({ activation = "switch" })
+  emit("view_request_activate", 60, false)
+  eq(active_name(2), "1@DP-2", "no user input: nothing switches")
+  emit("view_request_activate", 60, true)
+  eq(active_name(2), "3@DP-2", "user input: its workspace is shown")
+  eq(focused, 60, "and it is focused")
+  eq(views[60].minimized, false, "restored")
+  -- On the shown workspace already: left to the core's default.
+  focused = nil
+  emit("view_request_activate", 60, true)
+  eq(focused, nil, "the core decides")
+  local ok = pcall(load_plugin, { activation = "steal" })
+  assert(not ok, "a bad option is an error")
 end)
 
 test("Super+Alt+Right moves the window to the output on the right and keeps focus", function()

@@ -38,6 +38,12 @@
 --                         shown there
 --   focus = false         do not take the keyboard from the focused window
 --   fullscreen = bool, maximize = bool
+--   decoration = "server" | "client" | "auto"
+--                         who draws the title bar (xdg-decoration). RayWM
+--                         draws none: "server" removes the client's own,
+--                         "client" keeps it; "auto" (default) does what the
+--                         client asks. Clients without xdg-decoration
+--                         support (GTK) always draw their own.
 
 local options = {
   -- Float dialogs: windows with a parent, and windows whose size is fixed
@@ -159,7 +165,7 @@ local function apply(id)
   if options.auto_float and is_dialog(v, out) then d.float = true end
   for _, r in ipairs(rules) do
     if matches(r.match or {}, v, out) then
-      for _, k in ipairs({ "float", "size", "position", "opacity", "workspace", "output", "focus", "fullscreen", "maximize" }) do
+      for _, k in ipairs({ "float", "size", "position", "opacity", "workspace", "output", "focus", "fullscreen", "maximize", "decoration" }) do
         if r[k] ~= nil then d[k] = r[k] end
       end
     end
@@ -215,6 +221,7 @@ local function apply(id)
     raywm.view_place(id, x, y, w, h)
   end
   if d.opacity then raywm.view_opacity(id, d.opacity) end
+  if d.decoration and raywm.view_decoration then raywm.view_decoration(id, d.decoration) end
   if d.fullscreen ~= nil then raywm.view_fullscreen(id, d.fullscreen) end
   if d.maximize ~= nil then raywm.view_maximize(id, d.maximize) end
   if d.focus == false then
@@ -232,6 +239,9 @@ local function check_rules()
   for i, r in ipairs(rules) do
     local ok, err = pcall(function()
       assert(type(r) == "table", "a rule must be a table")
+      local deco = r.decoration
+      assert(deco == nil or deco == "server" or deco == "client" or deco == "auto",
+        'decoration must be "server", "client" or "auto"')
       for _, k in ipairs({ "app_id", "title", "parent_app_id", "output", "workspace" }) do
         local p = (r.match or {})[k]
         for _, s in ipairs(type(p) == "table" and p or { p }) do

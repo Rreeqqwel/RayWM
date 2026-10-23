@@ -8,9 +8,10 @@
 -- that leaf's area, and then gets focus from the core, so windows spiral
 -- inwards. When a window closes, its sibling takes over the parent's area.
 --
--- Floating windows (raywm.view_floating, floating.lua) are not tiled.
--- Fullscreen and maximized windows keep their tile: the core restores
--- them there afterwards. Only spaces on screen are laid out.
+-- Floating and minimized windows are not tiled (a minimized window is
+-- tiled again, like a new one, when it is restored). Fullscreen and
+-- maximized windows keep their tile: the core restores them there
+-- afterwards. Only spaces on screen are laid out.
 --
 -- Only geometry is recomputed on changes; the tree itself is edited in
 -- place. Across raywm.reload() the tree shape is kept in a small file in
@@ -98,7 +99,7 @@ end
 
 -- Windows that tiling leaves alone.
 local function tileable(v)
-  return v and not v.floating
+  return v and not v.floating and not v.minimized
 end
 
 -- Replaces `old` by `new` in old's parent, or as the root of `space`.
@@ -560,7 +561,7 @@ return {
       local key = remove(id)
       if key then arrange(key) end
     end)
-    -- Floating changed: leave or join the tiling.
+    -- Floating or minimized changed: leave or join the tiling.
     ctx.on("view_state", function(id)
       local v = raywm.view(id)
       if not v then return end
