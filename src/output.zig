@@ -50,6 +50,9 @@ pub const Output = struct {
     /// Where it was in the layout, kept while it is disabled: reported to
     /// output-management clients and used when it is enabled again.
     last_pos: ?[2]i32 = null,
+    /// Without a backend DRM device there is no scanout target for
+    /// linux-dmabuf feedback. Keep renderer import/composition available.
+    force_composite: bool = false,
 
     frame: wl.Listener(*wlr.Output) = .init(handleFrame),
     present: wl.Listener(*wlr.Output.event.Present) = .init(handlePresent),
@@ -75,6 +78,10 @@ pub const Output = struct {
             inline for (.{ "frame", "present", "request_state", "destroy" }) |name| @field(output, name).link.remove();
         }
         try output.joinLayout(null);
+        if (wlr_output.backend.getDrmFd() < 0) {
+            wlr_output.lockAttachRender(true);
+            output.force_composite = true;
+        }
         // Appears blank while the session is locked.
         server.session_lock.prepareOutput(output);
     }
@@ -152,6 +159,7 @@ pub const Output = struct {
 
     fn handleDestroy(listener: *wl.Listener(*wlr.Output), _: *wlr.Output) void {
         const output: *Output = @fieldParentPtr("destroy", listener);
+        if (output.force_composite) output.wlr_output.lockAttachRender(false);
         const server = output.server;
         layer_shell.closeAll(output);
         workspace.outputGone(server, output);
