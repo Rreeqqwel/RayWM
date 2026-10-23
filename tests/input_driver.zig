@@ -2,7 +2,7 @@
 //! -Dtest-input. Creates a virtual pointer and keyboard and runs commands
 //! given as arguments, with a roundtrip after each one:
 //!   move X Y          absolute pointer position in layout pixels
-//!   down|up left|right
+//!   down|up left|right|middle
 //!   key NAME down|up  NAME: super, ctrl, alt, shift, f9, f10, f11, f12,
 //!                     h, j, k, l, q, r, p, tab, print, escape
 //!   group N           locks keyboard layout group N (0 = first layout), as
@@ -21,6 +21,7 @@ const xkb = @import("xkbcommon");
 
 const BTN_LEFT = 0x110;
 const BTN_RIGHT = 0x111;
+const BTN_MIDDLE = 0x112;
 const KEY_F12 = 88;
 const KEY_F11 = 87;
 const KEY_F10 = 68;
@@ -109,7 +110,7 @@ pub fn main(init: std.process.Init) !void {
             pointer.frame();
             i += 3;
         } else if (std.mem.eql(u8, cmd, "down") or std.mem.eql(u8, cmd, "up")) {
-            const button: u32 = if (std.mem.eql(u8, a, "right")) BTN_RIGHT else BTN_LEFT;
+            const button: u32 = if (std.mem.eql(u8, a, "right")) BTN_RIGHT else if (std.mem.eql(u8, a, "middle")) BTN_MIDDLE else BTN_LEFT;
             pointer.button(time, button, if (cmd[0] == 'd') .pressed else .released);
             pointer.frame();
             i += 2;

@@ -188,9 +188,13 @@ p10() {
     expect 2 "view 2 200,150 250x180 focused=true"
     has a "csd move requested"
     has a "csd resize requested"
-    # The next click is an ordinary one.
-    drive move 250 200 sleep 100 key super down key super up down left up left sleep 150
-    [ "$(grep -c 'client: ptr button 272 released' "$tmp/a.log")" -ge 1 ] || fail "A never saw a release after the grabs"
+    # The next click is an ordinary one: the seat no longer counts the
+    # grabs' buttons as held, so a press and its release both reach A.
+    # (Middle button: this client asks for a move on every left press and a
+    # resize on every right press, so a left click would race that request.)
+    drive move 250 200 sleep 100 key super down key super up down middle up middle sleep 150
+    has a "ptr button 274 pressed window"
+    has a "ptr button 274 released window"
     stop
 }
 
