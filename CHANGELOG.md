@@ -8,6 +8,20 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ### Added
 
+- **Window rules** (`config/plugins/window-rules.lua`, loaded by the
+  example `init.lua`; your rules go in `rules.lua` next to `init.lua`):
+  match windows by app id, title (Lua patterns, or lists of them), being
+  a dialog, the parent's app id, output, workspace, fixed size, X11, or
+  any test function; float or tile them, give them a size (pixels or
+  percent) and position (pixels, centre, cursor), opacity, a workspace or
+  output, fullscreen or maximized, or keep the keyboard on the focused
+  window. Rules run in `view_new`, before layouts, so nothing jumps.
+  Dialogs float by default, centred over their parent: windows with a
+  parent, and fixed-size windows that are at most 80 % of the usable
+  area (a fixed-size game is not taken for a dialog). Bad patterns are
+  reported once and their rule is skipped.
+- `raywm.config_dir`: the directory of `init.lua`, for plugins' own
+  files.
 - **Workspaces** (`config/plugins/workspaces.lua`, loaded by the example
   `init.lua`): nine per output. Super+1..9 show one, Super+Shift+1..9
   move the focused window there, Super+Ctrl+Left/Right show the

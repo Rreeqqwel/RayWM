@@ -303,11 +303,15 @@ pub fn Runtime(comptime H: type) type {
             c.lua_pushnil(L);
             c.lua_rawseti(L, -2, 3);
             c.lua_settop(L, -3);
-            c.lua_createtable(L, 0, globals.len + 2);
+            c.lua_createtable(L, 0, globals.len + 3);
             c.lua_pushinteger(L, api_version);
             c.lua_setfield(L, -2, "api_version");
             _ = c.lua_pushstring(L, version);
             c.lua_setfield(L, -2, "version");
+            // Directory of init.lua (plugins/ is in it): for plugins' own files.
+            const dir = std.fs.path.dirname(self.config_path) orelse ".";
+            _ = c.lua_pushlstring(L, dir.ptr, dir.len);
+            c.lua_setfield(L, -2, "config_dir");
             inline for (globals) |g| {
                 c.lua_pushlightuserdata(L, self);
                 c.lua_pushcclosure(L, g[1], 1);

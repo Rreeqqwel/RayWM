@@ -26,7 +26,7 @@ if strings "$bin" | grep -qi virtual_pointer; then echo "package: test-only code
 stage="$dist/$name"
 mkdir -p "$stage/bin" "$stage/config" "$stage/docs"
 install -m 0755 "$bin" "$stage/bin/raywm"
-install -m 0644 config/init.lua "$stage/config/init.lua"
+install -m 0644 config/init.lua config/rules.lua "$stage/config/"
 cp -r config/plugins "$stage/config/plugins"
 chmod 0644 "$stage/config/plugins/"*.lua
 install -m 0644 README.md LICENSE CHANGELOG.md SECURITY.md "$stage/"

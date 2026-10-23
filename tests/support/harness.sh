@@ -12,6 +12,7 @@
 #   PLUGINS="dir ..."   extra plugin directories copied into the config
 #   DRIVER_ENV="VAR=v"  extra environment of the input driver
 #   FLAGS="-d"          extra raywm command-line flags
+#   RULES=file          copied to rules.lua (window-rules.lua reads it)
 failures=0
 scenarios=0
 default_win="RAYWM_TEST_HOLD=1 RAYWM_TEST_CSD_MOVE=1 RAYWM_TEST_KBD=1 RAYWM_TEST_PTR=1 RAYWM_TEST_ROUNDS=1"
@@ -27,6 +28,7 @@ start() {
     cp "$root/config/plugins/"*.lua "$root/tests/input/plugins/"*.lua "$tmp/config/raywm/plugins/"
     for d in ${PLUGINS:-}; do cp "$d/"*.lua "$tmp/config/raywm/plugins/"; done
     cp "$1" "$tmp/config/raywm/init.lua"
+    if [ -n "${RULES:-}" ]; then cp "$RULES" "$tmp/config/raywm/rules.lua"; fi
     client="'$bin/raywm-test-client'"
     win="${WIN:-$default_win} $client"
     wait_for() { echo "until grep -q '$2' '$tmp/$1'; do sleep 0.05; done"; }
