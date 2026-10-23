@@ -170,8 +170,10 @@ pub const Protocols = struct {
         // During a compositor grab the compositor's cursor stays.
         if (server.grab.mode != .none) return;
         const name = wlr.CursorShapeManagerV1.shapeName(event.shape);
-        log.debug("cursor shape {s}", .{name});
         server.cursor.setXcursor(server.cursor_mgr, name);
+        // -d diagnostics must remain available in ReleaseSafe builds,
+        // where Zig removes debug-level logging at compile time.
+        if (srv.verbose) log.info("cursor shape {s}", .{name});
     }
 
     /// xdg-decoration: the view answers (see View.applyDecoration).

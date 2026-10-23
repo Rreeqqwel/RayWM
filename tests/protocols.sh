@@ -100,7 +100,7 @@ p6() {
     drive move 600 330 sleep 200
     wait_log a "cursor shape set"
     sleep 0.2
-    grep -q "debug(protocols): cursor shape grab" "$tmp/raywm.log" || fail "the compositor did not apply the shape"
+    grep -q "protocols): cursor shape grab" "$tmp/raywm.log" || fail "the compositor did not apply the shape"
     stop
 }
 
