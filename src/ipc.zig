@@ -6,6 +6,10 @@ const lua = @import("lua");
 const srv = @import("server.zig");
 const host = @import("host.zig");
 const c = @cImport({
+    // Zig 0.16 translate-c diagnoses glibc's fortified error stubs while
+    // importing fcntl.h at -OReleaseSafe. Import the plain declarations;
+    // the socket code below supplies explicit fixed-buffer bounds.
+    @cUndef("_FORTIFY_SOURCE");
     @cDefine("_GNU_SOURCE", "1");
     @cInclude("sys/socket.h");
     @cInclude("sys/un.h");
