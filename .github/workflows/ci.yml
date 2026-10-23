@@ -91,6 +91,9 @@ jobs:
       - name: Output tests (wlr-randr, outputs.lua, DPMS, gamma)
         run: tests/outputs.sh
 
+      - name: Input device tests (virtual input)
+        run: tests/devices.sh
+
       - name: Screenshot tests (pixman, real grim/slurp/wl-clipboard)
         run: tests/screenshot.sh
 
@@ -146,7 +149,7 @@ jobs:
           RENDERER: gles2
         run: |
           zig build && zig build -Dtest-input -p zig-out/test-input
-          tests/smoke.sh && tests/focus.sh && tests/input.sh && tests/pointer.sh && tests/navigation.sh && tests/screenshot.sh && tests/windows.sh && tests/workspaces.sh && tests/rules.sh && tests/session.sh && tests/outputs.sh
+          tests/smoke.sh && tests/focus.sh && tests/input.sh && tests/pointer.sh && tests/navigation.sh && tests/screenshot.sh && tests/windows.sh && tests/workspaces.sh && tests/rules.sh && tests/session.sh && tests/outputs.sh && tests/devices.sh
 
   package:
     name: release package

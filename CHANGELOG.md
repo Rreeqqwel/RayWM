@@ -8,6 +8,27 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ### Added
 
+- **Input configuration** (`config/plugins/input.lua`, in the example
+  `init.lua` with every setting commented out):
+  - `raywm.input_configure(match, settings)` for `"*"`, `"type:keyboard"`
+    (pointer, touchpad, touch, tablet, switch) or a device name; more
+    specific entries override less specific ones setting by setting;
+    unset settings keep their defaults, so removing one and reloading
+    undoes it; unknown setting names are errors;
+  - keyboards: XKB rules, model, layout, variant and options, repeat
+    rate and delay; a layout that does not compile is refused and the
+    keyboard keeps its keymap; virtual keyboards keep their client's
+    keymap; bindings still match in every layout;
+  - pointers and touchpads (libinput): acceleration profile and speed,
+    natural scrolling, left-handed, tap, tap-and-drag, drag lock,
+    disable-while-typing, middle-button emulation, scroll and click
+    methods, send-events mode — applied when a device supports them.
+    These need real devices and were only unit-tested (the layering) on
+    the headless test setup;
+  - hotplug: every new device gets its settings; `raywm.input_devices()`;
+    events `input_add`, `input_remove`;
+  - keyboard layouts: `raywm.keyboard_layout()`,
+    `raywm.keyboard_set_layout(n)`, event `keyboard_layout(0, n)`.
 - **Output configuration**:
   - wlr-output-management (wlr-randr, kanshi): mode and refresh rate
     (also custom modes), scale (HiDPI), rotation, position, enabling

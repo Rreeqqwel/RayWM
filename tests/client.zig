@@ -482,6 +482,7 @@ fn keyboardListener(_: *wl.Keyboard, event: wl.Keyboard.Event, use: *SeatUse) vo
             step("kbd enter{s}", .{w.buffered()});
         },
         .leave => step("kbd leave", .{}),
+        .repeat_info => |r| step("kbd repeat {d} {d}", .{ r.rate, r.delay }),
         .key => |k| {
             step("kbd key {d} {s}", .{ k.key, @tagName(k.state) });
             // RAYWM_TEST_REQUEST_KEYS: F9 toggles a fullscreen request, F10
@@ -563,7 +564,8 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, g: *Global
             } else if (std.mem.eql(u8, name, std.mem.span(wl.Subcompositor.interface.name))) {
                 g.subcompositor = registry.bind(global.name, wl.Subcompositor, 1) catch return;
             } else if (std.mem.eql(u8, name, std.mem.span(wl.Seat.interface.name))) {
-                const seat = registry.bind(global.name, wl.Seat, 1) catch return;
+                // v4: wl_keyboard.repeat_info.
+                const seat = registry.bind(global.name, wl.Seat, @min(global.version, 4)) catch return;
                 seat.setListener(*Globals, seatListener, g);
                 g.seat = seat;
             } else if (std.mem.eql(u8, name, std.mem.span(zwlr.LayerShellV1.interface.name))) {
