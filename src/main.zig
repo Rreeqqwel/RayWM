@@ -6,6 +6,7 @@ pub const host = @import("host.zig");
 pub const input = @import("input.zig");
 pub const inputconfig = @import("inputconfig.zig");
 pub const cabi = @import("cabi.zig");
+pub const animation = @import("animation.zig");
 
 const usage =
     \\Usage: raywm [-c config.lua] [-s startup-command] [-d]

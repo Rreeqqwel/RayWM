@@ -61,6 +61,10 @@ pub const Event = enum {
     /// supplied source surface still focused when the token was committed.
     /// Default: focus it when it can be seen, else mark it urgent.
     view_request_activate,
+    /// Before unmap state is cleared, for native buffer snapshots.
+    view_will_unmap,
+    /// Before switching visibility: (new workspace, old workspace or 0).
+    workspace_will_activate,
 };
 /// Extra handler arguments after the id (most events have none).
 pub const Arg = union(enum) { int: i64, boolean: bool, nil };
@@ -201,6 +205,29 @@ pub const Decoration = enum { auto, server, client };
 pub const PointerInfo = struct { x: i32, y: i32, busy: bool };
 pub const WarpResult = enum { ok, busy, exclusive, outside, locked };
 pub const Key = struct { mods: u32, sym: u32 };
+pub const Easing = enum { linear, in_quad, out_quad, in_out_cubic };
+pub const AnimationOptions = struct {
+    x: f64 = 0,
+    y: f64 = 0,
+    opacity: f64 = 1,
+    from_x: ?f64 = null,
+    from_y: ?f64 = null,
+    from_opacity: ?f64 = null,
+    duration: u32 = 180,
+    easing: Easing = .out_quad,
+    snapshot: bool = false,
+};
+pub const RectOptions = struct {
+    view: u32 = 0,
+    x: i32 = 0,
+    y: i32 = 0,
+    w: i32 = 1,
+    h: i32 = 1,
+    color: [4]f32 = .{ 1, 1, 1, 1 },
+    background: bool = false,
+    visible: bool = true,
+};
+pub const ResourceResult = union(enum) { ok: u32, stale, hidden, failed, limit };
 pub const Limits = struct {
     memory: usize = 64 << 20,
     instructions: u64 = 200_000_000,
@@ -268,7 +295,7 @@ pub fn Runtime(comptime H: type) type {
         const Plugin = struct { name: [:0]u8, teardown: c_int, dead: bool = false, torn_down: bool = false, warned_dup: bool = false };
         /// `manage`: the plugin lays out this view (no free move/resize).
         /// `workspace`: the plugin owns this workspace (see workspace.zig).
-        const Kind = union(enum) { event: Event, bind: Key, timer: u64, manage: u32, workspace: u32 };
+        const Kind = union(enum) { event: Event, bind: Key, timer: u64, manage: u32, workspace: u32, animation: u32, visual: u32 };
         /// Every resource a plugin registers. Removed only by sweep(), never
         /// while a dispatch loop may be iterating.
         const Reg = struct { id: u32, plugin: u32, ref: c_int, kind: Kind, dead: bool = false };
@@ -527,6 +554,8 @@ pub fn Runtime(comptime H: type) type {
                         if (r.ref != no_ref) c.luaL_unref(self.L, c.LUA_REGISTRYINDEX, r.ref);
                         if (r.kind == .manage) released_manage = true;
                         if (r.kind == .workspace) if (@hasDecl(Api, "workspaceOrphan")) Api.workspaceOrphan(self.host, r.kind.workspace);
+                        if (r.kind == .animation) if (@hasDecl(Api, "animationCancel")) Api.animationCancel(self.host, r.kind.animation);
+                        if (r.kind == .visual) if (@hasDecl(Api, "visualRemove")) Api.visualRemove(self.host, r.kind.visual);
                     }
                 }
                 self.regs.shrinkRetainingCapacity(j);
@@ -655,6 +684,24 @@ pub fn Runtime(comptime H: type) type {
             }
             self.leave();
             self.armTimer();
+        }
+
+        /// Native resource retirement; no Lua callbacks and at most one
+        /// registration sweep after a frame or a view's teardown.
+        pub fn collectResources(self: *Self) void {
+            if (!self.alive or self.sweeping) return;
+            for (self.regs.items) |*reg| {
+                const gone = switch (reg.kind) {
+                    .animation => |id| if (@hasDecl(Api, "animationAlive")) !Api.animationAlive(self.host, id) else false,
+                    .visual => |id| if (@hasDecl(Api, "visualAlive")) !Api.visualAlive(self.host, id) else false,
+                    else => false,
+                };
+                if (gone) {
+                    reg.dead = true;
+                    self.sweep_needed = true;
+                }
+            }
+            if (self.depth == 0 and !self.in_config and self.sweep_needed) self.sweep();
         }
 
         fn armTimer(self: *Self) void {
@@ -834,6 +881,9 @@ pub fn Runtime(comptime H: type) type {
         const ctx_fns_v020 = .{
             .{ "workspace_create", ctxWorkspaceCreate },
             .{ "workspace_adopt", ctxWorkspaceAdopt },
+            .{ "animate", ctxAnimate },
+            .{ "rect", ctxRect },
+            .{ "rect_update", ctxRectUpdate },
         };
 
         /// raywm.load(name): loads plugins/<name>.lua next to the config.
@@ -1503,6 +1553,89 @@ pub fn Runtime(comptime H: type) type {
             self.regs.ensureUnusedCapacity(gpa, 1) catch {
                 _ = c.luaL_error(L, "out of memory");
             };
+        }
+
+        fn resourceResult(L: ?*c.lua_State, result: ResourceResult, animation: bool) c_int {
+            return switch (result) {
+                .ok => |id| register(L, 0, if (animation) .{ .animation = id } else .{ .visual = id }),
+                inline else => |_, tag| failWith(L, @tagName(tag)),
+            };
+        }
+
+        fn ctxAnimate(L: ?*c.lua_State) callconv(.c) c_int {
+            const self = get(L);
+            const vid = checkId(L, 1);
+            c.luaL_checktype(L, 2, c.LUA_TTABLE);
+            checkRegister(L);
+            var options: AnimationOptions = .{};
+            inline for (.{ "x", "y", "opacity", "from_x", "from_y", "from_opacity" }) |field| {
+                if (c.lua_getfield(L, 2, field) != c.LUA_TNIL) {
+                    const value = number(L, -1);
+                    @field(options, field) = if (comptime std.mem.endsWith(u8, field, "opacity")) std.math.clamp(value, 0, 1) else std.math.clamp(value, -65536, 65536);
+                }
+                c.lua_settop(L, -2);
+            }
+            if (c.lua_getfield(L, 2, "duration") != c.LUA_TNIL) {
+                const ms = c.luaL_checkinteger(L, -1);
+                if (ms < 0 or ms > 10000) return c.luaL_error(L, "duration must be 0..10000 milliseconds");
+                options.duration = @intCast(ms);
+            }
+            c.lua_settop(L, -2);
+            if (c.lua_getfield(L, 2, "easing") != c.LUA_TNIL) options.easing = checkEnum(Easing, L, -1);
+            c.lua_settop(L, -2);
+            if (c.lua_getfield(L, 2, "snapshot") != c.LUA_TNIL) options.snapshot = c.lua_toboolean(L, -1) != 0;
+            c.lua_settop(L, -2);
+            if (@hasDecl(Api, "animationCreate")) {
+                const result = Api.animationCreate(self.host, vid, options);
+                self.collectResources(); // interrupted jobs no longer own registrations
+                return resourceResult(L, result, true);
+            }
+            return failWith(L, "unsupported");
+        }
+
+        fn rectOptions(L: ?*c.lua_State, index: c_int) RectOptions {
+            c.luaL_checktype(L, index, c.LUA_TTABLE);
+            var options: RectOptions = .{};
+            inline for (.{ "x", "y", "w", "h" }) |field| {
+                if (c.lua_getfield(L, index, field) != c.LUA_TNIL) @field(options, field) = @intCast(std.math.clamp(c.luaL_checkinteger(L, -1), if (comptime field[0] == 'w' or field[0] == 'h') 1 else -(1 << 24), 1 << 24));
+                c.lua_settop(L, -2);
+            }
+            if (c.lua_getfield(L, index, "view") != c.LUA_TNIL) options.view = checkId(L, -1);
+            c.lua_settop(L, -2);
+            if (c.lua_getfield(L, index, "color") != c.LUA_TNIL) options.color = parseColor(std.mem.span(c.luaL_checklstring(L, -1, null))) orelse {
+                _ = c.luaL_error(L, "invalid rectangle color");
+                return options;
+            };
+            c.lua_settop(L, -2);
+            if (c.lua_getfield(L, index, "background") != c.LUA_TNIL) options.background = c.lua_toboolean(L, -1) != 0;
+            c.lua_settop(L, -2);
+            if (c.lua_getfield(L, index, "visible") != c.LUA_TNIL) options.visible = c.lua_toboolean(L, -1) != 0;
+            c.lua_settop(L, -2);
+            return options;
+        }
+
+        fn ctxRect(L: ?*c.lua_State) callconv(.c) c_int {
+            const self = get(L);
+            const options = rectOptions(L, 1);
+            checkRegister(L);
+            if (@hasDecl(Api, "visualCreate")) return resourceResult(L, Api.visualCreate(self.host, options), false);
+            return failWith(L, "unsupported");
+        }
+
+        fn ctxRectUpdate(L: ?*c.lua_State) callconv(.c) c_int {
+            const self = get(L);
+            const id = checkId(L, 1);
+            const options = rectOptions(L, 2);
+            for (self.regs.items) |reg| if (reg.id == id and reg.plugin == owner(L) and reg.kind == .visual and self.live(reg)) {
+                if (@hasDecl(Api, "visualUpdate")) {
+                    if (Api.visualUpdate(self.host, reg.kind.visual, options)) {
+                        c.lua_pushboolean(L, 1);
+                        return 1;
+                    }
+                }
+                return stale(L);
+            };
+            return stale(L);
         }
 
         /// ctx.workspace_create(output, name) -> id, or nil + "stale" | "bad_name" | "failed".

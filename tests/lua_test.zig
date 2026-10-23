@@ -23,6 +23,16 @@ const Fake = struct {
     ws: [8]FakeWs = undefined,
     n_ws: usize = 0,
     settles: usize = 0,
+    native: [16]bool = @splat(false),
+    native_cleanups: usize = 0,
+
+    fn nativeCreate(f: *Fake) lua.ResourceResult {
+        for (&f.native, 0..) |*alive, i| if (!alive.*) {
+            alive.* = true;
+            return .{ .ok = @intCast(i) };
+        };
+        return .limit;
+    }
 
     const FakeWs = struct { id: u32, name: [16:0]u8, alive: bool, orphan: bool };
 
@@ -32,6 +42,27 @@ const Fake = struct {
     }
 
     pub const Api = struct {
+        pub fn animationCreate(f: *Fake, id: u32, _: lua.AnimationOptions) lua.ResourceResult {
+            if (id != 1) return .stale;
+            return f.nativeCreate();
+        }
+        pub fn animationAlive(f: *Fake, id: u32) bool {
+            return id < f.native.len and f.native[id];
+        }
+        pub fn animationCancel(f: *Fake, id: u32) void {
+            if (id < f.native.len and f.native[id]) {
+                f.native[id] = false;
+                f.native_cleanups += 1;
+            }
+        }
+        pub fn visualCreate(f: *Fake, _: lua.RectOptions) lua.ResourceResult {
+            return f.nativeCreate();
+        }
+        pub const visualAlive = animationAlive;
+        pub const visualRemove = animationCancel;
+        pub fn visualUpdate(f: *Fake, id: u32, _: lua.RectOptions) bool {
+            return animationAlive(f, id);
+        }
         pub fn views(_: *Fake, buf: []u32) usize {
             buf[0] = 1;
             return 1;
@@ -655,6 +686,30 @@ test "non-finite Lua numbers are errors before native conversion or calls" {
     try std.testing.expectEqual(@as(f32, 1), f.opacities[0]);
     try std.testing.expectEqual(@as(f32, 0), f.opacities[1]);
     try std.testing.expectEqual(1, f.count("configure:FAKE-1:800x600@0:0:-:-"));
+}
+
+test "native visual and animation registrations clean up on fault, reload and retirement" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/resources.lua", opts);
+    defer rt.destroy();
+    try std.testing.expectEqual(0, takeErrors());
+    rt.emit(.view_map, 1); // plugin throws after creating both native resources
+    try std.testing.expectEqual(1, takeErrors());
+    for (f.native) |alive| try std.testing.expect(!alive);
+    try std.testing.expectEqual(2, f.native_cleanups);
+    rt.requestReload();
+    try std.testing.expectEqual(0, takeErrors());
+    // Native completion/deletion retires registrations without a Lua callback.
+    for (&f.native) |*alive| alive.* = false;
+    rt.collectResources();
+    try std.testing.expectEqual(1, rt.regs.items.len); // just the event handler
+    rt.requestReload();
+    rt.requestReload();
+    try std.testing.expectEqual(0, takeErrors());
+    var alive_count: usize = 0;
+    for (f.native) |alive| alive_count += @intFromBool(alive);
+    try std.testing.expectEqual(2, alive_count);
 }
 
 test "v0.2.0 foundation: version, view metadata, event arguments, managed hook" {

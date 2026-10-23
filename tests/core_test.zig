@@ -8,6 +8,19 @@ const srv = raywm.srv;
 const host = raywm.host;
 const t = std.testing;
 
+test "native easing endpoints, continuity and monotonicity" {
+    inline for (.{ .linear, .in_quad, .out_quad, .in_out_cubic }) |kind| {
+        try t.expectEqual(@as(f64, 0), raywm.animation.ease(kind, 0));
+        try t.expectEqual(@as(f64, 1), raywm.animation.ease(kind, 1));
+        var previous: f64 = 0;
+        for (0..1001) |i| {
+            const value = raywm.animation.ease(kind, @as(f64, @floatFromInt(i)) / 1000);
+            try t.expect(value >= previous and value <= 1);
+            previous = value;
+        }
+    }
+}
+
 extern fn raywm_test_raw_bool(b: bool) c_uint;
 var runtime_true = true;
 noinline fn yes() bool {

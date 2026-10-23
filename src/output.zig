@@ -132,8 +132,11 @@ pub const Output = struct {
     fn handleFrame(listener: *wl.Listener(*wlr.Output), _: *wlr.Output) void {
         const output: *Output = @fieldParentPtr("frame", listener);
         var now = srv.timestamp();
+        const ns = @as(u64, @intCast(now.sec)) * std.time.ns_per_s + @as(u64, @intCast(now.nsec));
+        const animating = output.server.animations.frame(ns);
         _ = output.scene_output.commit(null);
         output.scene_output.sendFrameDone(&now);
+        if (animating) output.wlr_output.scheduleFrame();
     }
 
     fn handlePresent(listener: *wl.Listener(*wlr.Output.event.Present), event: *wlr.Output.event.Present) void {

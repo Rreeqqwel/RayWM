@@ -63,6 +63,8 @@ pub const Server = struct {
     taskbar: Taskbar = .{},
     data: Data = undefined,
     textinput: TextInput = undefined,
+    animations: @import("animation.zig").Engine = .{},
+    visuals: @import("visual.zig").Visuals = .{},
     idle_notifier: *wlr.IdleNotifierV1 = undefined,
     idle_inhibit: *wlr.IdleInhibitManagerV1 = undefined,
 
@@ -139,6 +141,8 @@ pub const Server = struct {
             .cursor_mgr = try wlr.XcursorManager.create(null, 24),
         };
         for (&server.layers) |*tree| tree.* = try scene.tree.createSceneTree();
+        server.animations.init(server);
+        server.visuals.init(server);
 
         try protocols.initBuffers(server);
         server.compositor = try wlr.Compositor.create(wl_server, 6, renderer);
@@ -204,6 +208,8 @@ pub const Server = struct {
         server.timer = null;
         server.xwayland.deinit();
         server.wl_server.destroyClients();
+        server.animations.clear();
+        server.visuals.clear();
         server.data.deinit();
         server.textinput.deinit();
         server.taskbar.deinit();
@@ -234,6 +240,10 @@ pub const Server = struct {
     }
 
     pub fn emit(server: *Server, ev: lua.Event, id: u32) void {
+        if (ev == .session_lock) {
+            server.animations.clear();
+            if (server.rt) |rt| rt.collectResources();
+        }
         log.debug("event {s} id={d}", .{ @tagName(ev), id });
         if (ev == .view_unmap) server.taskbar.unmap(id);
         if (server.rt) |rt| rt.emit(ev, id);

@@ -98,19 +98,26 @@ pub const Workspace = struct {
     /// Shows this workspace on its output, hiding the one shown before, and
     /// gives the keyboard to its most recently focused window (or to none).
     pub fn activate(ws: *Workspace) bool {
-        const o = ws.output orelse return false;
-        const old = o.active_ws;
-        if (old == ws) return true;
-        o.active_ws = ws;
         const server = ws.server;
+        const id = ws.id;
+        const output = ws.output orelse return false;
+        if (output.active_ws == ws) return true;
+        server.emitArgs(.workspace_will_activate, id, &.{.{ .int = if (output.active_ws) |old| old.id else 0 }});
+        // Event handlers can remove or move workspaces synchronously.
+        const target = byId(server, id) orelse return false;
+        const o = target.output orelse return false;
+        const old = o.active_ws;
+        if (old == target) return true;
+        const old_id = if (old) |w| w.id else 0;
+        o.active_ws = target;
         var it = server.view_ids.valueIterator();
         while (it.next()) |vp| {
             const v = vp.*;
-            if (v.workspace == ws or (old != null and v.workspace == old)) v.updateVisibility();
+            if (v.workspace == target or (old != null and v.workspace == old)) v.updateVisibility();
         }
-        server.focusWorkspace(ws);
+        server.focusWorkspace(target);
         server.afterVisibilityChange();
-        server.emitArgs(.workspace_activate, ws.id, &.{.{ .int = if (old) |w| w.id else 0 }});
+        server.emitArgs(.workspace_activate, id, &.{.{ .int = old_id }});
         return true;
     }
 

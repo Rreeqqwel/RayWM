@@ -67,6 +67,9 @@ pub const View = struct {
     /// Interactive resize: keeps the edges opposite to `edges` fixed.
     anchor: ?struct { serial: u32, edges: wlr.Edges, box: wlr.Box } = null,
     opacity: f32 = 1.0,
+    /// Native animation transform, separate from client/layout geometry.
+    visual_offset: [2]f64 = .{ 0, 0 },
+    visual_alpha: f32 = 1,
     /// Drawn by plugins (raywm.view_border), e.g. for the focused window.
     border: ?Border = null,
     /// Hidden by a plugin (raywm.view_show).
@@ -483,7 +486,7 @@ pub const View = struct {
     /// geometry offset (client-side shadows, title bars), so `content`'s
     /// origin is the window geometry's top-left.
     fn syncPosition(view: *View) void {
-        view.tree.node.setPosition(view.x, view.y);
+        view.applyVisualPosition();
         view.server.taskbar.schedule();
         view.server.textinput.positionPopups();
         if (view.impl == .xwayland) {
@@ -492,6 +495,17 @@ pub const View = struct {
             const y: i16 = @intCast(std.math.clamp(view.y, -32768, 32767));
             if (xs.x != x or xs.y != y) xs.configure(x, y, xs.width, xs.height);
         }
+    }
+
+    fn applyVisualPosition(view: *View) void {
+        view.tree.node.setPosition(view.x +| @as(i32, @intFromFloat(@round(view.visual_offset[0]))), view.y +| @as(i32, @intFromFloat(@round(view.visual_offset[1]))));
+    }
+
+    pub fn setVisual(view: *View, offset: [2]f64, alpha: f32) void {
+        view.visual_offset = offset;
+        view.visual_alpha = alpha;
+        view.applyVisualPosition();
+        view.applyOpacity();
     }
 
     // ---- visibility, stacking and state ---------------------------------------
@@ -851,6 +865,7 @@ pub const View = struct {
         view.reveal_timer = null;
         view.revealed = true;
         view.updateVisibility();
+        view.applyOpacity();
         input.refocusPointer(view.server);
     }
 
@@ -958,7 +973,7 @@ pub const View = struct {
     fn applyOpacity(view: *View) void {
         view.tree.node.forEachBuffer(*View, struct {
             fn f(buf: *wlr.SceneBuffer, _: c_int, _: c_int, v: *View) void {
-                buf.setOpacity(v.opacity);
+                buf.setOpacity(v.opacity * v.visual_alpha);
             }
         }.f, view);
     }
@@ -985,7 +1000,7 @@ pub const View = struct {
         view.followAnchor();
         view.syncPosition();
         view.layoutBorder();
-        if (view.opacity < 1) view.applyOpacity();
+        if (view.opacity < 1 or view.visual_alpha < 1) view.applyOpacity();
         if (!view.revealed) {
             if (view.pending == null) view.reveal() else view.sendFrameDone();
         }
@@ -1082,6 +1097,11 @@ pub const View = struct {
     fn handleUnmap(listener: *wl.Listener(void)) void {
         const view: *View = @fieldParentPtr("unmap", listener);
         const server = view.server;
+        server.emit(.view_will_unmap, view.id);
+        server.animations.viewGone(view.id);
+        server.visuals.viewGone(view.id);
+        view.setVisual(.{ 0, 0 }, 1);
+        if (server.rt) |rt| rt.collectResources();
         view.mapped = false;
         view.announced = false;
         view.pending = null;

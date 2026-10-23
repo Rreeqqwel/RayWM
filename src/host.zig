@@ -13,6 +13,28 @@ const Server = srv.Server;
 
 pub const Runtime = lua.Runtime(Server);
 
+pub fn animationCreate(server: *Server, id: u32, options: lua.AnimationOptions) lua.ResourceResult {
+    return server.animations.start(id, options);
+}
+pub fn animationAlive(server: *Server, id: u32) bool {
+    return server.animations.alive(id);
+}
+pub fn animationCancel(server: *Server, id: u32) void {
+    server.animations.cancel(id, true);
+}
+pub fn visualCreate(server: *Server, options: lua.RectOptions) lua.ResourceResult {
+    return server.visuals.create(options);
+}
+pub fn visualAlive(server: *Server, id: u32) bool {
+    return server.visuals.alive(id);
+}
+pub fn visualUpdate(server: *Server, id: u32, options: lua.RectOptions) bool {
+    return server.visuals.update(id, options);
+}
+pub fn visualRemove(server: *Server, id: u32) void {
+    server.visuals.remove(id);
+}
+
 pub fn views(server: *Server, buf: []u32) usize {
     var n: usize = 0;
     var it = server.views.iterator(.forward);
