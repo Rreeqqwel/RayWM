@@ -13,7 +13,8 @@ correctness ahead of artificial code reduction.
 > **Status: v0.2.0 release candidate, experimental.** The continuation preserves
 > the v0.1.2 core and adds native window state, workspaces, configuration
 > and protocol support. Implementation and validation are recorded in
-> [the development ledger](docs/DEVELOPMENT.md). This checkout is not a
+> [the development ledger](docs/DEVELOPMENT.md) and
+> [candidate acceptance](docs/RELEASE-STATUS.md). This checkout is not a
 > published v0.2.0 release. Headless tests do not establish physical
 > hardware compatibility.
 

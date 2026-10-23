@@ -212,9 +212,9 @@ This is independent of the retained computed-C-bool workaround.
 | ReleaseSafe headless matrix | Full run exposed the locked-shutdown defect; all suites have subsequent PASS evidence after targeted lifecycle reruns. Complete logs retain the initial failure. |
 | Selected ReleaseSafe GLES2 | PASS: capture10/taskbar9/shell16/data10/Xwayland6, effects7, outputs7/protocols8 and session9; initial feedback/diagnostic failures retained separately |
 | Physical DRM/KMS/input/hotplug/toolkits | SKIPPED; [hardware procedure](HARDWARE-TESTING.md) |
-| Performance | PASS as measured samples, not thresholds; [PERFORMANCE.md](PERFORMANCE.md) and raw JSON. Final native-code samples are repeated before final packaging. |
+| Performance | PASS as measured samples, not thresholds; [PERFORMANCE.md](PERFORMANCE.md) and raw JSON. Final native-code samples repeated; raw hashes/results are recorded. |
 | Security review | Native ownership/filtering/activation/lock/IPC boundaries reviewed; actual client regression evidence and uncovered areas in TESTING.md/SECURITY.md |
-| Release packaging/installer/reproducibility | Implemented; archive validation pending this checkpoint |
+| Release packaging/installer/reproducibility | PASS on preparatory archive: two identical builds and 160 actual archive/install/runtime checks; final artifact identity is recorded in the external release report |
 | Publication | Not authorized; no push/merge/tag/GitHub Release |
 
 The final lifecycle regression (`ed023e8`) reproduces two compositor aborts
