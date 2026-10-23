@@ -65,6 +65,7 @@ pub const Server = struct {
     textinput: TextInput = undefined,
     animations: @import("animation.zig").Engine = .{},
     visuals: @import("visual.zig").Visuals = .{},
+    ipc: @import("ipc.zig").Ipc = .{},
     idle_notifier: *wlr.IdleNotifierV1 = undefined,
     idle_inhibit: *wlr.IdleInhibitManagerV1 = undefined,
 
@@ -204,6 +205,7 @@ pub const Server = struct {
     /// gone (server.rt == null) so destroy events are not forwarded to it.
     pub fn deinit(server: *Server) void {
         std.debug.assert(server.rt == null);
+        server.ipc.deinit();
         if (server.timer) |t| t.remove();
         server.timer = null;
         server.xwayland.deinit();
@@ -248,12 +250,14 @@ pub const Server = struct {
         if (ev == .view_unmap) server.taskbar.unmap(id);
         if (server.rt) |rt| rt.emit(ev, id);
         server.taskbar.schedule();
+        server.ipc.notify(ev, id, &.{});
     }
 
     pub fn emitArgs(server: *Server, ev: lua.Event, id: u32, args: []const lua.Arg) void {
         log.debug("event {s} id={d}", .{ @tagName(ev), id });
         if (server.rt) |rt| rt.emitArgs(ev, id, args);
         server.taskbar.schedule();
+        server.ipc.notify(ev, id, args);
     }
 
     pub fn nextId(server: *Server) u32 {

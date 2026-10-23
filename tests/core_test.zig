@@ -8,6 +8,15 @@ const srv = raywm.srv;
 const host = raywm.host;
 const t = std.testing;
 
+test "IPC bounds nesting before parsing, respecting string escapes" {
+    try t.expect(raywm.ipc.boundedJson("{\"message\":\"[{}]\\\"\"}"));
+    try t.expect(raywm.ipc.boundedJson("[" ** 32 ++ "0" ++ "]" ** 32));
+    try t.expect(!raywm.ipc.boundedJson("[" ** 33 ++ "0" ++ "]" ** 33));
+    try t.expect(!raywm.ipc.boundedJson("{}\x00"));
+    try t.expect(!raywm.ipc.boundedJson("{\"unfinished"));
+    try t.expect(!raywm.ipc.boundedJson("}"));
+}
+
 test "native easing endpoints, continuity and monotonicity" {
     inline for (.{ .linear, .in_quad, .out_quad, .in_out_cubic }) |kind| {
         try t.expectEqual(@as(f64, 0), raywm.animation.ease(kind, 0));

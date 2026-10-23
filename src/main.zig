@@ -7,6 +7,7 @@ pub const input = @import("input.zig");
 pub const inputconfig = @import("inputconfig.zig");
 pub const cabi = @import("cabi.zig");
 pub const animation = @import("animation.zig");
+pub const ipc = @import("ipc.zig");
 
 const usage =
     \\Usage: raywm [-c config.lua] [-s startup-command] [-d]
@@ -52,6 +53,7 @@ pub fn main(init: std.process.Init) !void {
     var buf: [11]u8 = undefined;
     const socket = try server.wl_server.addSocketAuto(&buf);
     if (setenv("WAYLAND_DISPLAY", socket, 1) != 0) return error.SetenvFailed;
+    try server.ipc.init(&server, socket);
     try server.backend.start();
 
     // Started after the backend so plugins see the initial outputs in setup.
