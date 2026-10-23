@@ -14,6 +14,7 @@ const workspace = @import("workspace.zig");
 const Workspace = workspace.Workspace;
 const lock = @import("lock.zig");
 const output_mod = @import("output.zig");
+const inputconfig = @import("inputconfig.zig");
 
 pub const gpa = std.heap.c_allocator;
 const log = std.log.scoped(.server);
@@ -60,6 +61,12 @@ pub const Server = struct {
     workspaces: wl.list.Head(Workspace, .link) = undefined,
     outputs: wl.list.Head(Output, .link) = undefined,
     keyboards: wl.list.Head(input.Keyboard, .link) = undefined,
+    /// Every input device (see inputconfig.zig).
+    devices: wl.list.Head(inputconfig.Device, .link) = undefined,
+    /// Input settings of the configuration (raywm.input_configure).
+    input_store: inputconfig.Store = .{},
+    /// Last input device id (a separate id space, see inputconfig.zig).
+    next_device_id: u32 = 0,
     focused: ?*View = null,
     /// Counts focus() calls, so map can tell whether a plugin chose focus.
     focus_requests: u32 = 0,
@@ -131,6 +138,7 @@ pub const Server = struct {
         server.views.init();
         server.outputs.init();
         server.keyboards.init();
+        server.devices.init();
         server.workspaces.init();
         try server.session_lock.init(server);
         try server.output_mgmt.init(server);
@@ -184,6 +192,7 @@ pub const Server = struct {
         server.scene.tree.node.destroy();
         server.view_ids.deinit(gpa);
         workspace.deinitAll(server);
+        server.input_store.deinit();
         server.cursor_mgr.destroy();
         server.cursor.destroy();
         server.allocator.destroy();

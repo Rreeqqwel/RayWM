@@ -165,6 +165,8 @@ pub fn build(b: *std.Build) void {
     exe.root_module.linkSystemLibrary("wayland-server", .{});
     exe.root_module.linkSystemLibrary("xkbcommon", .{});
     exe.root_module.linkSystemLibrary("pixman-1", .{});
+    // Pointer and touchpad settings; wlroots depends on it already.
+    exe.root_module.linkSystemLibrary("libinput", .{});
     b.installArtifact(exe);
 
     // Minimal xdg-shell client used by tests/smoke.sh.
@@ -221,7 +223,7 @@ pub fn build(b: *std.Build) void {
     });
     core_tests_mod.addImport("raywm", core);
     core_tests_mod.addImport("xkbcommon", xkbcommon);
-    for ([_][]const u8{ "wayland-server", "xkbcommon", "pixman-1" }) |lib| core_tests_mod.linkSystemLibrary(lib, .{});
+    for ([_][]const u8{ "wayland-server", "xkbcommon", "pixman-1", "libinput" }) |lib| core_tests_mod.linkSystemLibrary(lib, .{});
     const core_tests = b.addTest(.{ .root_module = core_tests_mod, .use_llvm = use_llvm, .use_lld = use_llvm });
     test_step.dependOn(&b.addRunArtifact(core_tests).step);
 

@@ -4,6 +4,7 @@ const wlr = @import("wlroots");
 pub const srv = @import("server.zig");
 pub const host = @import("host.zig");
 pub const input = @import("input.zig");
+pub const inputconfig = @import("inputconfig.zig");
 
 const usage =
     \\Usage: raywm [-c config.lua] [-s startup-command] [-d]

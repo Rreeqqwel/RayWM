@@ -17,6 +17,7 @@ const srv = @import("server.zig");
 const View = @import("view.zig").View;
 const LayerSurface = @import("layer.zig").LayerSurface;
 const lua = @import("lua");
+const inputconfig = @import("inputconfig.zig");
 const Server = srv.Server;
 const gpa = srv.gpa;
 const log = std.log.scoped(.input);
@@ -77,24 +78,28 @@ pub const Keyboard = struct {
     /// Keycodes whose press triggered a binding; their release is swallowed
     /// too. As large as wlr_keyboard's own array of pressed keys.
     swallowed: [32]u32 = @splat(0),
+    /// Active layout last reported to plugins (keyboard_layout event).
+    group: u32 = 0,
 
     modifiers: wl.Listener(*wlr.Keyboard) = .init(handleModifiers),
     key: wl.Listener(*wlr.Keyboard.event.Key) = .init(handleKey),
     destroy: wl.Listener(*wlr.InputDevice) = .init(handleDestroy),
 
-    fn create(server: *Server, device: *wlr.InputDevice) !void {
+    fn create(server: *Server, device: *wlr.InputDevice, dev: *inputconfig.Device) !void {
         const kb = try gpa.create(Keyboard);
         errdefer gpa.destroy(kb);
         kb.* = .{ .server = server, .device = device };
 
-        const context = xkb.Context.new(.no_flags) orelse return error.XkbContextFailed;
-        defer context.unref();
-        // Layout comes from XKB_DEFAULT_* environment variables.
-        const keymap = xkb.Keymap.newFromNames(context, null, .no_flags) orelse return error.XkbKeymapFailed;
-        defer keymap.unref();
         const wlr_kb = device.toKeyboard();
-        if (!wlr_kb.setKeymap(keymap)) return error.SetKeymapFailed;
-        wlr_kb.setRepeatInfo(25, 600);
+        // The configured layout (raywm.input_configure), else the
+        // XKB_DEFAULT_* environment; a virtual keyboard's client sends its
+        // own keymap, this one only covers the time until it does.
+        dev.apply() catch {};
+        if (wlr_kb.keymap == null) {
+            const keymap = inputconfig.compileKeymap(.{}) orelse return error.XkbKeymapFailed;
+            defer keymap.unref();
+            if (!wlr_kb.setKeymap(keymap)) return error.SetKeymapFailed;
+        }
 
         wlr_kb.events.modifiers.add(&kb.modifiers);
         wlr_kb.events.key.add(&kb.key);
@@ -107,6 +112,10 @@ pub const Keyboard = struct {
         const kb: *Keyboard = @fieldParentPtr("modifiers", listener);
         kb.server.seat.setKeyboard(wlr_kb);
         kb.server.seat.keyboardNotifyModifiers(&wlr_kb.modifiers);
+        if (wlr_kb.modifiers.group != kb.group) {
+            kb.group = wlr_kb.modifiers.group;
+            kb.server.emitArgs(.keyboard_layout, 0, &.{.{ .int = kb.group + 1 }});
+        }
     }
 
     fn handleKey(listener: *wl.Listener(*wlr.Keyboard.event.Key), event: *wlr.Keyboard.event.Key) void {
@@ -267,12 +276,17 @@ pub fn newInput(listener: *wl.Listener(*wlr.InputDevice), device: *wlr.InputDevi
 }
 
 pub fn addDevice(server: *Server, device: *wlr.InputDevice) void {
+    const dev = inputconfig.Device.create(server, device) catch return std.log.err("out of memory", .{});
     switch (device.type) {
-        .keyboard => Keyboard.create(server, device) catch |err| std.log.err("keyboard setup failed: {}", .{err}),
-        .pointer => server.cursor.attachInputDevice(device),
+        .keyboard => Keyboard.create(server, device, dev) catch |err| std.log.err("keyboard setup failed: {}", .{err}),
+        .pointer => {
+            dev.apply() catch {};
+            server.cursor.attachInputDevice(device);
+        },
         else => {},
     }
     server.seat.setCapabilities(.{ .pointer = true, .keyboard = server.keyboards.length() > 0 });
+    server.emit(.input_add, dev.id);
 }
 
 pub fn requestCursor(listener: *wl.Listener(*wlr.Seat.event.RequestSetCursor), event: *wlr.Seat.event.RequestSetCursor) void {

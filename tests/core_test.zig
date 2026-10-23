@@ -153,3 +153,59 @@ test "RAYWM_OUTPUT_MODE specs parse and match the nearest mode" {
     try t.expectEqual(@as(?u32, null), srv.modeDistance(spec, 1920, 1080, 180000));
     try t.expectEqual(@as(?u32, null), srv.modeDistance(spec, 2560, 1440, 240000));
 }
+
+test "input settings: layers all < type < name, field by field; clear; checks" {
+    const ic = raywm.inputconfig;
+    var st: ic.Store = .{};
+    defer st.deinit();
+    try st.set(.all, .{ .repeat_rate = 30, .natural_scroll = false, .xkb_layout = "us" });
+    try st.set(.{ .kind = .pointer }, .{ .accel_speed = 0.5, .natural_scroll = true });
+    try st.set(.{ .kind = .touchpad }, .{ .tap = true });
+    try st.set(.{ .name = "My Mouse" }, .{ .accel_speed = -0.2 });
+    try st.set(.{ .kind = .keyboard }, .{ .xkb_layout = "de", .repeat_delay = 250 });
+
+    const kbd = st.effective(.keyboard, "AT keyboard");
+    try t.expectEqualStrings("de", kbd.xkb_layout.?);
+    try t.expectEqual(@as(?i32, 30), kbd.repeat_rate);
+    try t.expectEqual(@as(?i32, 250), kbd.repeat_delay);
+    try t.expectEqual(@as(?f64, null), kbd.accel_speed);
+
+    // A touchpad is a pointer too; names override types.
+    const pad = st.effective(.touchpad, "Touchpad");
+    try t.expectEqual(@as(?bool, true), pad.tap);
+    try t.expectEqual(@as(?bool, true), pad.natural_scroll);
+    try t.expectEqual(@as(?f64, 0.5), pad.accel_speed);
+    const mouse = st.effective(.pointer, "My Mouse");
+    try t.expectEqual(@as(?f64, -0.2), mouse.accel_speed);
+    try t.expectEqual(@as(?bool, null), mouse.tap);
+
+    // Setting a layer again merges into it (strings replaced, not leaked:
+    // the testing allocator is not used here, but deinit frees all).
+    try st.set(.all, .{ .xkb_layout = "fr" });
+    try t.expectEqualStrings("fr", st.effective(.touch, "").xkb_layout.?);
+    try t.expectEqual(@as(?i32, 30), st.effective(.touch, "").repeat_rate);
+
+    // A new configuration starts without any layer.
+    st.clear();
+    const fresh = st.effective(.touchpad, "Touchpad");
+    try t.expectEqual(@as(?bool, null), fresh.tap);
+    try t.expectEqual(@as(?[]const u8, null), fresh.xkb_layout);
+
+    try t.expectError(error.BadValue, st.set(.all, .{ .repeat_rate = 5000 }));
+    try t.expectError(error.BadValue, st.set(.all, .{ .accel_speed = 2 }));
+    try t.expectError(error.BadValue, st.set(.all, .{ .xkb_layout = "a\x00b" }));
+
+    try t.expect(ic.parseMatch("*").? == .all);
+    try t.expectEqual(ic.Kind.touchpad, ic.parseMatch("type:touchpad").?.kind);
+    try t.expectEqualStrings("SynPS/2 Synaptics TouchPad", ic.parseMatch("SynPS/2 Synaptics TouchPad").?.name);
+    try t.expect(ic.parseMatch("type:mouse") == null);
+    try t.expect(ic.parseMatch("") == null);
+}
+
+test "keymaps compile from the configured names; bad names do not" {
+    const ic = raywm.inputconfig;
+    const km = ic.compileKeymap(.{ .xkb_layout = "us,ru", .xkb_options = "grp:alt_shift_toggle" }) orelse return error.TestKeymap;
+    defer km.unref();
+    try t.expectEqual(@as(u32, 2), km.numLayouts());
+    try t.expect(ic.compileKeymap(.{ .xkb_layout = "nosuchlayout" }) == null);
+}

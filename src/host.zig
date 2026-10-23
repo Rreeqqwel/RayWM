@@ -8,6 +8,7 @@ const srv = @import("server.zig");
 const input = @import("input.zig");
 const ws = @import("workspace.zig");
 const output_mod = @import("output.zig");
+const inputconfig = @import("inputconfig.zig");
 const Server = srv.Server;
 
 pub const Runtime = lua.Runtime(Server);
@@ -313,6 +314,112 @@ fn eqlAny(s: []const u8, names: []const []const u8) bool {
 
 pub fn spawn(_: *Server, cmd: [*:0]const u8) void {
     srv.spawn(cmd);
+}
+
+// ---- input devices (see inputconfig.zig) ---------------------------------------
+
+/// A (re)load of the configuration starts: its input settings start afresh.
+pub fn configBegin(server: *Server) void {
+    server.input_store.clear();
+}
+
+/// The configuration has run: every device gets its settings.
+pub fn configEnd(server: *Server) void {
+    inputconfig.applyAll(server);
+}
+
+fn enumOf(comptime E: type, s: ?[]const u8) error{BadValue}!?E {
+    const v = s orelse return null;
+    return std.meta.stringToEnum(E, v) orelse error.BadValue;
+}
+
+pub fn inputConfigure(server: *Server, match: []const u8, in: lua.InputSettings, apply_now: bool) lua.InputResult {
+    const m = inputconfig.parseMatch(match) orelse return .bad_match;
+    var st: inputconfig.Settings = .{
+        .xkb_rules = in.xkb_rules,
+        .xkb_model = in.xkb_model,
+        .xkb_layout = in.xkb_layout,
+        .xkb_variant = in.xkb_variant,
+        .xkb_options = in.xkb_options,
+        .repeat_rate = in.repeat_rate,
+        .repeat_delay = in.repeat_delay,
+        .accel_speed = in.accel_speed,
+        .natural_scroll = in.natural_scroll,
+        .left_handed = in.left_handed,
+        .tap = in.tap,
+        .tap_drag = in.tap_drag,
+        .drag_lock = in.drag_lock,
+        .dwt = in.dwt,
+        .middle_emulation = in.middle_emulation,
+    };
+    st.accel_profile = enumOf(inputconfig.AccelProfile, in.accel_profile) catch return .bad_value;
+    st.scroll_method = enumOf(inputconfig.ScrollMethod, in.scroll_method) catch return .bad_value;
+    st.click_method = enumOf(inputconfig.ClickMethod, in.click_method) catch return .bad_value;
+    st.send_events = enumOf(inputconfig.SendEvents, in.send_events) catch return .bad_value;
+    if (in.scroll_button) |b| st.scroll_button = if (b >= 0) @intCast(b) else return .bad_value;
+    st.validate() catch return .bad_value;
+    // A layout that does not compile is refused before it is stored.
+    if (in.xkb_rules != null or in.xkb_model != null or in.xkb_layout != null or in.xkb_variant != null or in.xkb_options != null) {
+        const keymap = inputconfig.compileKeymap(st) orelse return .bad_keymap;
+        keymap.unref();
+    }
+    server.input_store.set(m, st) catch |err| return switch (err) {
+        error.BadValue => .bad_value,
+        else => .failed,
+    };
+    if (apply_now) {
+        var it = server.devices.iterator(.forward);
+        while (it.next()) |d| {
+            const hit = switch (m) {
+                .all => true,
+                .kind => |k| d.kind == k or (k == .pointer and d.kind == .touchpad),
+                .name => |n| std.mem.eql(u8, d.name(), n),
+            };
+            if (hit) d.apply() catch return .bad_keymap;
+        }
+    }
+    return .ok;
+}
+
+pub fn inputDevices(server: *Server, buf: []lua.DeviceInfo) []const lua.DeviceInfo {
+    var n: usize = 0;
+    var it = server.devices.iterator(.forward);
+    while (it.next()) |d| {
+        if (n == buf.len) break;
+        buf[n] = .{
+            .id = d.id,
+            .name = d.wlr_device.name orelse "",
+            .kind = @tagName(d.kind),
+            .virtual = d.isVirtual() or (d.wlr_device.type == .pointer and !d.wlr_device.isLibinput() and !d.wlr_device.isWl() and !d.wlr_device.isX11()),
+            .libinput = d.wlr_device.isLibinput(),
+        };
+        n += 1;
+    }
+    return buf[0..n];
+}
+
+pub fn keyboardLayout(server: *Server, names: [][*:0]const u8) ?lua.LayoutInfo {
+    const kb = server.seat.getKeyboard() orelse return null;
+    const keymap = kb.keymap orelse return null;
+    const count = @min(keymap.numLayouts(), names.len);
+    for (0..count) |i| names[i] = keymap.layoutGetName(@intCast(i)) orelse "?";
+    return .{ .active = kb.modifiers.group + 1, .names = names[0..count] };
+}
+
+/// Locks layout `index` (from 0) on every keyboard that has it.
+pub fn keyboardSetLayout(server: *Server, index: u32) bool {
+    var any = false;
+    var it = server.keyboards.iterator(.forward);
+    while (it.next()) |k| {
+        const kb = k.device.toKeyboard();
+        const keymap = kb.keymap orelse continue;
+        if (index >= keymap.numLayouts()) continue;
+        var mods = kb.modifiers;
+        mods.group = index;
+        kb.notifyModifiers(mods);
+        any = true;
+    }
+    return any;
 }
 
 /// raywm.locked(): the session is locked (ext-session-lock-v1).

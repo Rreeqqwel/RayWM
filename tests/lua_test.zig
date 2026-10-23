@@ -101,6 +101,25 @@ const Fake = struct {
         pub fn locked(_: *Fake) bool {
             return false;
         }
+        pub fn inputConfigure(f: *Fake, match: []const u8, st: lua.InputSettings, apply_now: bool) lua.InputResult {
+            if (std.mem.eql(u8, match, "bad")) return .bad_match;
+            var buf: [160]u8 = undefined;
+            const line = std.fmt.bufPrint(&buf, "input:{s}:{s}:{d}:{s}:{s}", .{ match, st.xkb_layout orelse "-", st.repeat_rate orelse -1, if (st.natural_scroll) |b| (if (b) "ns" else "nons") else "-", if (apply_now) "now" else "later" }) catch unreachable;
+            f.log.append(std.testing.allocator, std.testing.allocator.dupe(u8, line) catch unreachable) catch unreachable;
+            return .ok;
+        }
+        pub fn inputDevices(_: *Fake, buf: []lua.DeviceInfo) []const lua.DeviceInfo {
+            buf[0] = .{ .id = 40, .name = "kbd", .kind = "keyboard", .virtual = false, .libinput = true };
+            return buf[0..1];
+        }
+        pub fn keyboardLayout(_: *Fake, names: [][*:0]const u8) ?lua.LayoutInfo {
+            names[0] = "English (US)";
+            names[1] = "Russian";
+            return .{ .active = 2, .names = names[0..2] };
+        }
+        pub fn keyboardSetLayout(_: *Fake, index: u32) bool {
+            return index < 2;
+        }
         pub fn managedChanged(f: *Fake, _: u32) void {
             f.managed_changes += 1;
         }
@@ -648,6 +667,19 @@ test "v0.2.0 foundation: version, view metadata, event arguments, managed hook" 
     try t.expectEqual(1, f.count("modes:2:1920x1080@60000:true"));
     try t.expectEqual(1, f.count("modesstale:nil"));
     try t.expectEqual(1, f.count("outputs:1::true"));
+    // raywm.input_configure: deferred while init.lua runs, typos are errors.
+    try t.expectEqual(1, f.count("input:type:keyboard:us,ru:40:-:later"));
+    try t.expectEqual(1, f.count("input:type:touchpad:-:-1:ns:later"));
+    try t.expectEqual(1, f.count("inputtypo:false"));
+    try t.expectEqual(1, f.count("inputtype:false"));
+    try t.expectEqual(1, f.count("inputmatch:nil:bad_match"));
+    try t.expectEqual(1, f.count("devices:1:kbd:keyboard"));
+    try t.expectEqual(1, f.count("layout:2:English (US),Russian"));
+    try t.expectEqual(1, f.count("setlayout:true:nil"));
+    rt.emitArgs(.keyboard_layout, 0, &.{.{ .int = 2 }});
+    try t.expectEqual(1, f.count("layoutevent:2"));
+    rt.emit(.input_add, 40);
+    try t.expectEqual(1, f.count("input:*:-:-1:nons:now"));
 
     // Extra handler arguments arrive after the id, in order.
     rt.emitArgs(.view_state, 1, &.{ .{ .int = 5 }, .{ .boolean = true }, .nil });

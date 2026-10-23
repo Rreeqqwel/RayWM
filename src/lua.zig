@@ -48,6 +48,11 @@ pub const Event = enum {
     /// The session was locked / unlocked (ext-session-lock-v1); id 0.
     session_lock,
     session_unlock,
+    /// An input device was plugged in / removed (id of the device).
+    input_add,
+    input_remove,
+    /// The active keyboard layout changed: (0, index from 1).
+    keyboard_layout,
 };
 /// Extra handler arguments after the id (most events have none).
 pub const Arg = union(enum) { int: i64, boolean: bool, nil };
@@ -112,6 +117,33 @@ pub const OutputConfig = struct {
     adaptive_sync: ?bool = null,
 };
 pub const OutputTarget = union(enum) { id: u32, name: []const u8 };
+/// raywm.input_configure settings (see src/inputconfig.zig); strings are
+/// borrowed for the duration of the call.
+pub const InputSettings = struct {
+    xkb_rules: ?[]const u8 = null,
+    xkb_model: ?[]const u8 = null,
+    xkb_layout: ?[]const u8 = null,
+    xkb_variant: ?[]const u8 = null,
+    xkb_options: ?[]const u8 = null,
+    repeat_rate: ?i32 = null,
+    repeat_delay: ?i32 = null,
+    accel_profile: ?[]const u8 = null,
+    accel_speed: ?f64 = null,
+    natural_scroll: ?bool = null,
+    left_handed: ?bool = null,
+    tap: ?bool = null,
+    tap_drag: ?bool = null,
+    drag_lock: ?bool = null,
+    dwt: ?bool = null,
+    middle_emulation: ?bool = null,
+    scroll_method: ?[]const u8 = null,
+    scroll_button: ?i32 = null,
+    click_method: ?[]const u8 = null,
+    send_events: ?[]const u8 = null,
+};
+pub const InputResult = enum { ok, bad_match, bad_value, bad_keymap, failed };
+pub const DeviceInfo = struct { id: u32, name: [*:0]const u8, kind: [*:0]const u8, virtual: bool, libinput: bool };
+pub const LayoutInfo = struct { active: u32, names: []const [*:0]const u8 };
 pub const WorkspaceInfo = struct {
     name: [*:0]const u8,
     /// Name of the output it was created on.
@@ -311,6 +343,8 @@ pub fn Runtime(comptime H: type) type {
 
             if (!self.enter()) unreachable;
             self.in_config = true;
+            // Settings that belong to the configuration start afresh.
+            if (@hasDecl(Api, "configBegin")) Api.configBegin(self.host);
             const rc = c.luaL_loadfilex(L, self.config_path.ptr, null);
             if (rc != c.LUA_OK) {
                 const msg = str(L, -1, "?");
@@ -320,6 +354,7 @@ pub fn Runtime(comptime H: type) type {
             } else self.config_ok = self.pcall(null, 0, 0);
             self.in_config = false;
             self.leave();
+            if (@hasDecl(Api, "configEnd")) Api.configEnd(self.host);
             // Workspaces whose plugin did not come back are released.
             self.settleWorkspaces();
             if (self.first_load) self.runStartup();
@@ -740,6 +775,10 @@ pub fn Runtime(comptime H: type) type {
             .{ "spawn_once", lSpawnOnce },
             .{ "output_modes", lOutputModes },
             .{ "output_configure", lOutputConfigure },
+            .{ "input_configure", lInputConfigure },
+            .{ "input_devices", lInputDevices },
+            .{ "keyboard_layout", lKeyboardLayout },
+            .{ "keyboard_set_layout", lKeyboardSetLayout },
         };
 
         const ctx_fns = .{
@@ -895,6 +934,93 @@ pub fn Runtime(comptime H: type) type {
                 setBool(L, "current", m.current);
                 c.lua_rawseti(L, -2, @intCast(i));
             }
+            return 1;
+        }
+
+        /// raywm.input_configure(match, settings) -> true, or nil + reason.
+        /// match: "*", "type:keyboard" (pointer, touchpad, touch, tablet,
+        /// switch) or a device name. Unknown setting names are errors.
+        fn lInputConfigure(L: ?*c.lua_State) callconv(.c) c_int {
+            const self = get(L);
+            const match = std.mem.span(c.luaL_checklstring(L, 1, null));
+            c.luaL_checktype(L, 2, c.LUA_TTABLE);
+            var st: InputSettings = .{};
+            c.lua_pushnil(L);
+            while (c.lua_next(L, 2) != 0) {
+                defer c.lua_settop(L, -2); // keep the key for lua_next
+                if (c.lua_type(L, -2) != c.LUA_TSTRING) return c.luaL_error(L, "input settings are named");
+                const field = std.mem.span(c.lua_tolstring(L, -2, null));
+                var known = false;
+                inline for (std.meta.fields(InputSettings)) |f| if (std.mem.eql(u8, field, f.name)) {
+                    known = true;
+                    const T = @typeInfo(f.type).optional.child;
+                    @field(st, f.name) = switch (T) {
+                        []const u8 => if (c.lua_type(L, -1) == c.LUA_TSTRING) std.mem.span(c.lua_tolstring(L, -1, null)) else return c.luaL_error(L, "%s must be a string", f.name.ptr),
+                        bool => c.lua_toboolean(L, -1) != 0,
+                        i32 => if (c.lua_isinteger(L, -1) != 0) @intCast(std.math.clamp(c.lua_tointegerx(L, -1, null), -1, 1 << 20)) else return c.luaL_error(L, "%s must be an integer", f.name.ptr),
+                        f64 => if (c.lua_type(L, -1) == c.LUA_TNUMBER) c.lua_tonumberx(L, -1, null) else return c.luaL_error(L, "%s must be a number", f.name.ptr),
+                        else => unreachable,
+                    };
+                };
+                if (!known) return c.luaL_error(L, "unknown input setting '%s'", field.ptr);
+            }
+            // While init.lua runs, the settings are applied once it is done.
+            const r = Api.inputConfigure(self.host, match, st, !self.in_config);
+            if (r == .ok) {
+                c.lua_pushboolean(L, 1);
+                return 1;
+            }
+            c.lua_pushnil(L);
+            _ = c.lua_pushstring(L, @tagName(r));
+            return 2;
+        }
+
+        /// raywm.input_devices() -> { {id, name, type, virtual, libinput}, ... }
+        fn lInputDevices(L: ?*c.lua_State) callconv(.c) c_int {
+            var buf: [256]DeviceInfo = undefined;
+            const devs = Api.inputDevices(get(L).host, &buf);
+            c.lua_createtable(L, @intCast(devs.len), 0);
+            for (devs, 1..) |d, i| {
+                c.lua_createtable(L, 0, 5);
+                setInt(L, "id", d.id);
+                setStr(L, "name", d.name);
+                setStr(L, "type", d.kind);
+                setBool(L, "virtual", d.virtual);
+                setBool(L, "libinput", d.libinput);
+                c.lua_rawseti(L, -2, @intCast(i));
+            }
+            return 1;
+        }
+
+        /// raywm.keyboard_layout() -> { active = n, names = {...} } (from 1),
+        /// or nil when there is no keyboard.
+        fn lKeyboardLayout(L: ?*c.lua_State) callconv(.c) c_int {
+            var names: [32][*:0]const u8 = undefined;
+            const info = Api.keyboardLayout(get(L).host, &names) orelse {
+                c.lua_pushnil(L);
+                return 1;
+            };
+            c.lua_createtable(L, 0, 2);
+            setInt(L, "active", info.active);
+            c.lua_createtable(L, @intCast(info.names.len), 0);
+            for (info.names, 1..) |n, i| {
+                _ = c.lua_pushstring(L, n);
+                c.lua_rawseti(L, -2, @intCast(i));
+            }
+            c.lua_setfield(L, -2, "names");
+            return 1;
+        }
+
+        /// raywm.keyboard_set_layout(n): makes layout n (from 1) active on
+        /// every keyboard. Returns true, or nil + "no_layout".
+        fn lKeyboardSetLayout(L: ?*c.lua_State) callconv(.c) c_int {
+            const n = c.luaL_checkinteger(L, 1);
+            if (n < 1 or n > 32 or !Api.keyboardSetLayout(get(L).host, @intCast(n - 1))) {
+                c.lua_pushnil(L);
+                _ = c.lua_pushstring(L, "no_layout");
+                return 2;
+            }
+            c.lua_pushboolean(L, 1);
             return 1;
         }
 

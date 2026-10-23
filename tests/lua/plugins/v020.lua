@@ -13,6 +13,22 @@ return {
     raywm.spawn("fsdefault:" .. tostring(raywm.view_fullscreen(1, true)))
     raywm.spawn("max:" .. tostring(raywm.view_maximize(1, true)))
     raywm.spawn("badfs:" .. tostring((pcall(raywm.view_fullscreen, 1, true, "x"))))
+    -- Input settings (during setup: applied once init.lua is done).
+    raywm.input_configure("type:keyboard", { xkb_layout = "us,ru", repeat_rate = 40 })
+    raywm.input_configure("type:touchpad", { natural_scroll = true, tap = true, accel_profile = "flat" })
+    raywm.spawn("inputtypo:" .. tostring((pcall(raywm.input_configure, "*", { natual_scroll = true }))))
+    raywm.spawn("inputtype:" .. tostring((pcall(raywm.input_configure, "*", { repeat_rate = "fast" }))))
+    local iok, iwhy = raywm.input_configure("bad", { tap = true })
+    raywm.spawn("inputmatch:" .. tostring(iok) .. ":" .. tostring(iwhy))
+    local devs = raywm.input_devices()
+    raywm.spawn(("devices:%d:%s:%s"):format(#devs, devs[1].name, devs[1].type))
+    local kl = raywm.keyboard_layout()
+    raywm.spawn(("layout:%d:%s"):format(kl.active, table.concat(kl.names, ",")))
+    raywm.spawn("setlayout:" .. tostring(raywm.keyboard_set_layout(1)) .. ":" .. tostring((raywm.keyboard_set_layout(3))))
+    ctx.on("keyboard_layout", function(_, n) raywm.spawn("layoutevent:" .. n) end)
+    ctx.on("input_add", function(id)
+      raywm.input_configure("*", { natural_scroll = false }) -- outside init.lua: at once
+    end)
     -- Outputs (configuration through the host; the fake logs it).
     raywm.output_configure("FAKE-1", { mode = "2560x1440@143.97", scale = 1.5, transform = "90", position = { 10, 20 } })
     raywm.output_configure(1, { mode = { w = 1920, h = 1080, refresh = 60 }, position = "auto" })
