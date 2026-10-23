@@ -14,6 +14,7 @@ const Fake = struct {
     /// Host hooks of v0.2.0: managed-state changes, last view command.
     managed_changes: usize = 0,
     last_cmd: ?std.meta.Tag(lua.ViewCmd) = null,
+    last_decoration: ?lua.Decoration = null,
     fs_outputs: [4]u32 = @splat(99),
     n_fs: usize = 0,
     /// A tiny workspace registry with the core's ownership rules.
@@ -35,11 +36,12 @@ const Fake = struct {
         }
         pub fn view(_: *Fake, id: u32) ?lua.ViewInfo {
             if (id != 1) return null;
-            return .{ .box = .{ .x = 0, .y = 0, .w = 640, .h = 480 }, .title = "term", .app_id = "foot", .focused = true, .output = 1 };
+            return .{ .box = .{ .x = 0, .y = 0, .w = 640, .h = 480 }, .title = "term", .app_id = "foot", .focused = true, .output = 1, .decoration = "server" };
         }
         pub fn viewCmd(f: *Fake, id: u32, cmd: lua.ViewCmd) bool {
             if (id != 1) return false;
             f.last_cmd = cmd;
+            if (cmd == .decoration) f.last_decoration = cmd.decoration;
             if (cmd == .fullscreen and f.n_fs < f.fs_outputs.len) {
                 f.fs_outputs[f.n_fs] = cmd.fullscreen.output;
                 f.n_fs += 1;
@@ -700,6 +702,33 @@ test "v0.2.0 foundation: version, view metadata, event arguments, managed hook" 
     rt.requestReload();
     try t.expect(f.managed_changes > mid);
     try t.expect(!rt.managed(1));
+    try t.expectEqual(0, takeErrors());
+}
+
+test "v0.2.0 window states: minimize, urgency, decorations, activation and minimize requests" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/shell.lua", opts);
+    defer rt.destroy();
+    const t = std.testing;
+    try t.expectEqual(0, takeErrors());
+    try t.expectEqual(1, f.count("shellmeta:false:false:server"));
+    try t.expectEqual(1, f.count("min:true"));
+    try t.expectEqual(1, f.count("minstale:nil"));
+    try t.expectEqual(1, f.count("urgent:true"));
+    try t.expectEqual(1, f.count("deco:true"));
+    try t.expectEqual(1, f.count("decostale:nil"));
+    // Unknown and missing modes are argument errors naming the choices.
+    try t.expectEqual(1, f.count("decobad:false:true"));
+    try t.expectEqual(1, f.count("deconil:false"));
+    try t.expectEqual(lua.Decoration.client, f.last_decoration.?);
+    // Requests carry their arguments after the id.
+    rt.emitArgs(.view_request_activate, 1, &.{.{ .boolean = true }});
+    rt.emitArgs(.view_request_activate, 1, &.{.{ .boolean = false }});
+    try t.expectEqual(1, f.count("activate:1:true"));
+    try t.expectEqual(1, f.count("activate:1:false"));
+    rt.emit(.view_request_minimize, 1);
+    try t.expectEqual(1, f.count("minreq:1:nil"));
     try t.expectEqual(0, takeErrors());
 }
 

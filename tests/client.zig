@@ -10,16 +10,19 @@ const xdg = wayland.client.xdg;
 const zwlr = wayland.client.zwlr;
 const zwp = wayland.client.zwp;
 const wp = wayland.client.wp;
+const zxdg = wayland.client.zxdg;
 
 /// Optional protocols (bound when the compositor has them), used by the
-/// RAYWM_TEST_SINGLE_PIXEL, _FRACTIONAL, _PRESENTATION and _CURSOR_SHAPE
-/// modes.
+/// RAYWM_TEST_SINGLE_PIXEL, _FRACTIONAL, _PRESENTATION, _CURSOR_SHAPE,
+/// _DECORATION and activation modes.
 const Extras = struct {
     viewporter: ?*wp.Viewporter = null,
     single_pixel: ?*wp.SinglePixelBufferManagerV1 = null,
     fractional: ?*wp.FractionalScaleManagerV1 = null,
     presentation: ?*wp.Presentation = null,
     cursor_shape: ?*wp.CursorShapeManagerV1 = null,
+    decoration: ?*zxdg.DecorationManagerV1 = null,
+    activation: ?*xdg.ActivationV1 = null,
     /// Viewport of the window's surface (single-pixel mode).
     viewport: ?*wp.Viewport = null,
 };
@@ -68,8 +71,11 @@ const SeatUse = struct {
     /// Surface under the pointer, as last reported by wl_pointer.enter.
     ptr_on: ?*wl.Surface = null,
     /// The window's state, for RAYWM_TEST_REQUEST_KEYS (F9/F10 toggle
-    /// fullscreen/maximized requests).
+    /// fullscreen/maximized requests, F8 asks to be minimized).
     state: ?*State = null,
+    /// RAYWM_TEST_TOKEN_TO: serial of the F7 press that asks for an
+    /// activation token; requested by the main loop.
+    token_request: ?u32 = null,
 
     /// What a pointer event's surface is, for the log.
     fn kind(use: *SeatUse, surface: ?*wl.Surface) []const u8 {
@@ -96,6 +102,10 @@ const State = struct {
     /// Last fullscreen/maximized states received (logged on change).
     fullscreen: bool = false,
     maximized: bool = false,
+    /// xdg-shell v6/v2/v7 states (logged on change).
+    suspended: bool = false,
+    tiled: bool = false,
+    constrained: bool = false,
     /// Prefix of logged state changes ("" for the window, "child " ...).
     who: []const u8 = "",
     /// The compositor asked to close the window (RAYWM_TEST_CLOSE honours it).
@@ -158,6 +168,17 @@ pub fn main() !void {
         if (std.c.getenv("RAYWM_TEST_MAXIMIZED") != null) toplevel.setMaximized();
         if (sizeEnv("RAYWM_TEST_MIN")) |m| toplevel.setMinSize(m[0], m[1]);
         if (sizeEnv("RAYWM_TEST_MAX")) |m| toplevel.setMaxSize(m[0], m[1]);
+        // RAYWM_TEST_DECORATION=server|client|unset: an xdg-decoration
+        // object asking for that mode (unset: no preference).
+        var decoration: ?*zxdg.ToplevelDecorationV1 = null;
+        defer if (decoration) |d| d.destroy();
+        if (std.c.getenv("RAYWM_TEST_DECORATION")) |v| {
+            const d = try (extras.decoration orelse return error.NoDecorationManager).getToplevelDecoration(toplevel);
+            d.setListener(?*anyopaque, decorationListener, null);
+            const mode = std.mem.span(v);
+            if (std.mem.eql(u8, mode, "server")) d.setMode(.server_side) else if (std.mem.eql(u8, mode, "client")) d.setMode(.client_side);
+            decoration = d;
+        }
         surface.attach(null, 0, 0);
         surface.commit();
 
@@ -230,13 +251,20 @@ pub fn main() !void {
                     use.popup = &popup_test;
                     step("grabbing popup mapped", .{});
                 }
+                if (use.token_request) |serial| {
+                    use.token_request = null;
+                    try requestToken(surface, .{ .seat = use.seat, .serial = serial }, .{ .write_to = std.c.getenv("RAYWM_TEST_TOKEN_TO").? });
+                }
+                try pollActivation(surface);
                 if (state.close_requested and std.c.getenv("RAYWM_TEST_CLOSE") != null) {
                     step("closing", .{});
                     return;
                 }
                 // A configure may already have arrived while waiting above.
                 if (!state.configured and !(child.toplevel != null and child.state.configured)) {
-                    if (display.dispatch() != .SUCCESS) break;
+                    if (activationFiles()) {
+                        dispatchTimeout(display, 50) catch break;
+                    } else if (display.dispatch() != .SUCCESS) break;
                     continue;
                 }
                 if (!state.configured) continue;
@@ -298,9 +326,19 @@ fn panel(display: *wl.Display, shm: *wl.Shm, compositor: *wl.Compositor, layer_s
     const overlay = if (std.c.getenv("RAYWM_TEST_LAYER_LEVEL")) |l| std.mem.eql(u8, std.mem.span(l), "overlay") else false;
     const layer = try layer_shell.getLayerSurface(surface, null, if (overlay) .overlay else .top, "raywm-test-panel");
     layer.setListener(*State, layerListener, &state);
-    layer.setAnchor(.{ .top = !overlay, .bottom = overlay, .left = true, .right = true });
-    layer.setSize(0, 30);
-    if (!overlay) layer.setExclusiveZone(30);
+    if (std.c.getenv("RAYWM_TEST_LAYER_EDGE") != null) {
+        // A 30x200 panel in the top-left corner whose exclusive zone is on
+        // the left edge (layer-shell v5: a corner alone names no edge).
+        if (layer_shell.getVersion() < 5) return error.NoLayerShellV5;
+        layer.setAnchor(.{ .top = true, .left = true });
+        layer.setSize(30, 200);
+        layer.setExclusiveZone(30);
+        layer.setExclusiveEdge(.{ .left = true });
+    } else {
+        layer.setAnchor(.{ .top = !overlay, .bottom = overlay, .left = true, .right = true });
+        layer.setSize(0, 30);
+        if (!overlay) layer.setExclusiveZone(30);
+    }
     // RAYWM_TEST_LAYER_KBD: a launcher-like panel that grabs the keyboard
     // (=on_demand: one that takes it only when chosen).
     if (std.c.getenv("RAYWM_TEST_LAYER_KBD")) |k|
@@ -532,8 +570,14 @@ fn keyboardListener(_: *wl.Keyboard, event: wl.Keyboard.Event, use: *SeatUse) vo
                 } else if (k.key == 68) {
                     if (st.maximized) t.unsetMaximized() else t.setMaximized();
                     step("maximize requested {s}", .{if (st.maximized) "off" else "on"});
+                } else if (k.key == 66) {
+                    t.setMinimized();
+                    step("minimize requested", .{});
                 }
             };
+            // RAYWM_TEST_TOKEN_TO: F7 asks for an activation token for this
+            // key press (as a terminal does when a link is clicked).
+            if (k.state == .pressed and k.key == 65 and std.c.getenv("RAYWM_TEST_TOKEN_TO") != null) use.token_request = k.serial;
             if (use.layer) |layer| if (k.key == 87 and k.state == .pressed) {
                 layer.setKeyboardInteractivity(.none);
                 use.surface.commit();
@@ -609,7 +653,13 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, g: *Global
             } else if (std.mem.eql(u8, name, std.mem.span(wl.Shm.interface.name))) {
                 g.shm = registry.bind(global.name, wl.Shm, 1) catch return;
             } else if (std.mem.eql(u8, name, std.mem.span(xdg.WmBase.interface.name))) {
-                g.wm_base = registry.bind(global.name, xdg.WmBase, 2) catch return;
+                // RAYWM_TEST_XDG_VERSION=N: bind version N (default 2).
+                const want: u32 = if (std.c.getenv("RAYWM_TEST_XDG_VERSION")) |v| std.fmt.parseInt(u32, std.mem.span(v), 10) catch 2 else 2;
+                g.wm_base = registry.bind(global.name, xdg.WmBase, @min(global.version, want)) catch return;
+            } else if (std.mem.eql(u8, name, std.mem.span(zxdg.DecorationManagerV1.interface.name))) {
+                extras.decoration = registry.bind(global.name, zxdg.DecorationManagerV1, 1) catch return;
+            } else if (std.mem.eql(u8, name, std.mem.span(xdg.ActivationV1.interface.name))) {
+                extras.activation = registry.bind(global.name, xdg.ActivationV1, 1) catch return;
             } else if (std.mem.eql(u8, name, std.mem.span(wl.Subcompositor.interface.name))) {
                 g.subcompositor = registry.bind(global.name, wl.Subcompositor, 1) catch return;
             } else if (std.mem.eql(u8, name, std.mem.span(wl.Seat.interface.name))) {
@@ -618,7 +668,9 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, g: *Global
                 seat.setListener(*Globals, seatListener, g);
                 g.seat = seat;
             } else if (std.mem.eql(u8, name, std.mem.span(zwlr.LayerShellV1.interface.name))) {
-                g.layer_shell = registry.bind(global.name, zwlr.LayerShellV1, 4) catch return;
+                // RAYWM_TEST_LAYER_EDGE needs v5 (set_exclusive_edge).
+                const want: u32 = if (std.c.getenv("RAYWM_TEST_LAYER_EDGE") != null) 5 else 4;
+                g.layer_shell = registry.bind(global.name, zwlr.LayerShellV1, @min(global.version, want)) catch return;
             } else if (std.mem.eql(u8, name, std.mem.span(wp.Viewporter.interface.name))) {
                 extras.viewporter = registry.bind(global.name, wp.Viewporter, 1) catch return;
             } else if (std.mem.eql(u8, name, std.mem.span(wp.SinglePixelBufferManagerV1.interface.name))) {
@@ -669,17 +721,40 @@ fn toplevelListener(_: *xdg.Toplevel, event: xdg.Toplevel.Event, state: *State) 
             var active = false;
             var fullscreen = false;
             var maximized = false;
+            var suspended = false;
+            var tiled = false;
+            var constrained = false;
+            const S = xdg.Toplevel.State;
             for (c.states.slice(u32)) |st| {
-                active = active or st == @intFromEnum(xdg.Toplevel.State.activated);
-                fullscreen = fullscreen or st == @intFromEnum(xdg.Toplevel.State.fullscreen);
-                maximized = maximized or st == @intFromEnum(xdg.Toplevel.State.maximized);
+                active = active or st == @intFromEnum(S.activated);
+                fullscreen = fullscreen or st == @intFromEnum(S.fullscreen);
+                maximized = maximized or st == @intFromEnum(S.maximized);
+                suspended = suspended or st == @intFromEnum(S.suspended);
+                tiled = tiled or (st >= @intFromEnum(S.tiled_left) and st <= @intFromEnum(S.tiled_bottom));
+                constrained = constrained or (st >= @intFromEnum(S.constrained_left) and st <= @intFromEnum(S.constrained_bottom));
             }
             if (active != state.activated) step("{s}{s}", .{ state.who, if (active) "activated" else "deactivated" });
             if (fullscreen != state.fullscreen) step("{s}fullscreen {s} {d}x{d}", .{ state.who, if (fullscreen) "on" else "off", c.width, c.height });
             if (maximized != state.maximized) step("{s}maximized {s} {d}x{d}", .{ state.who, if (maximized) "on" else "off", c.width, c.height });
+            if (suspended != state.suspended) step("{s}suspended {s}", .{ state.who, if (suspended) "on" else "off" });
+            if (tiled != state.tiled) step("{s}tiled {s}", .{ state.who, if (tiled) "on" else "off" });
+            if (constrained != state.constrained) step("{s}constrained {s}", .{ state.who, if (constrained) "on" else "off" });
             state.activated = active;
             state.fullscreen = fullscreen;
             state.maximized = maximized;
+            state.suspended = suspended;
+            state.tiled = tiled;
+            state.constrained = constrained;
+        },
+        .configure_bounds => |b| step("{s}bounds {d}x{d}", .{ state.who, b.width, b.height }),
+        .wm_capabilities => |c| {
+            var buf: [128]u8 = undefined;
+            var w: std.Io.Writer = .fixed(&buf);
+            for (c.capabilities.slice(u32)) |cap| {
+                const name = std.enums.tagName(xdg.Toplevel.WmCapabilities, @enumFromInt(cap)) orelse "?";
+                w.print(" {s}", .{name}) catch {};
+            }
+            step("{s}capabilities{s}", .{ state.who, w.buffered() });
         },
         .close => {
             step("close requested", .{});
@@ -740,6 +815,122 @@ const Child = struct {
         c.buffer = next;
     }
 };
+
+fn decorationListener(_: *zxdg.ToplevelDecorationV1, event: zxdg.ToplevelDecorationV1.Event, _: ?*anyopaque) void {
+    switch (event) {
+        .configure => |c| step("decoration {s}", .{@tagName(c.mode)}),
+    }
+}
+
+// ---- xdg-activation --------------------------------------------------------
+//
+// RAYWM_TEST_TOKEN_TO=<file>: F7 (keyboard, with RAYWM_TEST_KBD) gets a
+//   token for that key press and this surface, and writes it to <file>.
+// RAYWM_TEST_ACTIVATE_FROM=<file>: once <file> exists, reads a token from it
+//   (and deletes it) and asks to activate this window with it.
+// RAYWM_TEST_ACTIVATE_SELF=<file>: once <file> exists (and is deleted),
+//   gets a token without any input event and activates this window with it.
+
+const TokenUse = union(enum) { write_to: [*:0]const u8, activate: *wl.Surface };
+var token_use: TokenUse = undefined;
+var token_pending = false;
+
+fn requestToken(surface: *wl.Surface, input: ?struct { seat: *wl.Seat, serial: u32 }, use: TokenUse) !void {
+    const act = extras.activation orelse return error.NoActivation;
+    const token = try act.getActivationToken();
+    token.setListener(?*anyopaque, tokenListener, null);
+    if (input) |i| {
+        token.setSerial(i.serial, i.seat);
+        token.setSurface(surface);
+    }
+    token.commit();
+    token_use = use;
+    token_pending = true;
+    step("token requested{s}", .{if (input != null) " (input)" else ""});
+}
+
+fn tokenListener(token: *xdg.ActivationTokenV1, event: xdg.ActivationTokenV1.Event, _: ?*anyopaque) void {
+    switch (event) {
+        .done => |d| {
+            token_pending = false;
+            token.destroy();
+            const name = std.mem.span(d.token);
+            switch (token_use) {
+                .write_to => |path| {
+                    writeFile(path, name) catch return step("token not written", .{});
+                    step("token written", .{});
+                },
+                .activate => |surface| {
+                    extras.activation.?.activate(d.token, surface);
+                    step("activate sent", .{});
+                },
+            }
+        },
+    }
+}
+
+/// Whether the hold loop must wake up to look for activation files.
+fn activationFiles() bool {
+    return std.c.getenv("RAYWM_TEST_ACTIVATE_FROM") != null or std.c.getenv("RAYWM_TEST_ACTIVATE_SELF") != null;
+}
+
+fn pollActivation(surface: *wl.Surface) !void {
+    if (token_pending) return;
+    if (std.c.getenv("RAYWM_TEST_ACTIVATE_FROM")) |path| {
+        var buf: [256]u8 = undefined;
+        if (readFile(path, &buf)) |name| {
+            _ = std.c.unlink(path);
+            var z: [257]u8 = undefined;
+            @memcpy(z[0..name.len], name);
+            z[name.len] = 0;
+            (extras.activation orelse return error.NoActivation).activate(z[0..name.len :0], surface);
+            step("activate sent", .{});
+        }
+    }
+    if (std.c.getenv("RAYWM_TEST_ACTIVATE_SELF")) |path| {
+        if (std.c.access(path, 0) == 0) {
+            _ = std.c.unlink(path);
+            try requestToken(surface, null, .{ .activate = surface });
+        }
+    }
+}
+
+fn readFile(path: [*:0]const u8, buf: []u8) ?[]const u8 {
+    const fd = std.c.open(path, .{ .ACCMODE = .RDONLY });
+    if (fd < 0) return null;
+    defer _ = std.c.close(fd);
+    const n = std.c.read(fd, buf.ptr, buf.len);
+    if (n <= 0) return null;
+    return std.mem.trimEnd(u8, buf[0..@intCast(n)], "\n");
+}
+
+/// Written to <path>.tmp and renamed, so a reader never sees half a token.
+fn writeFile(path: [*:0]const u8, data: []const u8) !void {
+    var tmp_buf: [512]u8 = undefined;
+    const tmp = try std.fmt.bufPrintZ(&tmp_buf, "{s}.tmp", .{std.mem.span(path)});
+    const fd = std.c.open(tmp, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, @as(std.c.mode_t, 0o600));
+    if (fd < 0) return error.OpenFailed;
+    defer _ = std.c.close(fd);
+    if (std.c.write(fd, data.ptr, data.len) != @as(isize, @intCast(data.len))) return error.WriteFailed;
+    if (std.c.rename(tmp, path) != 0) return error.RenameFailed;
+}
+
+/// One dispatch that gives up after `ms` without events.
+fn dispatchTimeout(display: *wl.Display, ms: i32) !void {
+    if (display.dispatchPending() != .SUCCESS) return error.DispatchFailed;
+    while (!display.prepareRead()) {
+        if (display.dispatchPending() != .SUCCESS) return error.DispatchFailed;
+    }
+    _ = display.flush();
+    var fds = [_]posix.pollfd{.{ .fd = display.getFd(), .events = posix.POLL.IN, .revents = 0 }};
+    const n = posix.poll(&fds, ms) catch {
+        display.cancelRead();
+        return error.PollFailed;
+    };
+    if (n == 0) return display.cancelRead();
+    if (display.readEvents() != .SUCCESS) return error.ReadFailed;
+    if (display.dispatchPending() != .SUCCESS) return error.DispatchFailed;
+}
 
 fn fractionalListener(_: *wp.FractionalScaleV1, event: wp.FractionalScaleV1.Event, _: ?*anyopaque) void {
     switch (event) {

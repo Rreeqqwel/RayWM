@@ -42,6 +42,8 @@ pub const View = struct {
         xdg: *wlr.XdgToplevel,
     };
 
+    pub const DecorationPref = enum { auto, server, client };
+
     tag: srv.Tag = .view,
     server: *Server,
     impl: Impl,
@@ -94,6 +96,13 @@ pub const View = struct {
     workspace: ?*Workspace = null,
     /// Wants attention (e.g. activation requested while hidden).
     urgent: bool = false,
+    /// Minimized: hidden until restored (raywm.view_minimize, taskbars).
+    minimized: bool = false,
+    /// xdg-decoration object of the client, if it made one.
+    decoration: ?*wlr.XdgToplevelDecorationV1 = null,
+    /// Decoration mode plugins ask for; auto: what the client prefers
+    /// (server-side when it has no preference).
+    decoration_pref: DecorationPref = .auto,
 
     commit: wl.Listener(*wlr.Surface) = .init(handleCommit),
     map: wl.Listener(void) = .init(handleMap),
@@ -105,6 +114,10 @@ pub const View = struct {
     request_fullscreen: wl.Listener(void) = .init(handleRequestFullscreen),
     set_title: wl.Listener(void) = .init(handleSetTitle),
     set_app_id: wl.Listener(void) = .init(handleSetAppId),
+    set_parent: wl.Listener(void) = .init(handleSetParent),
+    request_minimize: wl.Listener(void) = .init(handleRequestMinimize),
+    deco_request_mode: wl.Listener(*wlr.XdgToplevelDecorationV1) = .init(handleDecorationRequest),
+    deco_destroy: wl.Listener(*wlr.XdgToplevelDecorationV1) = .init(handleDecorationDestroy),
 
     pub fn create(listener: *wl.Listener(*wlr.XdgToplevel), xdg: *wlr.XdgToplevel) void {
         const server: *Server = @fieldParentPtr("new_toplevel", listener);
@@ -141,6 +154,22 @@ pub const View = struct {
         xdg.events.request_fullscreen.add(&view.request_fullscreen);
         xdg.events.set_title.add(&view.set_title);
         xdg.events.set_app_id.add(&view.set_app_id);
+        xdg.events.set_parent.add(&view.set_parent);
+        xdg.events.request_minimize.add(&view.request_minimize);
+    }
+
+    /// The view of a toplevel's (or its subsurface's) wl_surface, if any.
+    pub fn fromWlrSurface(wlr_surface: *wlr.Surface) ?*View {
+        const root = wlr_surface.getRootSurface();
+        const xs = wlr.XdgSurface.tryFromWlrSurface(root) orelse return null;
+        if (xs.role != .toplevel) return null;
+        const tree = Popup.treeOf(xs) orelse return null;
+        return fromNode(&tree.node);
+    }
+
+    pub fn fromXdgToplevel(t: *wlr.XdgToplevel) ?*View {
+        const tree = Popup.treeOf(t.base) orelse return null;
+        return fromNode(&tree.node);
     }
 
     /// Finds the view owning a scene node (e.g. a surface buffer or popup).
@@ -251,6 +280,26 @@ pub const View = struct {
         }
     }
 
+    /// Compared with what wlroots last scheduled (kept across an unmap),
+    /// so a configure is only sent on a change.
+    fn setSuspendedState(view: *View, on: bool) void {
+        switch (view.impl) {
+            .xdg => |t| if (t.scheduled.suspended != on) {
+                _ = cabi.call(on, wlr.XdgToplevel.setSuspended, .{t});
+            },
+        }
+    }
+
+    fn setTiledState(view: *View, on: bool) void {
+        const edges: wlr.Edges = if (on) .{ .top = true, .bottom = true, .left = true, .right = true } else .{};
+        switch (view.impl) {
+            .xdg => |t| if (@as(u32, @bitCast(t.scheduled.tiled)) != @as(u32, @bitCast(edges))) {
+                _ = t.setTiled(edges);
+                _ = t.setConstrained(edges);
+            },
+        }
+    }
+
     /// Answers a client request that changed nothing (xdg-shell requires a
     /// configure in reply once the surface is initialized).
     fn ackRequest(view: *View) void {
@@ -352,7 +401,7 @@ pub const View = struct {
     /// yet, see `revealed`.) Windows of a workspace that is not shown are
     /// hidden, whatever plugins ask (raywm.view_show).
     pub fn visible(view: *View) bool {
-        if (!view.mapped or view.hidden) return false;
+        if (!view.mapped or view.hidden or view.minimized) return false;
         const ws = view.workspace orelse return true;
         return ws.isActive();
     }
@@ -363,6 +412,10 @@ pub const View = struct {
         if (old == ws) return;
         if (ws) |w| if (w.output) |to| if (view.output()) |from| if (from != to) view.moveToOutput(from, to);
         view.workspace = ws;
+        if (view.urgent) {
+            if (old) |w| w.updateUrgent();
+            if (ws) |w| w.updateUrgent();
+        }
         view.updateVisibility();
         view.server.afterVisibilityChange();
         if (view.announced) view.server.emitArgs(.view_workspace, view.id, &.{ .{ .int = if (ws) |w| w.id else 0 }, .{ .int = if (old) |w| w.id else 0 } });
@@ -398,6 +451,74 @@ pub const View = struct {
     pub fn updateVisibility(view: *View) void {
         cabi.call(view.visible() and view.revealed, wlr.SceneNode.setEnabled, .{&view.tree.node});
         view.server.updateIdleInhibit();
+        // xdg-shell v6: a hidden window may stop drawing.
+        if (view.mapped) view.setSuspendedState(!view.visible());
+    }
+
+    pub fn setMinimized(view: *View, on: bool) void {
+        if (view.minimized == on) return;
+        view.minimized = on;
+        view.updateVisibility();
+        view.server.afterVisibilityChange();
+        view.stateChanged();
+    }
+
+    pub fn setUrgent(view: *View, on: bool) void {
+        if (view.urgent == on) return;
+        view.urgent = on;
+        if (view.workspace) |w| w.updateUrgent();
+        view.stateChanged();
+    }
+
+    // ---- decorations (xdg-decoration) -----------------------------------------
+
+    pub fn setDecorationPref(view: *View, pref: DecorationPref) void {
+        view.decoration_pref = pref;
+        view.applyDecoration();
+    }
+
+    /// Plugins' choice, else the client's, else server-side. Only once the
+    /// surface is initialized (wlroots asserts it).
+    fn applyDecoration(view: *View) void {
+        const deco = view.decoration orelse return;
+        if (!deco.toplevel.base.initialized) return;
+        const mode: wlr.XdgToplevelDecorationV1.Mode = switch (view.decoration_pref) {
+            .server => .server_side,
+            .client => .client_side,
+            .auto => if (deco.requested_mode == .none) .server_side else deco.requested_mode,
+        };
+        if (deco.scheduled_mode != mode) _ = deco.setMode(mode);
+    }
+
+    pub fn decorationMode(view: *View) ?wlr.XdgToplevelDecorationV1.Mode {
+        const deco = view.decoration orelse return null;
+        return if (deco.scheduled_mode == .none) deco.current.mode else deco.scheduled_mode;
+    }
+
+    /// From protocols.zig: the client made a decoration object.
+    pub fn attachDecoration(view: *View, deco: *wlr.XdgToplevelDecorationV1) void {
+        if (view.decoration != null) return;
+        view.decoration = deco;
+        deco.events.request_mode.add(&view.deco_request_mode);
+        deco.events.destroy.add(&view.deco_destroy);
+        view.applyDecoration();
+    }
+
+    fn handleDecorationRequest(listener: *wl.Listener(*wlr.XdgToplevelDecorationV1), _: *wlr.XdgToplevelDecorationV1) void {
+        const view: *View = @fieldParentPtr("deco_request_mode", listener);
+        view.applyDecoration();
+    }
+
+    fn handleDecorationDestroy(listener: *wl.Listener(*wlr.XdgToplevelDecorationV1), _: *wlr.XdgToplevelDecorationV1) void {
+        const view: *View = @fieldParentPtr("deco_destroy", listener);
+        view.detachDecoration();
+    }
+
+    fn detachDecoration(view: *View) void {
+        if (view.decoration == null) return;
+        view.deco_request_mode.link.remove();
+        view.deco_destroy.link.remove();
+        view.decoration = null;
     }
 
     pub fn setHidden(view: *View, hidden: bool) void {
@@ -418,10 +539,18 @@ pub const View = struct {
         const want: srv.Layer = if (view.isFullscreen() or view.fullscreenAncestor() != null)
             .fullscreen
         else if (view.managed()) .tiled else .floating;
-        if (want == view.layer) return;
-        view.layer = want;
-        // Lands on top of the new layer.
-        view.tree.node.reparent(view.server.layer(want));
+        if (want != view.layer) {
+            view.layer = want;
+            // Lands on top of the new layer.
+            view.tree.node.reparent(view.server.layer(want));
+        }
+        view.applyTiledState();
+    }
+
+    /// Tiled windows are told so (xdg-shell tiled and v7 constrained
+    /// edges): clients then drop shadows and resize handles.
+    fn applyTiledState(view: *View) void {
+        if (view.mapped) view.setTiledState(view.layer == .tiled);
     }
 
     /// Top of its layer, with its dialogs above it (they would be out of
@@ -762,6 +891,11 @@ pub const View = struct {
         const server = view.server;
         switch (view.impl) {
             .xdg => |t| {
+                // xdg-shell v5: only what RayWM does (no window menu).
+                _ = t.setWmCapabilities(.{ .maximize = true, .fullscreen = true, .minimize = true });
+                // v4: the largest size worth asking for.
+                if (server.activeOutput()) |o| _ = t.setBounds(@max(0, o.usable.width), @max(0, o.usable.height));
+                view.applyDecoration();
                 if (t.requested.fullscreen) {
                     const asked = if (t.requested.fullscreen_output) |o| server.outputByWlr(o) else null;
                     if (asked orelse server.activeOutput()) |o| {
@@ -813,11 +947,14 @@ pub const View = struct {
         view.syncPosition();
         view.mapped = true;
         view.hidden = false;
+        view.minimized = false;
         view.revealed = false;
         // On the workspace shown where it appears (rules may move it).
         if (view.output() orelse server.activeOutput()) |o| view.workspace = o.active_ws;
         server.views.prepend(view);
         view.restack();
+        // Clears a suspended state left from an earlier mapping.
+        view.updateVisibility();
         // view_new is for window rules (floating, geometry, ...), view_map
         // for everything else (layouts); handlers of both still see the
         // previous focus (a tiler splits it).
@@ -846,8 +983,10 @@ pub const View = struct {
         view.maximized = false;
         view.normal = null;
         view.removeBackdrop();
+        const old_ws = view.workspace;
         view.workspace = null;
         view.urgent = false;
+        if (old_ws) |w| w.updateUrgent();
         if (view.reveal_timer) |t| t.remove();
         view.reveal_timer = null;
         view.revealed = false;
@@ -882,9 +1021,10 @@ pub const View = struct {
         switch (view.impl) {
             .xdg => |t| t.base.data = null,
         }
+        view.detachDecoration();
         inline for (.{
-            "commit",             "map",       "unmap",      "destroy", "request_move", "request_resize", "request_maximize",
-            "request_fullscreen", "set_title", "set_app_id",
+            "commit",             "map",       "unmap",      "destroy",    "request_move",     "request_resize", "request_maximize",
+            "request_fullscreen", "set_title", "set_app_id", "set_parent", "request_minimize",
         }) |name| @field(view, name).link.remove();
         gpa.destroy(view);
     }
@@ -936,6 +1076,45 @@ pub const View = struct {
     fn handleSetTitle(listener: *wl.Listener(void)) void {
         const view: *View = @fieldParentPtr("set_title", listener);
         if (view.mapped) view.server.emit(.view_title, view.id);
+    }
+
+    /// A dialog's parent changed: it may now belong above a fullscreen window.
+    fn handleSetParent(listener: *wl.Listener(void)) void {
+        const view: *View = @fieldParentPtr("set_parent", listener);
+        if (view.mapped) view.restack();
+    }
+
+    /// xdg_toplevel.set_minimized (there is no request to undo it: taskbars
+    /// and plugins restore). Granted unless a plugin decides otherwise in
+    /// view_request_minimize.
+    fn handleRequestMinimize(listener: *wl.Listener(void)) void {
+        const view: *View = @fieldParentPtr("request_minimize", listener);
+        if (!view.mapped) return;
+        const before = view.decisions;
+        view.server.emit(.view_request_minimize, view.id);
+        if (view.mapped and view.decisions == before) view.setMinimized(true);
+    }
+
+    /// xdg-activation: the client asks for focus, `user` when wlroots
+    /// verified the token came from user input in a focused window.
+    /// Plugins see view_request_activate(id, user); if none decided (focus,
+    /// urgent, minimize, ...), a user request un-minimizes and focuses the
+    /// window when it is on a shown workspace; anything else marks it urgent.
+    pub fn requestActivate(view: *View, user: bool) void {
+        const server = view.server;
+        if (!view.mapped) return;
+        const before = view.decisions;
+        server.emitArgs(.view_request_activate, view.id, &.{.{ .boolean = user }});
+        if (!view.mapped or view.decisions != before or server.focused == view) return;
+        const shown = !view.hidden and (view.workspace == null or view.workspace.?.isActive());
+        if (user and shown) {
+            view.setMinimized(false);
+            server.focus(view);
+            input.refocusPointer(server);
+        }
+        // Refused (not user input, hidden, covered by a fullscreen window,
+        // locked): it waits for the user.
+        if (view.mapped and server.focused != view) view.setUrgent(true);
     }
 
     fn handleSetAppId(listener: *wl.Listener(void)) void {

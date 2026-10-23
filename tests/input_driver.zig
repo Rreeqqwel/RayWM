@@ -3,7 +3,7 @@
 //! given as arguments, with a roundtrip after each one:
 //!   move X Y          absolute pointer position in layout pixels
 //!   down|up left|right|middle
-//!   key NAME down|up  NAME: super, ctrl, alt, shift, f9, f10, f11, f12,
+//!   key NAME down|up  NAME: super, ctrl, alt, shift, f7 .. f12,
 //!                     a-z, 0-9, tab, print, escape, space, return,
 //!                     left, right, up, down, comma, period
 //!   group N           locks keyboard layout group N (0 = first layout), as
@@ -50,6 +50,8 @@ const keys = [_]Key{
     .{ .name = "p", .code = KEY_P },
     .{ .name = "print", .code = KEY_SYSRQ },
     .{ .name = "escape", .code = KEY_ESC },
+    .{ .name = "f7", .code = 65 },
+    .{ .name = "f8", .code = 66 },
     .{ .name = "f9", .code = KEY_F9 },
     .{ .name = "f10", .code = KEY_F10 },
     .{ .name = "f11", .code = KEY_F11 },

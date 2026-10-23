@@ -46,6 +46,12 @@ pub fn view(server: *Server, id: u32) ?lua.ViewInfo {
         .maximized = v.maximized,
         .workspace = if (v.workspace) |w| w.id else 0,
         .urgent = v.urgent,
+        .minimized = v.minimized,
+        .decoration = if (v.decorationMode()) |m| switch (m) {
+            .server_side => "server",
+            .client_side => "client",
+            .none => null,
+        } else null,
         .managed = v.managed(),
         .pid = v.pid(),
     };
@@ -58,7 +64,10 @@ pub fn viewCmd(server: *Server, id: u32, cmd: lua.ViewCmd) bool {
         .place => |b| v.request(coord(b.x), coord(b.y), std.math.clamp(b.w, 1, max_coord), std.math.clamp(b.h, 1, max_coord)),
         .opacity => |a| v.setOpacity(a),
         .raise => v.raise(),
-        .focus => if (v.visible()) server.focus(v),
+        .focus => {
+            v.decisions +%= 1;
+            if (v.visible()) server.focus(v);
+        },
         .close => v.close(),
         .show => |on| {
             v.setHidden(!on);
@@ -80,6 +89,19 @@ pub fn viewCmd(server: *Server, id: u32, cmd: lua.ViewCmd) bool {
             const w = if (wid == 0) null else ws.byId(server, wid) orelse return false;
             v.setWorkspace(w);
         },
+        .minimize => |on| {
+            v.decisions +%= 1;
+            v.setMinimized(on);
+        },
+        .urgent => |on| {
+            v.decisions +%= 1;
+            v.setUrgent(on);
+        },
+        .decoration => |d| v.setDecorationPref(switch (d) {
+            .auto => .auto,
+            .server => .server,
+            .client => .client,
+        }),
     }
     input.refocusPointer(server);
     return true;

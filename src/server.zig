@@ -119,8 +119,11 @@ pub const Server = struct {
             .layers = undefined,
             .output_layout = output_layout,
             .scene_layout = try scene.attachOutputLayout(output_layout),
-            .xdg_shell = try wlr.XdgShell.create(wl_server, 2),
-            .layer_shell = try wlr.LayerShellV1.create(wl_server, 4),
+            // v7: the newest wlroots 0.20 implements (bounds, capabilities,
+            // suspended, tiled and constrained states).
+            .xdg_shell = try wlr.XdgShell.create(wl_server, 7),
+            // v5: exclusive edge (the scene helper honours it).
+            .layer_shell = try wlr.LayerShellV1.create(wl_server, 5),
             .seat = try wlr.Seat.create(wl_server, "seat0"),
             .cursor = try wlr.Cursor.create(),
             .cursor_mgr = try wlr.XcursorManager.create(null, 24),
@@ -324,11 +327,17 @@ pub const Server = struct {
         // An exclusive layer surface (e.g. a launcher) keeps the keyboard;
         // an on-demand one gives it up when a window is chosen.
         if (server.layer_focus) |ls| {
-            if (ls.wlr_layer.current.keyboard_interactive == .exclusive) return server.emit(.view_focus, v.id);
+            if (ls.wlr_layer.current.keyboard_interactive == .exclusive) return server.announceFocus(v);
             server.layer_focus = null;
         }
         server.keyboardEnter(v.surface());
+        server.announceFocus(v);
+    }
+
+    fn announceFocus(server: *Server, v: *View) void {
         server.emit(.view_focus, v.id);
+        // It has the user's attention now.
+        if (server.focused == v and v.mapped) v.setUrgent(false);
     }
 
     /// Gives the keyboard to a layer surface, or back to the focused view.

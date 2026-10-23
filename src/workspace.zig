@@ -42,6 +42,7 @@ pub const Workspace = struct {
     link: wl.list.Link = undefined,
     /// No plugin owns it (see the file comment).
     orphan: bool = false,
+    /// One of its windows wants attention (until that window is focused).
     urgent: bool = false,
 
     pub fn create(server: *Server, output: *Output, name: []const u8) !*Workspace {
@@ -101,7 +102,6 @@ pub const Workspace = struct {
         const old = o.active_ws;
         if (old == ws) return true;
         o.active_ws = ws;
-        ws.urgent = false;
         const server = ws.server;
         var it = server.view_ids.valueIterator();
         while (it.next()) |vp| {
@@ -112,6 +112,19 @@ pub const Workspace = struct {
         server.afterVisibilityChange();
         server.emitArgs(.workspace_activate, ws.id, &.{.{ .int = if (old) |w| w.id else 0 }});
         return true;
+    }
+
+    /// Recomputes `urgent` from the windows on the workspace.
+    pub fn updateUrgent(ws: *Workspace) void {
+        var any = false;
+        var it = ws.server.view_ids.valueIterator();
+        while (it.next()) |vp| if (vp.*.workspace == ws and vp.*.urgent) {
+            any = true;
+            break;
+        };
+        if (any == ws.urgent) return;
+        ws.urgent = any;
+        ws.server.emit(.workspace_change, ws.id);
     }
 
     pub fn rename(ws: *Workspace, name: []const u8) !void {

@@ -53,6 +53,13 @@ pub const Event = enum {
     input_remove,
     /// The active keyboard layout changed: (0, index from 1).
     keyboard_layout,
+    /// The client asks to be minimized: (id). Granted unless a handler
+    /// changes the window's state.
+    view_request_minimize,
+    /// The client asks for focus (xdg-activation): (id, user). `user`: the
+    /// request comes from user input in a focused window (e.g. a click on
+    /// a link). Default: focus it when it can be seen, else mark it urgent.
+    view_request_activate,
 };
 /// Extra handler arguments after the id (most events have none).
 pub const Arg = union(enum) { int: i64, boolean: bool, nil };
@@ -76,6 +83,10 @@ pub const ViewInfo = struct {
     maximized: bool = false,
     workspace: u32 = 0,
     urgent: bool = false,
+    minimized: bool = false,
+    /// "server" or "client" (xdg-decoration); null: the client did not
+    /// ask (it draws its own, or none).
+    decoration: ?[*:0]const u8 = null,
     /// A live plugin manages its geometry (ctx.manage).
     managed: bool = false,
     xwayland: bool = false,
@@ -177,7 +188,13 @@ pub const ViewCmd = union(enum) {
     maximize: bool,
     /// 0: no workspace (always shown on its output).
     workspace: u32,
+    minimize: bool,
+    urgent: bool,
+    decoration: Decoration,
 };
+/// raywm.view_decoration: who draws title bars and borders. RayWM draws
+/// none itself, so "server" means the window has no title bar.
+pub const Decoration = enum { auto, server, client };
 /// `busy`: a pointer grab is active (compositor move/resize, a held button
 /// or a client's popup grab); warping is refused then.
 pub const PointerInfo = struct { x: i32, y: i32, busy: bool };
@@ -712,6 +729,21 @@ pub fn Runtime(comptime H: type) type {
             return @intCast(v);
         }
 
+        /// A string naming a field of enum `E`; raises an argument error
+        /// listing the names otherwise.
+        fn checkEnum(comptime E: type, L: ?*c.lua_State, i: c_int) E {
+            const name = std.mem.span(c.luaL_checklstring(L, i, null));
+            return std.meta.stringToEnum(E, name) orelse {
+                const names = comptime blk: {
+                    var list: []const u8 = "";
+                    for (std.meta.fieldNames(E), 0..) |f, k| list = list ++ (if (k == 0) "" else ", ") ++ "\"" ++ f ++ "\"";
+                    break :blk list;
+                };
+                _ = c.luaL_argerror(L, i, "expected one of " ++ names); // does not return
+                unreachable;
+            };
+        }
+
         fn checkId(L: ?*c.lua_State, i: c_int) u32 {
             const v = c.luaL_checkinteger(L, i);
             return if (v > 0 and v <= std.math.maxInt(u32)) @intCast(v) else 0;
@@ -764,6 +796,9 @@ pub fn Runtime(comptime H: type) type {
             .{ "view_fullscreen", viewCmd(.fullscreen) },
             .{ "view_maximize", viewCmd(.maximize) },
             .{ "view_workspace", viewCmd(.workspace) },
+            .{ "view_minimize", viewCmd(.minimize) },
+            .{ "view_urgent", viewCmd(.urgent) },
+            .{ "view_decoration", viewCmd(.decoration) },
             .{ "workspaces", lWorkspaces },
             .{ "workspace", lWorkspace },
             .{ "workspace_activate", wsCmd(.activate) },
@@ -1135,6 +1170,11 @@ pub fn Runtime(comptime H: type) type {
             setBool(L, "maximized", info.maximized);
             setInt(L, "workspace", info.workspace);
             setBool(L, "urgent", info.urgent);
+            setBool(L, "minimized", info.minimized);
+            if (info.decoration) |d| {
+                _ = c.lua_pushstring(L, d);
+                c.lua_setfield(L, -2, "decoration");
+            }
             setBool(L, "managed", info.managed);
             setBool(L, "xwayland", info.xwayland);
             setInt(L, "pid", info.pid);
@@ -1259,6 +1299,9 @@ pub fn Runtime(comptime H: type) type {
                         .maximize => .{ .maximize = c.lua_toboolean(L, 2) != 0 },
                         .workspace => .{ .workspace = if (c.lua_type(L, 2) <= c.LUA_TNIL) 0 else checkId(L, 2) },
                         .border => .{ .border = border(L) },
+                        .minimize => .{ .minimize = c.lua_toboolean(L, 2) != 0 },
+                        .urgent => .{ .urgent = c.lua_toboolean(L, 2) != 0 },
+                        .decoration => .{ .decoration = checkEnum(Decoration, L, 2) },
                         inline else => |t| t,
                     };
                     if (!Api.viewCmd(get(L).host, vid, cmd)) return stale(L);

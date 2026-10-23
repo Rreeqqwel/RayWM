@@ -2,8 +2,9 @@
 //! connect with a few lines: buffers and scaling (viewporter, single-pixel
 //! buffers, fractional scale, alpha modifier, linux-dmabuf, presentation
 //! time), selections (primary selection, data control for clipboard
-//! managers), xdg-foreign (portal dialogs), cursor shapes, and the filter
-//! that hides privileged globals from sandboxed clients.
+//! managers), xdg-foreign (portal dialogs), cursor shapes, window
+//! decorations and activation (handed to the view), and the filter that
+//! hides privileged globals from sandboxed clients.
 //!
 //! The wlr_scene does the per-surface work for several of them: it sends
 //! fractional and integer preferred scales as surfaces enter outputs,
@@ -19,6 +20,7 @@ const wl = @import("wayland").server.wl;
 const wlr = @import("wlroots");
 const srv = @import("server.zig");
 const Server = srv.Server;
+const View = @import("view.zig").View;
 const log = std.log.scoped(.protocols);
 
 /// Globals a sandboxed client (security-context-v1) never sees: they
@@ -53,8 +55,12 @@ pub const Protocols = struct {
     server: *Server,
     security: *wlr.SecurityContextManagerV1,
     cursor_shape: *wlr.CursorShapeManagerV1,
+    decoration: *wlr.XdgDecorationManagerV1,
+    activation: *wlr.XdgActivationV1,
     request_set_shape: wl.Listener(*wlr.CursorShapeManagerV1.event.RequestSetShape) = .init(handleSetShape),
     request_primary: wl.Listener(*wlr.Seat.event.RequestSetPrimarySelection) = .init(handleRequestPrimary),
+    new_decoration: wl.Listener(*wlr.XdgToplevelDecorationV1) = .init(handleNewDecoration),
+    request_activate: wl.Listener(*wlr.XdgActivationV1.event.RequestActivate) = .init(handleRequestActivate),
 
     pub fn init(p: *Protocols, server: *Server) !void {
         const display = server.wl_server;
@@ -62,6 +68,8 @@ pub const Protocols = struct {
             .server = server,
             .security = try wlr.SecurityContextManagerV1.create(display),
             .cursor_shape = try wlr.CursorShapeManagerV1.create(display, 1),
+            .decoration = try wlr.XdgDecorationManagerV1.create(display),
+            .activation = try wlr.XdgActivationV1.create(display),
         };
         _ = try wlr.Viewporter.create(display);
         _ = try wlr.SinglePixelBufferManagerV1.create(display);
@@ -74,12 +82,16 @@ pub const Protocols = struct {
         _ = try wlr.ExtDataControlManagerV1.create(display, 1);
         p.cursor_shape.events.request_set_shape.add(&p.request_set_shape);
         server.seat.events.request_set_primary_selection.add(&p.request_primary);
+        p.decoration.events.new_toplevel_decoration.add(&p.new_decoration);
+        p.activation.events.request_activate.add(&p.request_activate);
         display.setGlobalFilter(*Protocols, filter, p);
     }
 
     pub fn deinit(p: *Protocols) void {
         p.request_set_shape.link.remove();
         p.request_primary.link.remove();
+        p.new_decoration.link.remove();
+        p.request_activate.link.remove();
     }
 
     /// Returns constants only: libwayland reads the result as a C bool (see
@@ -102,6 +114,22 @@ pub const Protocols = struct {
         const name = wlr.CursorShapeManagerV1.shapeName(event.shape);
         log.debug("cursor shape {s}", .{name});
         server.cursor.setXcursor(server.cursor_mgr, name);
+    }
+
+    /// xdg-decoration: the view answers (see View.applyDecoration).
+    fn handleNewDecoration(_: *wl.Listener(*wlr.XdgToplevelDecorationV1), deco: *wlr.XdgToplevelDecorationV1) void {
+        const view = View.fromXdgToplevel(deco.toplevel) orelse return;
+        view.attachDecoration(deco);
+    }
+
+    /// xdg-activation: wlroots only emits this for a valid token (known,
+    /// not expired). A token with a seat was checked when it was made: its
+    /// serial came from an input event of that client, and the surface
+    /// that asked for it (if named) had keyboard or pointer focus.
+    fn handleRequestActivate(_: *wl.Listener(*wlr.XdgActivationV1.event.RequestActivate), event: *wlr.XdgActivationV1.event.RequestActivate) void {
+        const view = View.fromWlrSurface(event.surface) orelse return;
+        log.debug("activation of view {d} (user: {})", .{ view.id, event.token.seat != null });
+        view.requestActivate(event.token.seat != null);
     }
 
     /// Middle-click paste: like the clipboard, set by the focused client.

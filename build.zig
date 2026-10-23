@@ -28,8 +28,10 @@ pub fn build(b: *std.Build) void {
     scanner.addSystemProtocol("staging/ext-data-control/ext-data-control-v1.xml");
     scanner.addSystemProtocol("unstable/primary-selection/primary-selection-unstable-v1.xml");
     scanner.addSystemProtocol("unstable/xdg-foreign/xdg-foreign-unstable-v2.xml");
-    scanner.addCustomProtocol(b.path("protocol/wlr-layer-shell-unstable-v1.xml"));
+    scanner.addSystemProtocol("unstable/xdg-decoration/xdg-decoration-unstable-v1.xml");
+    scanner.addSystemProtocol("staging/xdg-activation/xdg-activation-v1.xml");
     // wlr-protocols as shipped with wlroots 0.20.2 (its protocol/ directory).
+    scanner.addCustomProtocol(b.path("protocol/wlr-layer-shell-unstable-v1.xml"));
     scanner.addCustomProtocol(b.path("protocol/wlr-output-management-unstable-v1.xml"));
     scanner.addCustomProtocol(b.path("protocol/wlr-output-power-management-unstable-v1.xml"));
     scanner.addCustomProtocol(b.path("protocol/wlr-gamma-control-unstable-v1.xml"));
@@ -55,10 +57,10 @@ pub fn build(b: *std.Build) void {
     scanner.generate("wl_output", 4);
     scanner.generate("wl_seat", 7);
     scanner.generate("wl_data_device_manager", 3);
-    scanner.generate("xdg_wm_base", 2);
+    scanner.generate("xdg_wm_base", 7);
     scanner.generate("zwp_tablet_manager_v2", 1);
     scanner.generate("wp_color_manager_v1", 2);
-    scanner.generate("zwlr_layer_shell_v1", 4);
+    scanner.generate("zwlr_layer_shell_v1", 5);
     scanner.generate("ext_session_lock_manager_v1", 1);
     scanner.generate("ext_idle_notifier_v1", 2);
     scanner.generate("zwp_idle_inhibit_manager_v1", 1);
@@ -78,6 +80,8 @@ pub fn build(b: *std.Build) void {
     scanner.generate("zxdg_exporter_v2", 1);
     scanner.generate("zxdg_importer_v2", 1);
     scanner.generate("wp_presentation", 2);
+    scanner.generate("zxdg_decoration_manager_v1", 1);
+    scanner.generate("xdg_activation_v1", 1);
 
     const wayland = b.createModule(.{ .root_source_file = scanner.result });
     const xkbcommon = b.dependency("xkbcommon", .{}).module("xkbcommon");
