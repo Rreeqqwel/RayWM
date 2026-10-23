@@ -1081,7 +1081,13 @@ pub const View = struct {
     /// A dialog's parent changed: it may now belong above a fullscreen window.
     fn handleSetParent(listener: *wl.Listener(void)) void {
         const view: *View = @fieldParentPtr("set_parent", listener);
-        if (view.mapped) view.restack();
+        if (!view.mapped) return;
+        view.restack();
+        view.restackChildren();
+        view.raise();
+        const server = view.server;
+        if (server.focused) |f| if (!server.focusable(f)) server.focus(server.focusFallback(f));
+        input.refocusPointer(server);
     }
 
     /// xdg_toplevel.set_minimized (there is no request to undo it: taskbars

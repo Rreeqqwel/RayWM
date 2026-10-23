@@ -326,4 +326,29 @@ w14() {
     stop
 }
 
-run_scenarios windows w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15
+w16() {
+    name="reparenting a dialog restacks its descendants below fullscreen"
+    start "$float_cfg" 0
+    launch a $plain RAYWM_TEST_CHILD=1 RAYWM_TEST_REPARENT="$tmp/detach"
+    wait_log a "grandchild activated"
+    # Focus the root outside both dialogs, then make it fullscreen.
+    drive move 550 290 down left up left sleep 150
+    super_key f
+    # The grandchild is above the fullscreen root until its parent detaches.
+    drive move 640 360 down left up left sleep 150
+    dump
+    expect 1 "view 4 580,315 120x90 focused=true"
+    touch "$tmp/detach"
+    wait_log a "child detached"
+    sleep 0.2
+    dump
+    expect 2 "view 2 0,0 1280x720 focused=true"
+    # The same point must now hit the root, not the detached grandchild.
+    drive move 640 360 down left up left sleep 150
+    has a "ptr enter window at 640,360"
+    dump
+    expect 3 "view 2 0,0 1280x720 focused=true"
+    stop
+}
+
+run_scenarios windows w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16

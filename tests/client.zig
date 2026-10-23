@@ -82,6 +82,7 @@ const SeatUse = struct {
         const s = surface orelse return "gone";
         if (use.popup) |p| if (p.surface == s) return "popup";
         if (use.sub == s) return "sub";
+        if (use.layer == null and s != use.surface) return "dialog";
         return if (use.layer != null) "layer" else "window";
     }
 
@@ -239,12 +240,24 @@ pub fn main() !void {
             // RAYWM_TEST_CHILD: a second toplevel, a dialog of this one.
             var child: Child = .{ .shm = shm };
             if (std.c.getenv("RAYWM_TEST_CHILD") != null) try child.open(display, compositor, wm_base, toplevel);
+            var grandchild: Child = .{ .shm = shm, .state = .{ .who = "grandchild " } };
+            if (std.c.getenv("RAYWM_TEST_REPARENT") != null) {
+                try grandchild.open(display, compositor, wm_base, child.toplevel orelse return error.NoParent);
+            }
             // Keep the window (acking every configure) until the compositor
             // goes away. The previous buffer is released after each commit.
             var prev: ?*wl.Buffer = null;
             defer if (prev) |p| p.destroy();
             while (true) {
                 if (child.toplevel != null and child.state.configured) try child.ackAndDraw();
+                if (grandchild.toplevel != null and grandchild.state.configured) try grandchild.ackAndDraw();
+                if (std.c.getenv("RAYWM_TEST_REPARENT")) |path| {
+                    if (std.c.access(path, 0) == 0) {
+                        _ = std.c.unlink(path);
+                        child.toplevel.?.setParent(null);
+                        step("child detached", .{});
+                    }
+                }
                 if (use.popup_request) |serial| {
                     use.popup_request = null;
                     try popup_test.openWith(xdg_surface, .{ .seat = use.seat, .serial = serial });
@@ -262,7 +275,7 @@ pub fn main() !void {
                 }
                 // A configure may already have arrived while waiting above.
                 if (!state.configured and !(child.toplevel != null and child.state.configured)) {
-                    if (activationFiles()) {
+                    if (activationFiles() or std.c.getenv("RAYWM_TEST_REPARENT") != null) {
                         dispatchTimeout(display, 50) catch break;
                     } else if (display.dispatch() != .SUCCESS) break;
                     continue;
