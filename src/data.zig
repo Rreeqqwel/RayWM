@@ -27,15 +27,19 @@ pub const Data = struct {
 
     pub fn cancel(d: *Data) void {
         const drag = d.drag orelse return;
-        // The grab cancel callback frees the drag, including source-less
-        // intra-client drags. drag.destroy clears our borrowed pointer.
-        if (drag.keyboard_grab.interface.cancel) |cancel_fn| cancel_fn(&drag.keyboard_grab);
+        reject(drag);
     }
 
     fn reject(drag: *wlr.Drag) void {
-        // A drag has no public destroy function; the grab's public cancel
-        // operation is also valid before it was started (wlroots 0.20).
-        if (drag.keyboard_grab.interface.cancel) |cancel_fn| cancel_fn(&drag.keyboard_grab);
+        // Destroying the source notifies its client of cancellation and
+        // destroys the drag via wlroots' source listener. Ending only the
+        // grab silently leaves the source alive and its client waiting.
+        if (drag.source) |source| {
+            source.destroy();
+        } else if (drag.keyboard_grab.interface.cancel) |cancel_fn| {
+            // Source-less, intra-client drags have no cancellation event.
+            cancel_fn(&drag.keyboard_grab);
+        }
     }
 
     fn onRequest(listener: *wl.Listener(*wlr.Seat.event.RequestStartDrag), event: *wlr.Seat.event.RequestStartDrag) void {

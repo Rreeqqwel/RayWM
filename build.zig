@@ -59,6 +59,7 @@ pub fn build(b: *std.Build) void {
             .{ "/usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml", "xdg-shell" },
             .{ "/usr/share/wayland-protocols/unstable/text-input/text-input-unstable-v3.xml", "text-input" },
             .{ "protocol/input-method-unstable-v2.xml", "input-method" },
+            .{ "protocol/virtual-keyboard-unstable-v1.xml", "virtual-keyboard" },
         }) |protocol| {
             const header_cmd = b.addSystemCommand(&.{ "wayland-scanner", "client-header", protocol[0] });
             const header = header_cmd.addOutputFileArg(b.fmt("{s}-client.h", .{protocol[1]}));
