@@ -120,4 +120,15 @@ e5() {
     [ -e "$tmp/reentrant-ok" ] || fail "workspace event used a destroyed native pointer"
     stop
 }
-run_scenarios effects e1 e2 e3 e4 e5
+e6() {
+    name="shipped visual indicator follows focus and cleans up on reload"
+    WIN="$plain RAYWM_TEST_PATTERN=1" PLUGINS=$plugins start "$root/tests/effects/indicator.lua" 1
+    capture indicator
+    pixel indicator 1263,15,80c0ff
+    printf 'raywm.load("probe")\nraywm.load("binds")\n' >"$tmp/config/raywm/init.lua"
+    drive key ctrl down key alt down key r down key r up key alt up key ctrl up sleep 200
+    capture removed
+    pixel removed 1263,15,00ff00
+    stop
+}
+run_scenarios effects e1 e2 e3 e4 e5 e6

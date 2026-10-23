@@ -4,8 +4,8 @@ RayWM 0.2 retains plugin API v1. These optional facilities extend
 `wlr_scene`; the compositor owns all nodes and buffer locks. Lua sees
 plugin registration IDs, never pointers. Load `animations` after your
 workspace/layout plugins to enable the supplied transitions. It is off
-by default. Configure its `duration`, `distance`, and `easing` options
-through `raywm.configure("animations", {...})` before loading it.
+by default. Edit its local `options` table to set `duration`, `distance`,
+and `easing`, just as for the other shipped plugins.
 
 ## Animations
 
@@ -22,7 +22,9 @@ through `raywm.configure("animations", {...})` before loading it.
 | `snapshot` | false | Copy the current client-buffer scene into an independently owned, input-transparent tree. |
 
 Non-finite numbers raise Lua argument errors. Layout geometry and client
-configure sizes do not change during these transforms. Input hit testing
+configure sizes do not change during these transforms. Opacity affects
+client buffers; independent rectangle/border colors keep their own alpha.
+Input hit testing
 uses the transformed surface's actual scene position. A new animation
 of a view interrupts its previous animation from the current transform;
 explicit `from_*` fields override that continuity. `ctx.cancel(id)` resets

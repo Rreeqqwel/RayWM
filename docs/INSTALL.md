@@ -1,6 +1,6 @@
 # Installing RayWM
 
-RayWM v0.1.2 is an experimental Wayland compositor. It is safe to
+RayWM v0.2.0 is an experimental Wayland compositor. It is safe to
 install next to your current desktop:
 - nothing replaces your window manager or login screen;
 - nothing writes to an existing configuration;
@@ -24,6 +24,7 @@ Arch Linux. It needs:
 | `liblua5.4.so.5.4` | `lua54` | Lua **5.4**. Other distributions may use a different soname (for example `liblua5.4.so.0`); build from source there |
 | `libwayland-server.so.0` | `wayland` | |
 | `libxkbcommon.so.0` | `libxkbcommon` | |
+| `libpixman-1.so.0`, `libinput.so.10` | `pixman`, `libinput` | Direct native dependencies |
 | `libc.so.6`, `ld-linux-x86-64.so.2` | `glibc` | glibc **2.36 or newer** |
 
 wlroots itself pulls in its own dependencies (libinput, libdrm, mesa,
@@ -60,15 +61,15 @@ the libraries above (with these sonames).
 sudo pacman -S --needed wlroots0.20 lua54 wayland libxkbcommon foot   # runtime
 sudo pacman -S --needed grim slurp wl-clipboard libnotify             # optional: screenshots
 
-# download raywm-v0.1.2-linux-x86_64.tar.gz and SHA256SUMS from the release page
+# obtain the prepared archive and SHA256SUMS; publication is a separate step
 sha256sum -c SHA256SUMS                                               # must print: OK
-tar -xzf raywm-v0.1.2-linux-x86_64.tar.gz
-cd raywm-v0.1.2
+tar -xzf raywm-v0.2.0-linux-x86_64.tar.gz
+cd raywm-v0.2.0
 ./install.sh
 ```
 
 What `install.sh` does:
-- copies `bin/raywm` to `~/.local/bin/raywm`
+- copies `bin/raywm` and `bin/raywmctl` to `~/.local/bin/`
   - change the location with `--prefix DIR`;
   - an existing binary there is only replaced with `--force`, and is
     backed up first;
@@ -76,7 +77,7 @@ What `install.sh` does:
   directory does not exist yet**. An existing configuration is never
   touched; `install.sh` prints the `diff` command to compare it with the
   example. **Upgrading:** run `./install.sh --force` to replace the
-  binary (the old one is kept as `raywm.bak`); your configuration stays
+  binary (the old one is kept as `raywm.bak`, then numbered backups); your configuration stays
   as it is and keeps working.
   - from v0.1.1: to get directional focus (Super+H/J/K/L), the focus
     cycle (Super+Tab) and the focus border, copy
@@ -85,7 +86,9 @@ What `install.sh` does:
     `init.lua` (details: [CONFIGURATION.md](CONFIGURATION.md#upgrading-from-v011));
   - from v0.1.0: also copy `config/plugins/screenshot.lua` and add
     `raywm.load("screenshot")` to get screenshots;
-- checks with `ldd` that all shared libraries are present.
+- preflights both executable destinations, refuses symlink targets, and checks
+  with `ldd` that all shared libraries are present.
+- `raywmctl` requires optional Python 3; X11 applications require Xwayland.
 
 You can also skip the script and run `bin/raywm` directly from the
 extracted directory.
@@ -175,7 +178,7 @@ The output mode can be set with `RAYWM_OUTPUT_MODE=1920x1080@240`; see
 ## 5. Uninstall
 
 ```sh
-rm ~/.local/bin/raywm            # or PREFIX/bin/raywm
+rm ~/.local/bin/raywm ~/.local/bin/raywmctl            # or PREFIX/bin/raywm
 rm -r ~/.config/raywm            # only if you no longer want the config
 ```
 
@@ -192,3 +195,16 @@ rm -r ~/.config/raywm            # only if you no longer want the config
 | `raywm screenshot: grim is not installed` | install `grim` (and `slurp`, `wl-clipboard` for regions and the clipboard) |
 | Print does nothing in a nested session | the outer compositor may keep Print for itself: use Ctrl+Alt+P |
 | From a TTY: `Could not get session` or similar | no seat access: make sure you are logged in on that VT with logind, or run `seatd` |
+
+## Reproducible local packaging
+
+After committing tracked changes, run `scripts/package.sh v0.2.0`. It builds
+ReleaseSafe with test input disabled, strips the binary, stages only committed
+config/docs/scripts, fixes archive ordering/ownership/mtime to the commit time,
+and writes `dist/raywm-v0.2.0-linux-x86_64.tar.gz`, its `.sha256` sidecar and
+`dist/SHA256SUMS`. Existing artifacts are preserved; a differing archive at
+the same path is refused. Repeating with the same commit/toolchain must produce
+identical bytes. The payload includes `COMMIT`, `BUILD-INFO` and
+`MANIFEST.sha256`; validate the manifest from the extracted top-level directory.
+Build dependencies/tool versions and architecture must match to reproduce a
+binary archive. Packaging does not push, tag, merge or publish anything.

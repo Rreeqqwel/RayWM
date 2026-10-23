@@ -15,7 +15,7 @@ awk -v dir="$tmp/config/raywm/plugins" '
     /^```lua$/ { inblock = 1; n++; file = sprintf("%s/example%d.lua", dir, n); next }
     /^```$/ && inblock { inblock = 0; close(file); next }
     inblock { print > file }
-' "$root/docs/API.md"
+' "$root/docs/API.md" "$root/docs/EFFECTS.md" "$root/docs/PLUGINS.md"
 
 : >"$tmp/config/raywm/init.lua"
 count=0
@@ -48,4 +48,4 @@ if [ "$loaded" -ne "$count" ] || grep -E "error\(|panic" "$tmp/raywm.log" >/dev/
     echo "docs: FAIL ($loaded of $count examples loaded)"; grep -E "error|panic|example" "$tmp/raywm.log"; exit 1
 fi
 grep -q "new window" "$tmp/raywm.log" || { echo "docs: the logging example did not run"; exit 1; }
-echo "docs: OK ($count API.md examples loaded and ran without errors)"
+echo "docs: OK ($count API/effects/plugin-guide examples loaded and ran without errors)"

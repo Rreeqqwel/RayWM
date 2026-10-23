@@ -1,6 +1,6 @@
 .{
     .name = .raywm,
-    .version = "0.1.2",
+    .version = "0.2.0",
     .minimum_zig_version = "0.16.0",
     .paths = .{ "build.zig", "build.zig.zon", "src", "tests", "config", "protocol", "LICENSE" },
     .fingerprint = 0xcef775df1c202135,

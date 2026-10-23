@@ -4,9 +4,28 @@ All notable changes to RayWM. Versions follow [Semantic
 Versioning](https://semver.org/); before 1.0, minor versions may break
 the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
-## [Unreleased]
+## [v0.2.0] — candidate prepared 2026-10-23
 
 ### Added
+
+- Lazy Xwayland lifecycle and common X11/Wayland view management, native
+  workspace/fullscreen/floating support, override-redirect menus, clipboard
+  bridging and bounded early-crash recovery. No Steam/gaming compatibility
+  claim; real hardware/toolkit validation remains separate.
+- Cross-client drag-and-drop with validated press serials and safe icons,
+  text-input-v3/input-method-v2 relay, candidate popups and keyboard grabs
+  with virtual-keyboard feedback prevention.
+- Plugin-owned native scene animations, window/workspace snapshots and
+  input-transparent rectangles. Optional `animations` and `focus-indicator`
+  examples; no Lua execution on output frames. Advanced blur/shader/text/image
+  effects remain unsupported.
+- IPC v1: same-UID private socket, paginated desktop queries, selected
+  events, focus/workspace actions and `raywmctl`; bounded requests, nesting,
+  queues and clients, lock gating and safe disconnects, with no code eval.
+- Plugin author guide, effect/IPC contracts and physical-hardware procedure;
+  release packaging preserves existing artifacts and carries commit/build
+  provenance and a payload checksum manifest. Installer preserves numbered
+  backups and existing configurations.
 
 - **Pointer capture and shell protocols** (`tests/captures.sh`,
   `tests/taskbar.sh`): pointer locks/confinement, raw relative motion,
@@ -250,6 +269,16 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
   not show windows the core hides (needed for workspaces).
 
 ### Fixed
+
+- Dialog reparenting now restacks descendants and restores focus correctly.
+- Non-finite Lua numeric arguments are rejected before native conversions.
+- Activation requires actual recent forwarded input and a focused source;
+  enter serials, expired grants and replay cannot steal focus.
+- Workspace events retain IDs across callbacks that remove native objects.
+- Cancelling/rejecting data drags notifies sources instead of silently
+  ending grabs and leaving clients waiting.
+- ReleaseSafe IPC builds avoid a Zig translate-c/glibc fortified-header
+  import failure while preserving explicit native buffer bounds.
 
 - Dialog parent changes now restack the entire descendant chain and
   restore keyboard/pointer focus when a detached dialog becomes covered

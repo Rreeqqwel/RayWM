@@ -14,6 +14,9 @@ session.
 - `lua5.4` and `luac5.4` (Arch: `lua54`).
 - Standard tools: `sh`, `awk`, `timeout`, `strings` (binutils), `file`,
   `ldd`.
+- For Xwayland/client tests: `Xwayland`, libxcb development files and
+  `wayland-scanner` (Arch: `xorg-xwayland libxcb wayland`). Session/protocol
+  suites also need `swaylock`, `swayidle`, `wlr-randr`, and `cliphist`.
 - For GLES2 runs, a DRM render node (`/dev/dri/renderD*`). Pixman runs
   need nothing extra.
 - For `tests/screenshot.sh`: `grim`, `slurp`, `wl-clipboard` (wl-copy,
@@ -41,6 +44,9 @@ tests/captures.sh zig-out/test-input/bin     # pointer constraints and shortcut 
 tests/navigation.sh                         # needs the -Dtest-input build (and grim for one scenario)
 tests/screenshot.sh                         # needs the -Dtest-input build
 tests/stress.sh                             # needs the -Dtest-input build
+for suite in windows workspaces rules session outputs devices protocols shell taskbar xwayland data effects ipc; do
+    tests/"$suite".sh zig-out/test-input/bin
+done
 
 zig build -Doptimize=ReleaseSafe -p zig-out/release && tests/smoke.sh zig-out/release/bin
 ```
@@ -48,8 +54,43 @@ zig build -Doptimize=ReleaseSafe -p zig-out/release && tests/smoke.sh zig-out/re
 Useful variables: `KEEP=1` keeps the temporary directory with all logs;
 `ONLY=<substring>` runs only matching scenarios of `tests/input.sh`,
 `tests/pointer.sh`, `tests/navigation.sh` and `tests/screenshot.sh`.
-The interaction suites share their session helpers in
+`tests/run.sh BIN_DIR LOG_DIR` runs all integration suites and preserves
+complete logs plus numeric exit statuses. `SUITES="data effects"` selects a
+subset; existing logs are never overwritten. The interaction suites share
+their session helpers in
 `tests/support/harness.sh`.
+
+## v0.2 continuation coverage
+
+The recovered-state ledger is [DEVELOPMENT.md](DEVELOPMENT.md); final candidate
+acceptance and limitations are recorded separately from historical results.
+The combined unit suite contains 38 Zig tests (12 core, 26 Lua host), plus
+25 dwindle / 19 focus / 12 workspace / 10 rule Lua scenarios and 145 screenshot
+checks. Negative keymap compilation deliberately logs xkb errors; that test
+passes when the invalid keymap is rejected.
+
+| Additional suite | Actual client-level assertions |
+|---|---|
+| `windows.sh` / `workspaces.sh` / `rules.sh` | 16 / 12 / 6 scenarios: layout/state/visibility/dialog reparenting, workspace/hotplug/reload, real rule policy |
+| `session.sh` / `outputs.sh` / `devices.sh` | 7 / 7 / 3 scenarios: real locker/idle clients, output transactions/power/gamma, virtual device settings |
+| `protocols.sh` / `shell.sh` | 8 / 16 scenarios: actual globals/filtering/selections and xdg initial-configure/decorations/state; activation enter/missing-source/expiry/replay/destruction regressions |
+| `captures.sh` | 10 pointer lock/confine/relative/shortcut-inhibit scenarios with lifecycle and lock coverage |
+| `taskbar.sh` | 9 foreign-toplevel/ext-workspace request/state/lifecycle scenarios |
+| `xwayland.sh` | 6 actual XCB scenarios: X11 map/focus/move/resize/floating/state/workspace/menus, clipboard both directions, early/long-lived process crash, output hotplug; exact known upstream XWM BadWindow/property diagnostics are printed and allowed, all other errors fail |
+| `data.sh` | 10 Wayland-client scenarios: UTF-8 DnD/icon/finish, outside cancellation, dead source/target, invalid serial, session lock, composition/surrounding/preedit/delete/focus, duplicate/replacement IME, candidate popup pixels/destruction and virtual-keyboard reinjection without feedback |
+| `effects.sh` | 6 pixel/lifecycle scenarios: rectangle updates/input transparency/reload, native transform/cancel/interrupt, independent close/workspace snapshots, reentrant workspace removal and shipped visual example |
+| `ipc.sh` | 3035 query/action/framing/subscription/resource/disconnect checks plus lock action gating and replacement-inode preservation; malformed JSON, nesting/size/time limits, client admission, slow consumer and fd stability |
+| `package.sh ARCHIVE` | disposable extraction, payload hashes/provenance, no test-only code, binary help, installation/refusal/force/numbered backup/config preservation/symlink and argument checks |
+
+All automated input is injected only into a private test compositor. Headless
+GLES2 runs exercise the renderer through a render node; neither those runs nor
+pixman passes establish physical DRM/KMS, monitors, input devices or real-toolkit
+interoperability. An alternate-UID IPC connection test is SKIPPED without an
+available second user; permissions and same-UID credential admission are tested,
+and the mismatched-UID rejection is reviewed in the native code. DMA-BUF capture,
+real IME frameworks (fcitx/ibus), GTK/Qt DnD combinations, Steam/gaming, sanitizers
+and physical input-to-photon latency remain SKIPPED. Follow
+[HARDWARE-TESTING.md](HARDWARE-TESTING.md) before trusting a hardware session.
 
 ## Test suites
 
@@ -62,11 +103,11 @@ test build directory can be passed as its first argument.
 
 | Suite | Kind | What it covers |
 |---|---|---|
-| `tests/core_test.zig` | Zig unit (5) | configure serial wrap-around, key spec parsing (including the screenshot plugin's `Print` bindings, with real xkb), **the keysym used for bindings with real xkb keymaps** (`us,ru` with either layout active, `ru,us`, `ru` alone, `de,us`), coordinate clamping, `spawn` (no zombie, unblocked signals) |
-| `tests/lua_test.zig` | Zig unit (20), fake compositor | the plugin contract (api version, rejection), dispatch, error isolation, deferred cleanup, cancellation during dispatch, stale/invalid ids, timers (injected clock), memory and instruction limits incl. `pcall`/coroutine bypass attempts (also via a coroutine created before the budget ran out), no `debug` library and no native module loading, nested dispatch depth limit, duplicate bindings, setup/teardown failures, reload (from a binding, init.lua, teardown, 25× with flat memory, failed reload), `ctx.manage` lifecycle, registration cap; **v0.1.2:** `raywm.pointer`, `pointer_warp` (incl. a refused warp), `view_border` (stale ids, bad widths and colors), `view().visible`, premultiplied color parsing, the duplicate-binding warning (once per plugin) and the no-bindings warning, binding thousands of keys in a loop without quadratic native work |
-| `tests/dwindle_test.lua` | Lua (17), mock API that follows the core's rules | layouts with 1–5, 10 and 20 windows; focus-based insertion; closing in every order (tree collapse); output resize, panels, two outputs and unplugging; geometry cache and externally moved windows; managed-window registration; tiny geometries; stale windows; reload and hostile snapshot files; **20 fixed-seed random sequences × 300 operations**, checking after every step that each window has exactly one leaf, parent links hold, every leaf is a live window, managed set = tiled set, no negative sizes, everything inside the usable area, no overlaps except in deliberately shared sub-pixel areas |
+| `tests/core_test.zig` | Zig unit (12) | configure serial wrap-around, key spec parsing (including the screenshot plugin's `Print` bindings, with real xkb), **the keysym used for bindings with real xkb keymaps** (`us,ru` with either layout active, `ru,us`, `ru` alone, `de,us`), coordinate clamping, `spawn` (no zombie, unblocked signals) |
+| `tests/lua_test.zig` | Zig unit (26), fake compositor | the plugin contract (api version, rejection), dispatch, error isolation, deferred cleanup, cancellation during dispatch, stale/invalid ids, timers (injected clock), memory and instruction limits incl. `pcall`/coroutine bypass attempts (also via a coroutine created before the budget ran out), no `debug` library and no native module loading, nested dispatch depth limit, duplicate bindings, setup/teardown failures, reload (from a binding, init.lua, teardown, 25× with flat memory, failed reload), `ctx.manage` lifecycle, registration cap; **v0.1.2:** `raywm.pointer`, `pointer_warp` (incl. a refused warp), `view_border` (stale ids, bad widths and colors), `view().visible`, premultiplied color parsing, the duplicate-binding warning (once per plugin) and the no-bindings warning, binding thousands of keys in a loop without quadratic native work |
+| `tests/dwindle_test.lua` | Lua (25), mock API that follows the core's rules | layouts with 1–5, 10 and 20 windows; focus-based insertion; closing in every order (tree collapse); output resize, panels, two outputs and unplugging; geometry cache and externally moved windows; managed-window registration; tiny geometries; stale windows; reload and hostile snapshot files; **20 fixed-seed random sequences × 300 operations**, checking after every step that each window has exactly one leaf, parent links hold, every leaf is a live window, managed set = tiled set, no negative sizes, everything inside the usable area, no overlaps except in deliberately shared sub-pixel areas |
 | `tests/focus_test.lua` | Lua (19), mock API that follows the core's rules | the six bindings and their fixed registration order; directional focus with dwindle layouts of 2, 3 and 4 windows (ties broken by recency); windows directly beside beat diagonal ones, nearer beats better aligned; spanning/enclosing windows are in no direction; hidden windows; nothing focused; two outputs side by side and stacked (same output first, only the output in that direction, `cross_output = false`); the cycle order across outputs, wrapping, closed and hidden windows; warp off by default, to the centre only on a real change and not when the pointer is already inside, never while busy; the border following focus, removed on focus 0 and on teardown, a bordered window closing; reload without duplicate registrations; **400 random two-output layouts** checking every choice is visible, in that direction, on the same output whenever possible, never on an output in another direction, and deterministic |
-| `tests/screenshot_test.lua` | Lua (105 checks), mock API + `/bin/sh` with fake grim/slurp/wl-copy/notify-send | the five bindings and no key bound twice across binds.lua, dwindle.lua, focus.lua and screenshot.lua (nor over the core's fallback or VT keys); unload leaves nothing, other plugins untouched; reload; setup and callbacks call no blocking function (`os.execute`, `io.*`, ...) and spawn exactly one command; argument layout per action; directory choice (`XDG_PICTURES_DIR` absolute/relative/empty/trailing slash, `HOME`, `options.dir`, NUL bytes); the generated commands executed by `/bin/sh` against a directory name full of shell syntax (`$(...)`, backticks, quotes, `;`, newline, leading `-`, `*`): the file lands exactly there and nothing is executed; unique names with no temporary files left; mode 0600; region geometry passed to grim; cancel saves, runs and reports nothing; clipboard gets the PNG with `--type image/png`; each missing tool gives a logged error and a notification; no notify-send; grim failure; no `WAYLAND_DISPLAY`; no directory; `notify = false` |
+| `tests/screenshot_test.lua` | Lua (145 checks), mock API + `/bin/sh` with fake grim/slurp/wl-copy/notify-send | the five bindings and no key bound twice across binds.lua, dwindle.lua, focus.lua and screenshot.lua (nor over the core's fallback or VT keys); unload leaves nothing, other plugins untouched; reload; setup and callbacks call no blocking function (`os.execute`, `io.*`, ...) and spawn exactly one command; argument layout per action; directory choice (`XDG_PICTURES_DIR` absolute/relative/empty/trailing slash, `HOME`, `options.dir`, NUL bytes); the generated commands executed by `/bin/sh` against a directory name full of shell syntax (`$(...)`, backticks, quotes, `;`, newline, leading `-`, `*`): the file lands exactly there and nothing is executed; unique names with no temporary files left; mode 0600; region geometry passed to grim; cancel saves, runs and reports nothing; clipboard gets the PNG with `--type image/png`; each missing tool gives a logged error and a notification; no notify-send; grim failure; no `WAYLAND_DISPLAY`; no directory; `notify = false` |
 | `tests/smoke.sh` | Wayland, real client | connection, xdg toplevel configure/ack, buffer commit, frame callback, a toplevel re-created on the same `xdg_surface`, asynchronous resize by dwindle with position applied on ack, a layer-shell panel and its exclusive zone, Lua event order, children with unblocked signals, clean SIGTERM exit |
 | `tests/focus.sh` | Wayland, two clients at once | focus seen by clients (`xdg_toplevel` activated state): a new window takes focus, focus returns on close, a plugin overriding focus in `view_map`, dwindle insertion + focus |
 | `tests/docs.sh` | Wayland | every plugin example in `docs/API.md` loads and runs |
@@ -103,7 +144,10 @@ Test builds also unplug an output on `SIGUSR2` (the output named in
 remove an output while a capture is pending, and build
 `raywm-test-screencopy`, a minimal wlr-screencopy client.
 
-## Measured results (v0.1.2, local machine)
+## Historical developer-reported results (v0.1.2)
+
+These historical results were recovered from the earlier developer. Fresh
+same-host continuation samples are in [PERFORMANCE.md](PERFORMANCE.md).
 
 Arch Linux (kernel 7.2, zen), x86_64, wlroots 0.20.2, Lua 5.4.9,
 Zig 0.16.0, grim 1.5.0, slurp 1.5.0, wl-clipboard 2.3.0, with a GPU
@@ -161,9 +205,9 @@ verified manually for v0.1.0 either:
 | Screenshots in a real (non-headless) session: the Print key on a real keyboard, slurp with a real mouse, a real notification daemon, clipboard managers | **not verified manually for v0.1.2**; the same programs and code paths are tested headlessly with virtual input |
 | Implicit grab and focus keys with real toolkits (GTK, Qt, Firefox: text selection, scrollbars, menus opened on press) | not verified manually; the protocol behaviour is checked with the test client, which logs every event |
 | A nested session in a desktop that keeps Super+letter keys (the outer compositor may never forward Super+J/K) | not testable headlessly; `raywm -d` shows whether a key arrives |
-| Drag and drop between clients | not supported (RayWM does not start `wl_data_device` drags) |
+| Real GTK/Qt/X11 drag-and-drop combinations | SKIPPED; native Wayland client transfer/cancel/destruction/lock cases pass automatically |
 | Screencopy with DMA-BUF buffers (`linux_dmabuf`) | not tested; grim uses shared memory |
-| HiDPI / output scaling | not supported in v0.1 |
+| Physical HiDPI / output scaling | SKIPPED; native scale/transform and protocol tests use headless outputs |
 | Memory errors with sanitizers | not available: no valgrind on the development machine, and AddressSanitizer is not usable with this Zig/C setup. Long runs were checked with RSS measurements only |
 
 ### Manual test procedure (before trusting a new build on real hardware)

@@ -1,0 +1,68 @@
+{
+  "method": "ReleaseSafe test builds; shipped config + candidate benchmark binding; headless pixman 1280x720; 10 ms CPU tick resolution; startup observed at running log line with 1 ms polling; motion plus sync is not physical input latency",
+  "baseline_commit": "89278579a0d00e42183eb6e93fcf3b77402d90dc",
+  "baseline": {
+    "startup_ms": [
+      25.349295,
+      22.935501,
+      23.06017,
+      21.930361,
+      22.013745,
+      21.950014,
+      22.957221,
+      25.173395,
+      23.00308,
+      22.348532
+    ],
+    "idle_0_windows": {
+      "cpu_ms": 0.0,
+      "seconds": 10,
+      "rss_kib": 14544
+    },
+    "idle_3_windows": {
+      "cpu_ms": 0.0,
+      "seconds": 10,
+      "rss_kib": 18360,
+      "motion_sync_roundtrip": "roundtrip_us n=1000 min=24.957 median=29.590 p95=52.940 max=234.985\ndriver: done"
+    },
+    "binary_bytes": 4081512,
+    "binary_size_sections": "text\t   data\t    bss\t    dec\t    hex\tfilename\n 632567\t  31384\t 264013\t 927964\t  e28dc\t/tmp/raywm-v012-bin/bin/raywm",
+    "stripped_binary_bytes": 666816,
+    "startup_median_ms": 22.946361
+  },
+  "candidate": {
+    "startup_ms": [
+      29.846983,
+      25.06776,
+      25.105631,
+      24.683355,
+      22.066088,
+      24.168636,
+      23.011218,
+      24.665277,
+      23.390675,
+      22.587397
+    ],
+    "idle_0_windows": {
+      "cpu_ms": 0.0,
+      "seconds": 10,
+      "rss_kib": 14828
+    },
+    "idle_3_windows": {
+      "cpu_ms": 0.0,
+      "seconds": 10,
+      "rss_kib": 18516,
+      "motion_sync_roundtrip": "roundtrip_us n=1000 min=24.599 median=29.422 p95=50.257 max=126.752\ndriver: done",
+      "animation_cpu_ms_1_2s": [
+        10.0,
+        10.0,
+        20.0
+      ],
+      "after_animation_idle_cpu_ms_10s": 0.0
+    },
+    "binary_bytes": 5542312,
+    "binary_size_sections": "text\t   data\t    bss\t    dec\t    hex\tfilename\n 902518\t  41880\t 266189\t1210587\t 1278db\t/home/reyz/RayWM/zig-out/release-test/bin/raywm",
+    "stripped_binary_bytes": 947264,
+    "startup_median_ms": 24.416956499999998
+  }
+}

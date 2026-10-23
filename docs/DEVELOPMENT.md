@@ -173,41 +173,63 @@ are the API/lifetime references. `src/cabi.zig` branches computed booleans
 into constant C-call arguments because of a Zig 0.16 bool ABI issue;
 new native setters must preserve this convention.
 
-## Acceptance matrix
+## Candidate acceptance (continuation)
 
-This table starts as PENDING/SKIPPED/NOT IMPLEMENTED and is updated only
-after a corresponding check actually runs. A compositor build alone is
-insufficient evidence for protocol functionality.
+The table of inspected milestone state above is intentionally historical.
+The continuation implemented M8 C/D, M9–10, M11–12 and M13 in the retained
+native View/scene architecture. M14 adds the author guide, optional native
+resource examples, live-reload/ownership tests, complete validation runner,
+performance sampling and release engineering. No second compositor/layout
+implementation was introduced.
 
-| Gate | Recovery status | Required evidence |
-|---|---|---|
-| Debug and ReleaseSafe builds | Debug/test-input PASS; candidate ReleaseSafe PENDING | Full build logs, exact Zig and dependency versions. |
-| Zig formatting/AST and Lua syntax | Baseline PASS; final changed-file checks PENDING | Repository formatting/AST commands, `luac5.4 -p`, native C-bool lint. |
-| Core/Lua unit and shipped-policy tests | PASS at recorded checkpoints: 33/33 baseline, 34/34 finite-number fix, 35/35 with constraints | `zig build test --summary all`; rerun when subsequent native changes require it. |
-| Existing Wayland integration regressions | Baseline PASS, with reproduced/fixed new reparenting regression | See actual per-suite counts above; final combined run PENDING. |
-| M8 protocol completion | PENDING | Real client requests, initial configure timing, resource destruction, constraints, taskbar/workspace state and security-context filtering. |
-| Xwayland lifecycle/interoperability | NOT IMPLEMENTED | X clients mapping/focus/move/resize/workspaces/fullscreen, X/Wayland clipboard, process crash/restart, stale-surface cleanup. |
-| DnD/text-input/IME | NOT IMPLEMENTED | Cross-client transfer and cancel/disconnect; IME commit/preedit and keyboard/pointer focus changes; v0.1.2 implicit-grab regressions. |
-| Animations and visuals | NOT IMPLEMENTED | Frame pacing, easing/interruption/cancel, no Lua per-frame callback, reload and resource destruction; observable scene results. |
-| IPC | NOT IMPLEMENTED | Schema/version, bounded parsing/queues, same-user access, private socket permissions, subscriptions/actions, invalid requests and disconnects; no code-evaluation action. |
-| Lua v1 compatibility and plugin lifecycle | PENDING | Existing compatibility fixtures plus ownership/error/reload tests for every new registration. |
-| GLES2 | PASS: constraints/capture 10/10, headless; wider candidate matrix PENDING | Renderer details above; pixman passes do not establish GLES2 compatibility. |
-| Physical DRM/KMS/input/hotplug | SKIPPED: physical hardware session not exercised | [Hardware procedure](HARDWARE-TESTING.md), dated manual results and device details. |
-| Performance | PENDING | Same-machine v0.1.2 comparison: idle CPU, RSS, startup, input/frame scheduling, animation cost and binary size. Keep historical numbers separate. |
-| Documentation/security review | PENDING | README, architecture, API, configuration, testing, install and SECURITY must agree with implemented behavior and limitations. |
-| Release archive/checksum/reproducibility | PENDING | ReleaseSafe non-test binary; isolated staging, manifest/commit, archive built twice with identical SHA256, archive installation checks. |
-| Publication | Not authorized | No push, merge, final tag or GitHub Release without separate authorization. |
+Additional local checkpoints:
 
-The recovered packaging script removes the whole `dist` directory before
-building. Packaging must preserve any existing artifacts. Its version
-examples and `build.zig.zon` still say v0.1.2; `raywm.version` says
-`0.2.0-dev`. These inconsistencies must be resolved before producing a
-v0.2.0 release artifact.
+| Commit | Result |
+|---|---|
+| `42f17da` | M8: native constraints/relative input/inhibitors, foreign toplevel/workspace protocols and stricter input-backed activation. |
+| `d204222` | M9–10: Xwayland common View lifecycle/clipboard and native DnD/text-input/IME relay. |
+| `83328fb` | M11–12: native frame animations, retained snapshots, owned input-transparent rectangles and resource cleanup. |
+| `db3c1a7` | M13: versioned same-UID bounded IPC and raywmctl. |
+| `c69daa9` | Extra real-client tests reproduced a continuation DnD cancellation defect; source destruction now notifies clients. All ten data/IME scenarios pass after the fix. |
+| `1716ef8` | ReleaseSafe exposed Zig translate-c diagnosing glibc fortified fcntl stubs. Plain declarations are imported locally; explicit IPC bounds remain enforced. ReleaseSafe build and IPC client suite pass. |
 
-The recovered README, API, architecture, testing and security documents
-are mostly v0.1.2. In particular, SECURITY's assertion that data control
-and security-context are absent is stale: ordinary clients currently
-have data-control clipboard access, while clients labeled through
-security-context are filtered. Local IPC and Lua trust boundaries must
-be explained independently; a trusted same-user socket is not a Lua
-execution interface.
+Further GPU validation exposed `Failed to get backend DRM FD` during
+animation-driven scanout feedback on headless outputs. Both close/workspace
+pixel cases rendered correctly but **FAILED** the log check before its fix
+(`bbb1a57`).
+Outputs without a backend DRM FD now hold a balanced render-attachment lock,
+avoiding invalid scanout recommendations while keeping DMA-BUF imports and
+renderer feedback. The existing real-client effect cases are its regression.
+This is independent of the retained computed-C-bool workaround.
+
+| Gate | Recorded state |
+|---|---|
+| Debug/test-input build | PASS, 30/30 build steps |
+| Production ReleaseSafe build | PASS, 8/8 steps before the final output guard; final guard rebuild in progress at this checkpoint |
+| Units and shipped Lua compatibility | PASS, 38/38 Zig tests; dwindle25/focus19/workspaces12/rules10 and screenshot145 checks |
+| Formatting, AST, Lua/shell syntax and C-bool lint | PASS |
+| Complete Debug headless matrix | PASS; extra data10/effects6 and all seven documentation examples passed independently |
+| ReleaseSafe full headless matrix | Running at this checkpoint; final report records result |
+| Selected ReleaseSafe GLES2 | capture10/taskbar9/shell16/data10/Xwayland6 PASS; effects initially FAIL on backend feedback, rerun after fix in progress |
+| Physical DRM/KMS/input/hotplug/toolkits | SKIPPED; [hardware procedure](HARDWARE-TESTING.md) |
+| Performance | PASS as measured samples, not thresholds; [PERFORMANCE.md](PERFORMANCE.md) and raw JSON. Recheck final output guard before final report. |
+| Security review | Native ownership/filtering/activation/lock/IPC boundaries reviewed; actual client regression evidence and uncovered areas in TESTING.md/SECURITY.md |
+| Release packaging/installer/reproducibility | Implemented; archive validation pending this checkpoint |
+| Publication | Not authorized; no push/merge/tag/GitHub Release |
+
+## Deliberate limitations
+
+Scene primitives are borders and rectangles, plus client-buffer snapshots;
+blur, shadows, rounded clipping, text/images and custom shaders are
+**NOT IMPLEMENTED**. These were explicitly excluded by the recovered plan's
+wlr_scene boundary. Touch/tablet device routing is not implemented. Real
+fcitx/ibus, GTK/Qt/X11 DnD combinations, Steam/gaming, physical latency and
+DRM/KMS/monitor/input testing remain **SKIPPED**, not evidence of support.
+Headless GLES2 uses an actual AMD RX580/radeonsi render node but no physical
+output/input session. The mismatched-UID IPC branch is reviewed but a second
+UID test is SKIPPED. Exact upstream XWM BadWindow/property teardown diagnostics
+are printed and allowed only by the Xwayland harness; other errors fail.
+
+All original numbered implementation areas now have native/Lua implementations;
+acceptance retains these explicit hardware/interoperability gaps. An archive
+and green automated tests do not establish production readiness.

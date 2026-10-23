@@ -10,9 +10,9 @@ correctness ahead of artificial code reduction.
 - Everything that is policy is a Lua plugin: tiling, key bindings and
   window rules.
 
-> **Status: v0.2.0 development, experimental.** The continuation preserves
+> **Status: v0.2.0 release candidate, experimental.** The continuation preserves
 > the v0.1.2 core and adds native window state, workspaces, configuration
-> and protocol support. Remaining work and validation are recorded in
+> and protocol support. Implementation and validation are recorded in
 > [the development ledger](docs/DEVELOPMENT.md). This checkout is not a
 > published v0.2.0 release. Headless tests do not establish physical
 > hardware compatibility.
@@ -46,11 +46,23 @@ correctness ahead of artificial code reduction.
   viewporter/single-pixel buffers, presentation, cursor shape,
   decorations, activation and security-context filtering. See
   [SECURITY.md](SECURITY.md) for the unrestricted-client trust boundary.
+- **Pointer capture and desktop protocols:** lock/confinement and relative
+  motion, shortcut inhibitors with an emergency release, foreign-toplevel
+  management/listing and ext-workspace activation/state.
+- **Xwayland:** lazy process lifecycle, X11 windows through the common
+  view/workspace model, override-redirect menus and clipboard bridging.
+- **Data and IME:** native cross-client drag-and-drop, text-input-v3,
+  input-method-v2, candidate popups and virtual keyboard reinjection.
+- **Optional native effects:** frame-synchronized position/opacity tweens,
+  close/workspace snapshots and plugin-owned rectangles; no Lua per frame.
+  See [EFFECTS.md](docs/EFFECTS.md).
+- **External IPC v1:** bounded local JSON queries, events and focus/workspace
+  actions, with `raywmctl`; see [IPC.md](docs/IPC.md).
 - **Interactive move/resize** for floating windows (Super + drag, or the
   client's own title bar).
 - **Lua 5.4 plugin system (API v1).**
   - One clear loading contract.
-  - Per-plugin ownership of every handler, binding and timer.
+  - Per-plugin ownership of handlers, bindings, timers and visual resources.
   - A failing plugin is unloaded without affecting the others.
   - Memory and instruction limits.
   - Integer ids instead of pointers.
@@ -104,7 +116,7 @@ zig build -Doptimize=ReleaseSafe      # -> zig-out/bin/raywm
 From a release archive (after checking `sha256sum -c SHA256SUMS`):
 
 ```sh
-tar -xzf raywm-v0.1.2-linux-x86_64.tar.gz && cd raywm-v0.1.2
+tar -xzf raywm-v0.2.0-linux-x86_64.tar.gz && cd raywm-v0.2.0
 ./install.sh        # ~/.local/bin/raywm; config copied only if ~/.config/raywm does not exist
 ```
 
@@ -254,13 +266,14 @@ return {
 Plugins are **trusted code**. They are not sandboxed, and get the full
 Lua standard library. See [SECURITY.md](SECURITY.md). API reference:
 [docs/API.md](docs/API.md). Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Author guide and examples: [docs/PLUGINS.md](docs/PLUGINS.md).
 
 ## Known limitations
 
-- Xwayland, cross-client drag-and-drop, text input/IME, animation/visual
-  APIs and external IPC remain tracked milestones in
-  [DEVELOPMENT.md](docs/DEVELOPMENT.md). Do not infer support from a
-  preparatory type or protocol XML.
+- Xwayland/IME toolkit and physical hardware coverage remains limited;
+  no Steam or gaming compatibility claim is made. Upstream XWM can log
+  `DeleteProperty BadWindow` / `Failed to get window property` when X11
+  windows disappear; the Xwayland tests identify these exact diagnostics.
 - Touch and tablet input are not implemented.
 - Blur, shadows and rounded corners require rendering work beyond the
   existing scene primitives; they are not implemented.
@@ -271,9 +284,9 @@ Lua standard library. See [SECURITY.md](SECURITY.md). API reference:
   fallback keys apply when no live plugin has bindings.
 - Distribution binaries are dynamically linked; matching sonames are
   required. Build from source on other distributions.
-- DRM/KMS, GPU rendering, physical input and monitor hotplug require the
+- DRM/KMS, physical input and monitor hotplug require the
   [manual hardware checks](docs/HARDWARE-TESTING.md). Current automated
-  validation is isolated headless pixman.
+  validation covers isolated headless pixman and selected GLES2 suites.
 
 ## Testing
 

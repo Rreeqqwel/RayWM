@@ -12,6 +12,8 @@ against `src/lua.zig` and `src/host.zig`, and most of it is covered by
 - [Ids](#ids)
 - [`raywm` functions](#raywm-global)
 - [v0.2 additions](#v02-additions)
+- [Native animations and visuals](EFFECTS.md)
+- [Plugin author guide](PLUGINS.md)
 - [Pointer and border (v0.1.2)](#pointer-and-border-v012)
 - [`ctx` functions](#ctx-per-plugin)
 - [Events](#events)
@@ -309,8 +311,11 @@ unloaded after an error), as `config/plugins/focus.lua` does.
 | `ctx.on(event, fn)` | registration id | `fn(id)`; unknown event names are an error |
 | `ctx.bind(keys, fn)` | registration id | e.g. `"Super+Shift+Return"`; an invalid key spec is an error |
 | `ctx.timer(ms, fn)` | registration id | one-shot after `ms` (0 .. 2³¹) milliseconds; re-arm inside `fn` to repeat |
-| `ctx.cancel(id)` | `true` or `nil, "stale"` | cancels a handler, binding or timer of this plugin |
+| `ctx.cancel(id)` | `true` or `nil, "stale"` | cancels a handler, binding, timer, animation or rectangle of this plugin |
 | `ctx.manage(view, on)` | `true` or `nil, "stale"` | `on` defaults to `true`; see below |
+| `ctx.animate(view, options)` | registration ID, or `nil, reason` | native position/opacity tween or snapshot; [options and limits](EFFECTS.md) |
+| `ctx.rect(options)` | registration ID, or `nil, reason` | plugin-owned input-transparent rectangle; [options and limits](EFFECTS.md) |
+| `ctx.rect_update(id, options)` | `true` or `nil, "stale"` | update this plugin's rectangle; full options, fixed original parent |
 
 **Key syntax.** Modifiers are joined with `+` and followed by an xkb
 keysym name, matched case-insensitively:
@@ -362,6 +367,7 @@ arguments below. Existing handlers may ignore additional arguments.
 |---|---|---|
 | `view_map` | view | a window became visible. RayWM has already centred it on the output under the pointer. During this event, `raywm.focused()` still returns the previous window; afterwards the new window gets focus, unless a handler called `raywm.view_focus` |
 | `view_unmap` | view | the window is gone; `raywm.view(id)` is already stale |
+| `view_will_unmap` | view | before state is cleared; permits a native close snapshot |
 | `view_focus` | view, or `0` | keyboard focus changed; `0` means no window has focus |
 | `view_title` | view | the title changed (mapped windows only) |
 | `view_resized` | view | a size requested with `view_place` took effect |
@@ -376,6 +382,7 @@ arguments below. Existing handlers may ignore additional arguments.
 | `view_request_activate` | view | extra `(user)`; activation policy, see SECURITY.md |
 | `workspace_add` / `workspace_remove` | workspace | created / already removed (stale ID) |
 | `workspace_activate` | workspace | extra `(previous_id_or_0)`; now shown on its output |
+| `workspace_will_activate` | workspace | extra `(previous_id_or_0)`; before visibility changes, for outgoing snapshots |
 | `workspace_change` | workspace | name, output or urgency changed |
 | `view_workspace` | view | extra `(new_workspace_or_0, old_workspace_or_0)` |
 | `session_lock` / `session_unlock` | `0` | native lock state changed |
@@ -494,16 +501,16 @@ and `config/plugins/focus.lua` a complete focus-navigation plugin.
 
 ## Current limits
 
-- Per-frame callbacks, animations and drawing other than window borders
-  (rectangles, text, images). Animation/visual work is tracked in
-  [DEVELOPMENT.md](DEVELOPMENT.md); no per-frame Lua callback is promised.
+- Lua per-frame callbacks, text/image rendering and custom shaders.
+  Native animations, snapshots and rectangles are supported through
+  [EFFECTS.md](EFFECTS.md), with ownership and bounded resource tables.
 - Pointer events in Lua (motion, buttons, focus-follows-mouse). The
   pointer can be read and warped, not observed.
 - Blur, shadows, rounded corners and shaders. The wlroots scene renderer
   cannot do these; they would need a custom renderer.
-- Xwayland, cross-client drag-and-drop and text input/IME are tracked as
-  outstanding milestones in [DEVELOPMENT.md](DEVELOPMENT.md). Touch and
-  tablet input are not implemented.
+- Touch and tablet input. A tablet protocol global does not implement
+  tablet device routing. Xwayland, DnD and IME run natively, with automated
+  coverage and manual compatibility gaps listed in TESTING.md.
 - Reading screen contents from Lua. Screenshots are taken by external
   programs through the wlr-screencopy protocol; the shipped
   `config/plugins/screenshot.lua` starts them with `raywm.spawn`. API v1

@@ -10,6 +10,8 @@
 //!   group N           locks keyboard layout group N (0 = first layout), as
 //!                     a layout switch key does
 //!   sleep MS
+//!   benchmark N     N pointer-motion + wl_display.sync roundtrips;
+//!                   prints microseconds (not physical input latency)
 //! RAYWM_TEST_EXTENT=WxH: the layout size for absolute motion (default
 //! 1280x720, one headless output). The keymap follows XKB_DEFAULT_LAYOUT
 //! etc., e.g. XKB_DEFAULT_LAYOUT=us,ru for a two-layout keymap.
@@ -182,6 +184,24 @@ pub fn main(init: std.process.Init) !void {
             group = try std.fmt.parseInt(u32, a, 10);
             keyboard.modifiers(depressed, 0, 0, group);
             i += 2;
+        } else if (std.mem.eql(u8, cmd, "benchmark")) {
+            const n = try std.fmt.parseInt(usize, a, 10);
+            if (n == 0 or n > 4096) return error.BadSampleCount;
+            var samples: [4096]u64 = undefined;
+            for (samples[0..n], 0..) |*sample, j| {
+                const start = nowNs();
+                pointer.motionAbsolute(time, 400 + @as(u32, @intCast(j % 200)), 300, extent_w, extent_h);
+                pointer.frame();
+                if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
+                sample.* = nowNs() - start;
+            }
+            std.mem.sort(u64, samples[0..n], {}, std.sort.asc(u64));
+            std.debug.print("roundtrip_us n={d} min={d:.3} median={d:.3} p95={d:.3} max={d:.3}\n", .{
+                n,                                              @as(f64, @floatFromInt(samples[0])) / 1000,
+                @as(f64, @floatFromInt(samples[n / 2])) / 1000, @as(f64, @floatFromInt(samples[@min(n - 1, n * 95 / 100)])) / 1000,
+                @as(f64, @floatFromInt(samples[n - 1])) / 1000,
+            });
+            i += 2;
         } else if (std.mem.eql(u8, cmd, "sleep")) {
             const ms = try std.fmt.parseInt(u32, a, 10);
             var ts: posix.timespec = .{ .sec = ms / 1000, .nsec = @as(isize, ms % 1000) * std.time.ns_per_ms };
@@ -197,6 +217,12 @@ pub fn main(init: std.process.Init) !void {
     keyboard.destroy();
     if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
     std.debug.print("driver: done\n", .{});
+}
+
+fn nowNs() u64 {
+    var ts: posix.timespec = undefined;
+    _ = posix.system.clock_gettime(posix.CLOCK.MONOTONIC, &ts);
+    return @as(u64, @intCast(ts.sec)) * std.time.ns_per_s + @as(u64, @intCast(ts.nsec));
 }
 
 /// The virtual keyboard needs a keymap before any key event. Returns the

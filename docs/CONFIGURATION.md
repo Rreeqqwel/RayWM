@@ -320,6 +320,22 @@ got it: in a nested session the outer compositor may keep it (many
 desktops bind Super+letter combinations). Try it from a TTY, or change
 the binding.
 
+## Upgrading to v0.2.0
+
+The installer preserves your configuration. Compare the shipped plugins
+before copying over local edits. Load `outputs`, `input`, `workspaces`,
+`window-rules` before `dwindle`, then `floating`, `binds`, `focus`,
+`screenshot`, and `autostart`, as in the example `init.lua`. Configure
+monitor/device/rule/autostart policy in the corresponding plugin's local
+options or `rules.lua`. Existing API v1 plugins keep their loading contract.
+
+Optional `animations` and `focus-indicator` plugins are supplied but not
+loaded by default. See [EFFECTS.md](EFFECTS.md) and [PLUGINS.md](PLUGINS.md).
+Use `RAYWM_XWAYLAND=0` to disable Xwayland; otherwise it starts lazily when
+an X client connects, and children inherit its `DISPLAY`. Install Xwayland
+for X11 applications. External programs can use `raywmctl`; [IPC.md](IPC.md)
+describes its socket derivation and fixed actions.
+
 ## Upgrading from v0.1.1
 
 `install.sh` never modifies an existing `~/.config/raywm`, so after an

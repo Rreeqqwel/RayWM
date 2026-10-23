@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [feature/core, 'release/**']
+    branches: ['feature/**', 'release/**']
     tags: ['v*']
   pull_request:
     branches: [main]
@@ -28,7 +28,7 @@ jobs:
         run: |
           pacman -Syu --noconfirm --needed git wlroots0.20 wayland wayland-protocols \
             libxkbcommon pixman lua54 pkgconf curl xz file binutils \
-            grim slurp wl-clipboard python swaylock swayidle wlr-randr cliphist
+            grim slurp wl-clipboard python swaylock swayidle wlr-randr cliphist xorg-xwayland libxcb
           pacman -Q wlroots0.20 wayland lua54 libxkbcommon pixman grim slurp wl-clipboard | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/checkout@v4
@@ -106,6 +106,21 @@ jobs:
       - name: Window state tests (xdg-shell v7, decorations, minimize, activation)
         run: tests/shell.sh
 
+      - name: Taskbar and workspace protocol clients
+        run: tests/taskbar.sh zig-out/test-input/bin
+
+      - name: Xwayland lifecycle and clipboard interoperability
+        run: tests/xwayland.sh zig-out/test-input/bin
+
+      - name: Drag-and-drop and IME clients
+        run: tests/data.sh zig-out/test-input/bin
+
+      - name: Native animations, visuals and resource cleanup
+        run: tests/effects.sh zig-out/test-input/bin
+
+      - name: IPC framing, actions, limits and disconnects
+        run: tests/ipc.sh zig-out/test-input/bin
+
       - name: Screenshot tests (pixman, real grim/slurp/wl-clipboard)
         run: tests/screenshot.sh
 
@@ -142,7 +157,7 @@ jobs:
 
       - name: System packages
         if: steps.drm.outputs.available == 'true'
-        run: pacman -Syu --noconfirm --needed git wlroots0.20 wayland wayland-protocols libxkbcommon pixman lua54 pkgconf curl xz mesa grim slurp wl-clipboard python swaylock swayidle wlr-randr cliphist
+        run: pacman -Syu --noconfirm --needed git wlroots0.20 wayland wayland-protocols libxkbcommon pixman lua54 pkgconf curl xz mesa grim slurp wl-clipboard python swaylock swayidle wlr-randr cliphist xorg-xwayland libxcb
 
       - uses: actions/checkout@v4
         if: steps.drm.outputs.available == 'true'
@@ -161,7 +176,7 @@ jobs:
           RENDERER: gles2
         run: |
           zig build && zig build -Dtest-input -p zig-out/test-input
-          tests/smoke.sh && tests/focus.sh && tests/input.sh && tests/pointer.sh && tests/captures.sh && tests/navigation.sh && tests/screenshot.sh && tests/windows.sh && tests/workspaces.sh && tests/rules.sh && tests/session.sh && tests/outputs.sh && tests/devices.sh && tests/protocols.sh && tests/shell.sh
+          tests/smoke.sh && tests/focus.sh && tests/input.sh && tests/pointer.sh && tests/captures.sh && tests/navigation.sh && tests/screenshot.sh && tests/windows.sh && tests/workspaces.sh && tests/rules.sh && tests/session.sh && tests/outputs.sh && tests/devices.sh && tests/protocols.sh && tests/shell.sh && tests/taskbar.sh zig-out/test-input/bin && tests/data.sh zig-out/test-input/bin && tests/effects.sh zig-out/test-input/bin
 
   package:
     name: release package
@@ -186,6 +201,8 @@ jobs:
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           scripts/package.sh "$GITHUB_REF_NAME"
+          scripts/package.sh "$GITHUB_REF_NAME" # identical archive or fail
+          tests/package.sh dist/raywm-"$GITHUB_REF_NAME"-linux-x86_64.tar.gz
           tar -tzf dist/*.tar.gz
       - uses: actions/upload-artifact@v4
         with:

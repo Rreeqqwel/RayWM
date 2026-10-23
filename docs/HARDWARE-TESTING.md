@@ -54,16 +54,16 @@ regression test where the existing harness can represent it.
 | Workspaces | Switch/move windows on each monitor; hidden/minimized windows get no pointer/keyboard input; focus history restores; fullscreen does not capture focus on another hidden workspace. | SKIPPED |
 | Toolkits and popups | Test GTK, Qt, Firefox and foot: menus/submenus at output edges, CSD move/resize, decoration negotiation, minimize/restore, activation urgency and focus decisions. | SKIPPED |
 | Implicit pointer grabs | Select text/drag a scrollbar across another window and output; release outside all windows; source gets the release, destination never gets a release without a press. | SKIPPED |
-| Pointer constraints | With an implemented client, test lock/confine, relative motion, cursor hints, focus loss, fullscreen/workspace changes, disconnect and output removal; no stuck lock. | SKIPPED |
+| Pointer constraints | With a compatible client, test lock/confine, relative motion, cursor hints, focus loss, fullscreen/workspace changes, disconnect and output removal; no stuck lock. | SKIPPED |
 | Session lock | Lock with swaylock; only lock content appears on every output and screenshots; no bindings operate; hotplug while locked; kill locker and ensure session stays locked; replacement locker can unlock. | SKIPPED |
 | Idle | Run swayidle and a visible video player's idle inhibitor; activity resumes; a hidden workspace/minimized inhibitor no longer keeps idle awake. | SKIPPED |
 | Capture | Run real grim/slurp with Print bindings and a physical mouse across outputs; verify crop, cancellation, notifications and file/clipboard PNG; test DMA-BUF only if actually used. | SKIPPED |
-| Clipboard | Copy/paste regular and primary selections among GTK/Qt/foot, then X11 once implemented; client exit and clipboard-manager ownership changes leave no hung reads. | SKIPPED |
-| Drag-and-drop | Once implemented, transfer and cancel among actual GTK/Qt/X11 clients; destination changes, destroyed source/destination and workspace switches leave pointer/keyboard focus usable. | SKIPPED |
-| Text input/IME | Once implemented, use an actual IME for preedit/commit, candidate popup placement, app/focus/layout changes, password fields, IME restart and client exit. | SKIPPED |
-| Xwayland | Once implemented, X11 applications map/focus/move/resize/fullscreen/minimize and switch workspaces; Xwayland process crash leaves Wayland clients usable and new X11 clients can start. Steam/gaming are separate tests. | SKIPPED |
-| Animations/visuals | Once implemented, interrupt transitions rapidly, close a target mid-animation and reload/unload its plugin; no lingering scene nodes, pointer mismatches or unbounded idle rendering. | SKIPPED |
-| External shell/IPC | Once implemented, exercise a real external shell against queries, events and actions; slow/disconnected subscribers cannot stall input/rendering; access controls match the documented trust boundary. | SKIPPED |
+| Clipboard | Copy/paste regular and primary selections among GTK/Qt/foot, then X11; client exit and clipboard-manager ownership changes leave no hung reads. | SKIPPED |
+| Drag-and-drop | transfer and cancel among actual GTK/Qt/X11 clients; destination changes, destroyed source/destination and workspace switches leave pointer/keyboard focus usable. | SKIPPED |
+| Text input/IME | use an actual IME for preedit/commit, candidate popup placement, app/focus/layout changes, password fields, IME restart and client exit. | SKIPPED |
+| Xwayland | X11 applications map/focus/move/resize/fullscreen/minimize and switch workspaces; Xwayland process crash leaves Wayland clients usable and new X11 clients can start. Steam/gaming are separate tests. | SKIPPED |
+| Animations/visuals | interrupt transitions rapidly, close a target mid-animation and reload/unload its plugin; no lingering scene nodes, pointer mismatches or unbounded idle rendering. | SKIPPED |
+| External shell/IPC | exercise a real external shell against queries, events and actions; slow/disconnected subscribers cannot stall input/rendering; access controls match the documented trust boundary. | SKIPPED |
 | Plugin recovery | Reload edited config repeatedly; deliberately fail one plugin; other bindings and native state remain usable; remove ownership-producing plugins and confirm cleanup/fallback behavior. | SKIPPED |
 
 ## Performance observations

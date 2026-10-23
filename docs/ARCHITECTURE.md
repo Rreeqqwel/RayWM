@@ -205,7 +205,10 @@ that are not characters (Return, F1, Print) are the same in every layout.
 
 RayWM draws only when wlroots emits `frame` for an output. That happens
 when the scene has damage or a client asked for a frame callback. An idle
-desktop does no rendering work and runs no Lua.
+desktop does no rendering work and runs no Lua. Native animations request
+subsequent frames only while active. Outputs without a backend DRM FD force
+composition: they retain renderer DMA-BUF import/feedback but have no valid
+scanout device to advertise.
 
 ### Screenshots: protocol in the core, policy in a plugin
 
@@ -268,36 +271,55 @@ processes:
 - get an empty signal mask;
 - are never left as zombies.
 
-## Source map
+## v0.2 native modules
 
-| File | Lines (v0.1.2) | Content |
-|---|---|---|
-| `src/main.zig` | 79 | arguments, signals, config path, startup and teardown order |
-| `src/server.zig` | 429 | `Server`, `Output`, focus, spawn, layout changes, screencopy/xdg-output globals |
-| `src/view.zig` | 369 | `View` (xdg toplevel, border), `Popup` |
-| `src/input.zig` | 540 | keyboards, binding matching and layouts, pointer focus, implicit and compositor grabs, pointer warp |
-| `src/layer.zig` | 208 | layer-shell surfaces, arrangement, keyboard rule |
-| `src/host.zig` | 140 | Lua-facing API implementation |
-| `src/lua.zig` | 826 | Lua runtime |
+| Module | Responsibility |
+|---|---|
+| `server.zig`, `main.zig` | backend/scene/seat ownership, ordered teardown, focus and event dispatch |
+| `view.zig`, `xwayland.zig` | common xdg/X11 view state; configure/ack only for xdg, real buffer-size completion for X11; lazy XWM process and override-redirect surfaces |
+| `workspace.zig`, `taskbar.zig` | native visibility/focus, hotplug recovery and idle-coalesced desktop protocol publication |
+| `protocols.zig`, `constraints.zig` | protocol globals/filtering, input-backed activation grants, constrained pointer/shortcut lifecycles |
+| `data.zig`, `textinput.zig` | drag validation/icons/cancellation; seat-local text/IME relay, popups and keyboard grabs |
+| `output.zig`, `outputconfig.zig`, `inputconfig.zig` | native output transactions and per-device settings |
+| `lock.zig`, `input.zig`, `layer.zig` | lock presentation/input exclusion, pointer/keyboard grabs, layer arrangement |
+| `animation.zig`, `visual.zig` | bounded generation-handle tables; native output-frame tweens, owned snapshots and rectangles |
+| `ipc.zig` | same-UID, versioned NDJSON desktop queries/actions/events with resource limits |
+| `lua.zig`, `host.zig` | VM, plugin-owned registrations, protected dispatch and ID-based native API |
 
-Total: 2591 physical lines (`wc -l src/*.zig`), comments included;
-v0.1.1 had 2249 (v0.1.2: +393 / −51). Tests, documentation, CI and
-scripts are not counted.
+Xwayland associations create the same View abstraction used by Lua layout,
+floating, workspaces and fullscreen. Native X11 objects remain wlroots-owned;
+wrappers own listeners and scene nodes. X11 menus retain owner IDs, not
+borrowed View pointers. The Xwayland shell global is exposed only to the
+compositor's actual Xwayland client. No gaming compatibility is inferred.
 
-## Extension points and their limits
+Text-input entries are eligible only for the seat's current keyboard surface
+and an enabled text input. The active IME receives surrounding state and sends
+preedit/commit/delete back only while eligible. Its own virtual keyboard
+bypasses its input-method grab to avoid feedback. DnD validates the real
+initiating press, delegates offers/grabs to wlroots, owns the icon tree and
+destroys the source to notify a rejected/cancelled drag.
 
-Plugins can observe window, focus, title, resize and output events, and
-control geometry, visibility, opacity, stacking, focus, closing,
-bindings, timers and process spawning. Since v0.1.2 they can also read
-the pointer position, warp the pointer (refused during grabs) and draw
-a solid border around a window.
+Animation jobs retain a View ID or an independently owned snapshot tree.
+Scene buffer locks preserve snapshots after source destruction. Output frame
+callbacks update offset/opacity using monotonic time and easing, and request
+more frames only while jobs remain active. Logical layout geometry stays
+separate. There are no Lua frame hooks. Visual nodes are tagged and skipped
+by input hit testing; attached resources retire on view unmap and all owned
+registrations retire on plugin fault/reload. Locking clears snapshots and
+hides every non-lock layer.
 
-Plugins cannot:
-- draw anything else (text, images, shapes), or animate;
-- run code per frame;
-- see client contents (screenshots are taken by external programs);
-- change protocol behaviour.
+IPC shares the event loop without blocking reads/writes. Each client has
+fixed input/output storage, a partial-request deadline and selected event
+bits. Reentrant actions can emit events, so dead-client destruction is
+swept only after the active callback returns. Native state queries expose
+IDs and values, never arbitrary object access or code evaluation.
 
-Per-frame hooks and decorations are planned for v0.2. Effects such as
-blur or rounded corners would need a custom renderer, and are out of
-scope for the wlroots scene renderer used here.
+## Extension points and limits
+
+The core owns protocol/resource correctness; Lua owns layout, bindings,
+rules, workspace naming and optional effects policy. API v1 remains additive.
+See [PLUGINS.md](PLUGINS.md), [API.md](API.md), [EFFECTS.md](EFFECTS.md)
+and [IPC.md](IPC.md). Drawing supports borders and solid rectangles;
+blur, shadows, rounded clipping, text/image primitives and custom shaders
+are NOT IMPLEMENTED. Touch/tablet routing is not implemented. Protocol
+advertisement alone does not establish device or advanced-effect support.

@@ -48,10 +48,8 @@ permission prompt or portal policy in the compositor.
   Screen locking does not revoke their clipboard-manager access.
 - **Desktop control.** Ordinary clients can use the advertised output
   configuration, power, gamma, layer-shell and session-lock protocols.
-  Taskbar/workspace management has the same trust boundary when those
-  managers are implemented. A global listed in the filter is not by
-  itself an implemented capability; see the development acceptance
-  ledger for current feature status.
+  Foreign-toplevel/workspace management has the same trust boundary.
+  Requests that alter focus/state are refused during session lock.
 
 RayWM implements `security-context-v1` through wlroots. A launcher can
 provide a dedicated listening socket for restricted clients. wlroots
@@ -128,6 +126,29 @@ Without a plugin decision, a verified request restores/focuses a
 mapped window on a shown workspace if native focus rules permit it;
 otherwise the window becomes urgent. This is a focus-stealing policy,
 not a permission mechanism for screen, clipboard or session access.
+
+## Local IPC and visual resources
+
+IPC is a fixed versioned command interface, not a code execution API.
+It checks kernel peer UID, requires a private owner-only runtime directory,
+creates a mode-0600 socket without overwriting paths, and bounds clients,
+framing, parsing depth, partial-request time and output queues. Slow/flooding
+peers are disconnected. Actions are refused while locked; same-user queries
+can still read titles/state. Wayland security-context does not constrain
+filesystem IPC access; sandbox launchers must hide this socket separately.
+See [docs/IPC.md](docs/IPC.md) for the full contract.
+
+Visual/animation handles are generation-checked native resources owned by
+Lua registrations. No native pointer is exposed. Snapshot buffers are locked
+and bounded by a 128 MiB four-byte-per-pixel estimate; cancellation, plugin
+fault/reload, completion and session lock release them. This is resource
+management for trusted plugins, not an untrusted plugin sandbox. Rectangles
+and snapshots are input-transparent and remain below the lock layer.
+
+Xwayland is trusted session software, isolated from neither other X11
+applications nor the user's unrestricted Wayland clients. Clipboard bridging
+inherits that trust boundary. Repeated early Xwayland crashes have a bounded
+retry policy; Wayland clients remain independent of its process lifecycle.
 
 ## Other notes
 

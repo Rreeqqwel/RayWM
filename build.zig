@@ -55,16 +55,18 @@ pub fn build(b: *std.Build) void {
             .use_llvm = use_llvm,
             .use_lld = use_llvm,
         });
-        for ([_]struct { []const u8, []const u8 }{
-            .{ "/usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml", "xdg-shell" },
-            .{ "/usr/share/wayland-protocols/unstable/text-input/text-input-unstable-v3.xml", "text-input" },
-            .{ "protocol/input-method-unstable-v2.xml", "input-method" },
-            .{ "protocol/virtual-keyboard-unstable-v1.xml", "virtual-keyboard" },
+        for ([_]struct { std.Build.LazyPath, []const u8 }{
+            .{ scanner.wayland_protocols.path(b, "stable/xdg-shell/xdg-shell.xml"), "xdg-shell" },
+            .{ scanner.wayland_protocols.path(b, "unstable/text-input/text-input-unstable-v3.xml"), "text-input" },
+            .{ b.path("protocol/input-method-unstable-v2.xml"), "input-method" },
+            .{ b.path("protocol/virtual-keyboard-unstable-v1.xml"), "virtual-keyboard" },
         }) |protocol| {
-            const header_cmd = b.addSystemCommand(&.{ "wayland-scanner", "client-header", protocol[0] });
+            const header_cmd = b.addSystemCommand(&.{ "wayland-scanner", "client-header" });
+            header_cmd.addFileArg(protocol[0]);
             const header = header_cmd.addOutputFileArg(b.fmt("{s}-client.h", .{protocol[1]}));
             transfer.root_module.addIncludePath(header.dirname());
-            const code_cmd = b.addSystemCommand(&.{ "wayland-scanner", "private-code", protocol[0] });
+            const code_cmd = b.addSystemCommand(&.{ "wayland-scanner", "private-code" });
+            code_cmd.addFileArg(protocol[0]);
             const code = code_cmd.addOutputFileArg(b.fmt("{s}-protocol.c", .{protocol[1]}));
             transfer.root_module.addCSourceFile(.{ .file = code, .flags = &.{} });
         }

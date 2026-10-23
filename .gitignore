@@ -6,3 +6,6 @@
 /.zig-cache/
 /zig-pkg/
 /dist/
+
+# Python test/client caches
+__pycache__/
