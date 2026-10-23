@@ -225,6 +225,10 @@ pub const Server = struct {
             "cursor_motion_abs", "cursor_button",  "cursor_axis",       "cursor_frame",
             "new_layer_surface", "new_inhibitor",
         }) |name| @field(server, name).link.remove();
+        // Output/device destroy listeners still use scene nodes, cursor,
+        // workspace/view registries and renderer resources. In particular
+        // an active/abandoned lock retains each output's background rect.
+        server.backend.destroy();
         server.scene.tree.node.destroy();
         server.view_ids.deinit(gpa);
         workspace.deinitAll(server);
@@ -233,7 +237,6 @@ pub const Server = struct {
         server.cursor.destroy();
         server.allocator.destroy();
         server.renderer.destroy();
-        server.backend.destroy();
         server.wl_server.destroy();
     }
 

@@ -143,7 +143,7 @@ d8() {
     wait_log locker "locked"
     wait_log source "data: cancelled"
     drive_wait
-    drive key f12 down key f12 up sleep 200
+    drive sleep 300 key f12 down key f12 up sleep 200
     wait "$locker_pid" || fail "locker exit"
     drive move 900 300 down left up left sleep 150
     has a "ptr button 272 released window"

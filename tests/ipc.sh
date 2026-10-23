@@ -25,7 +25,7 @@ with socket.socket(socket.AF_UNIX) as peer:
     assert json.loads(stream.readline())['ok']
 print('ipc: locked actions refused; queries available')
 PY
-drive key f12 down key f12 up sleep 200
+drive sleep 300 key f12 down key f12 up sleep 200
 wait "$locker_pid" || fail "locker exit"
 stop
 [ ! -e "$socket" ] || fail "socket not removed on exit"

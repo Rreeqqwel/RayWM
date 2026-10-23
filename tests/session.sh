@@ -190,13 +190,31 @@ s7() {
         "$root/config/plugins/autostart.lua" >"$tmp/config/raywm/plugins/autostart.lua"
     reload() { drive key super down key shift down key r down key r up key shift up key super up sleep 500; }
     reload
-    [ "$(cat "$tmp/auto" 2>/dev/null)" = "$(printf 'a\nb')" ] || fail "commands did not run once, in order: $(cat "$tmp/auto" 2>/dev/null)"
+    # spawn_once starts asynchronous processes; completion order is not
+    # the order of the synchronous Lua startup callbacks.
+    [ "$(sort "$tmp/auto" 2>/dev/null)" = "$(printf 'a\nb')" ] || fail "commands did not run once: $(cat "$tmp/auto" 2>/dev/null)"
     reload
     [ "$(wc -l <"$tmp/auto")" -eq 2 ] || fail "a reload started them again"
     sed -i 's|^  commands = { |  commands = { "echo c >>'"'$tmp/auto'"'", |' "$tmp/config/raywm/plugins/autostart.lua"
     reload
-    [ "$(cat "$tmp/auto")" = "$(printf 'a\nb\nc')" ] || fail "the new command did not start once: $(cat "$tmp/auto")"
+    [ "$(sort "$tmp/auto")" = "$(printf 'a\nb\nc')" ] || fail "the new command did not start once: $(cat "$tmp/auto")"
     stop
 }
 
-run_scenarios session s1 s2 s3 s4 s5 s6 s7
+s8() {
+    name="shutdown while actively locked releases native backgrounds before scene destruction"
+    PLUGINS=$plugins start "$cfg" 1
+    locker l
+    wait_log l "locked"
+    stop
+}
+s9() {
+    name="shutdown after locker death releases the abandoned lock backgrounds"
+    PLUGINS=$plugins start "$cfg" 1
+    locker l RAYWM_TEST_LOCK_CRASH=1
+    wait_log l "crashing"
+    sleep 0.2
+    grep -q 'exited without unlocking' "$tmp/raywm.log" || fail "no abandoned lock"
+    stop
+}
+run_scenarios session s1 s2 s3 s4 s5 s6 s7 s8 s9
