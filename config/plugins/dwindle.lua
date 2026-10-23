@@ -261,8 +261,11 @@ local function sync_views()
     if not tileable(v) then
       gone[#gone + 1] = id
     else
-      local key = space_of(v)
-      if key and key ~= root_of(leaf).space and key:sub(1, 1) == "w" then moved[#moved + 1] = { id, key } end
+      -- Moved to another workspace, or its workspace was removed. (A tile
+      -- whose centre is on another output, e.g. while fullscreen there,
+      -- stays in its output's tree.)
+      local key, cur = space_of(v), root_of(leaf).space
+      if key and key ~= cur and (key:sub(1, 1) == "w" or cur:sub(1, 1) == "w") then moved[#moved + 1] = { id, key } end
     end
   end
   for _, id in ipairs(gone) do

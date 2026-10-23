@@ -120,6 +120,10 @@ unplug() {
     echo "$1" >"$tmp/raywm-test-unplug"
     pkill -USR2 -P "$pid" -x raywm || fail "could not signal raywm"
 }
+# plug: test builds add a new 1280x720 headless output on SIGUSR1.
+plug() {
+    pkill -USR1 -P "$pid" -x raywm || fail "could not signal raywm"
+}
 
 stop() {
     kill -TERM $pid 2>/dev/null || true

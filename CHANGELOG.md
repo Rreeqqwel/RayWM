@@ -8,6 +8,34 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ### Added
 
+- **Workspaces** (`config/plugins/workspaces.lua`, loaded by the example
+  `init.lua`): nine per output. Super+1..9 show one, Super+Shift+1..9
+  move the focused window there, Super+Ctrl+Left/Right show the
+  previous/next one, Super+Shift+Ctrl+Left/Right move the window there,
+  Super+Alt+Left/Right move it to the next output. Count, names, keys
+  and `follow` are options.
+  - The core keeps the workspaces (src/workspace.zig): each output shows
+    one; windows on the others are hidden and can get neither keyboard
+    nor pointer input, whatever plugins ask. New windows open on the
+    workspace shown where they appear. Focus history is per workspace:
+    showing one focuses its most recently focused window.
+  - A workspace belongs to the plugin that created it. If that plugin
+    fails or is reloaded, its workspaces are kept as orphans that a
+    plugin adopts again (workspaces.lua does); orphans nobody adopted
+    after a (re)load are removed and their windows shown, so removing the
+    plugin from the config never loses windows.
+  - Unplugging an output moves its workspaces, with their windows, to
+    another output; when that output comes back, workspaces.lua moves
+    them home. A new output gets its own nine.
+  - Dwindle tiles every workspace separately and keeps the trees across
+    reloads.
+  - Lua API: `raywm.workspaces()`, `raywm.workspace(id)`,
+    `raywm.workspace_activate/rename/set_output/remove`,
+    `raywm.view_workspace(view, ws)`, `ctx.workspace_create(output,
+    name)`, `ctx.workspace_adopt(id)`; `view(id).workspace`;
+    `raywm.outputs()` entries have `name` and `workspace`; events
+    `workspace_add`, `workspace_remove`, `workspace_activate(id, prev)`,
+    `workspace_change`, `view_workspace(view, ws, old)`.
 - **Floating windows** (`config/plugins/floating.lua`, loaded by the
   example `init.lua`): Super+Shift+Space toggles the focused window
   between tiled and floating. Floating is window state kept by the core

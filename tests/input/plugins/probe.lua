@@ -34,6 +34,18 @@ return {
         out:write(string.format("state %d floating=%s fullscreen=%s maximized=%s visible=%s managed=%s ws=%d output=%d\n",
           id, tostring(v.floating), tostring(v.fullscreen), tostring(v.maximized), tostring(v.visible),
           tostring(v.managed), v.workspace or 0, v.output or 0))
+        if raywm.workspace and v.workspace ~= 0 then
+          local w = raywm.workspace(v.workspace)
+          if w then out:write(string.format("where %d %s@%s\n", id, w.name, w.home)) end
+        end
+      end
+      if raywm.workspaces then
+        local names = {}
+        for _, o in ipairs(raywm.outputs()) do names[o.id] = o.name end
+        for _, w in ipairs(raywm.workspaces()) do
+          out:write(string.format("ws %s@%s output=%s active=%s orphan=%s\n", w.name, w.home,
+            names[w.output] or "none", tostring(w.active), tostring(w.orphan)))
+        end
       end
     end)
   end,

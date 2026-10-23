@@ -6,7 +6,8 @@
 //! client could otherwise inject input.
 //!
 //! Also: SIGUSR2 unplugs the output named in $XDG_RUNTIME_DIR/raywm-test-unplug,
-//! so tests/screenshot.sh can remove an output while a capture is pending.
+//! so tests/screenshot.sh can remove an output while a capture is pending;
+//! SIGUSR1 plugs in a new 1280x720 headless output (named HEADLESS-<n>).
 const std = @import("std");
 const wl = @import("wayland").server.wl;
 const wlr = @import("wlroots");
@@ -53,6 +54,16 @@ pub fn install(comptime S: type, server: *S, wl_server: *wl.Server, comptime add
             };
             return 0;
         }
+        fn plugOutput(_: c_int, srv: *S) c_int {
+            srv.backend.multiForEachBackend(*S, struct {
+                fn f(b: *wlr.Backend, _: *S) void {
+                    if (!b.isHeadless()) return;
+                    const o = b.headlessAddOutput(1280, 720) catch return;
+                    std.log.warn("TEST BUILD: plugged in output {s}", .{o.name});
+                }
+            }.f, srv);
+            return 0;
+        }
         fn keyboardMgrDestroy(l: *wl.Listener(*wlr.VirtualKeyboardManagerV1), _: *wlr.VirtualKeyboardManagerV1) void {
             const st: *@This() = @fieldParentPtr("keyboard_mgr_destroy", l);
             st.new_keyboard.link.remove();
@@ -70,5 +81,6 @@ pub fn install(comptime S: type, server: *S, wl_server: *wl.Server, comptime add
     keyboard_mgr.events.destroy.add(&st.keyboard_mgr_destroy);
     // The source lives as long as the event loop, like the managers.
     _ = try wl_server.getEventLoop().addSignal(*S, @intFromEnum(std.posix.SIG.USR2), State.unplugOutput, server);
+    _ = try wl_server.getEventLoop().addSignal(*S, @intFromEnum(std.posix.SIG.USR1), State.plugOutput, server);
     std.log.warn("TEST BUILD: virtual pointer/keyboard protocols are enabled", .{});
 }

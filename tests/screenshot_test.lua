@@ -27,6 +27,11 @@ raywm = {
   log = function() end,
   views = function() return {} end,
   outputs = function() return {} end,
+  -- So that every plugin binds all its keys here (v0.2.0 API).
+  workspaces = function() return {} end,
+  pointer = function() return { x = 0, y = 0, busy = false } end,
+  view_fullscreen = function() return true end,
+  view_maximize = function() return true end,
   view = function() return nil, "stale" end,
   focused = function() return nil end,
   reload = function() end,
@@ -101,12 +106,13 @@ check(keyset("screenshot") == "Ctrl+Alt+p | Ctrl+Print | Ctrl+Shift+Print | Prin
 env.XDG_RUNTIME_DIR = real_getenv("XDG_RUNTIME_DIR")
 env.WAYLAND_DISPLAY = "raywm-screenshot-test"
 local others = {}
-for _, name in ipairs({ "binds", "dwindle", "focus", "floating" }) do
+local shipped = { "binds", "dwindle", "focus", "floating", "workspaces" }
+for _, name in ipairs(shipped) do
   others[name] = load(name, "config/plugins/" .. name .. ".lua")
   setup(name, others[name])
 end
 local seen = {}
-for _, name in ipairs({ "binds", "dwindle", "focus", "floating", "screenshot" }) do
+for _, name in ipairs({ "binds", "dwindle", "focus", "floating", "workspaces", "screenshot" }) do
   for _, b in ipairs(regs[name].binds) do
     local k = normalize(b.key)
     check(not seen[k], ("key %s bound by %s and %s"):format(b.key, seen[k] or "", name))
@@ -136,6 +142,7 @@ unload("binds", others.binds)
 unload("dwindle", others.dwindle)
 unload("focus", others.focus)
 unload("floating", others.floating)
+unload("workspaces", others.workspaces)
 
 -- ---- 3. callbacks only build a command and spawn it ----------------------
 

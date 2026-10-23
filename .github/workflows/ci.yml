@@ -79,6 +79,9 @@ jobs:
       - name: Window management tests (pixman, virtual input)
         run: tests/windows.sh
 
+      - name: Workspace tests (pixman, virtual input)
+        run: tests/workspaces.sh
+
       - name: Screenshot tests (pixman, real grim/slurp/wl-clipboard)
         run: tests/screenshot.sh
 
@@ -134,7 +137,7 @@ jobs:
           RENDERER: gles2
         run: |
           zig build && zig build -Dtest-input -p zig-out/test-input
-          tests/smoke.sh && tests/focus.sh && tests/input.sh && tests/pointer.sh && tests/navigation.sh && tests/screenshot.sh && tests/windows.sh
+          tests/smoke.sh && tests/focus.sh && tests/input.sh && tests/pointer.sh && tests/navigation.sh && tests/screenshot.sh && tests/windows.sh && tests/workspaces.sh
 
   package:
     name: release package

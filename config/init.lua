@@ -1,5 +1,6 @@
 -- RayWM example config. Copy this directory to ~/.config/raywm/.
 -- Every plugin lives in plugins/<name>.lua and is loaded by name.
+raywm.load("workspaces") -- Super+1..9; before the layout, which tiles each one
 raywm.load("dwindle")
 raywm.load("floating") -- Super+Shift+Space: tiled <-> floating
 raywm.load("binds")
