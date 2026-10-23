@@ -10,6 +10,8 @@ const input = @import("input.zig");
 const host = @import("host.zig");
 const layer_shell = @import("layer.zig");
 const LayerSurface = layer_shell.LayerSurface;
+const workspace = @import("workspace.zig");
+const Workspace = workspace.Workspace;
 
 pub const gpa = std.heap.c_allocator;
 const log = std.log.scoped(.server);
@@ -47,6 +49,8 @@ pub const Server = struct {
     views: wl.list.Head(View, .link) = undefined,
     /// Every view by id, mapped or not.
     view_ids: std.AutoHashMapUnmanaged(u32, *View) = .empty,
+    /// In creation order (see workspace.zig).
+    workspaces: wl.list.Head(Workspace, .link) = undefined,
     outputs: wl.list.Head(Output, .link) = undefined,
     keyboards: wl.list.Head(input.Keyboard, .link) = undefined,
     focused: ?*View = null,
@@ -117,6 +121,7 @@ pub const Server = struct {
         server.views.init();
         server.outputs.init();
         server.keyboards.init();
+        server.workspaces.init();
         backend.events.new_output.add(&server.new_output);
         output_layout.events.change.add(&server.layout_change);
         server.xdg_shell.events.new_toplevel.add(&server.new_toplevel);
@@ -159,6 +164,7 @@ pub const Server = struct {
         }) |name| @field(server, name).link.remove();
         server.scene.tree.node.destroy();
         server.view_ids.deinit(gpa);
+        workspace.deinitAll(server);
         server.cursor_mgr.destroy();
         server.cursor.destroy();
         server.allocator.destroy();
@@ -206,21 +212,26 @@ pub const Server = struct {
         return null;
     }
 
+    /// May get keyboard focus: visible and not behind a fullscreen window.
+    pub fn focusable(server: *Server, v: *View) bool {
+        return v.visible() and !server.coveredByFullscreen(v);
+    }
+
     /// Where keyboard focus goes when `gone` loses it (closed, hidden): the
-    /// most recently focused visible view on the same output, else any.
+    /// most recently focused focusable view on the same output, else any.
     pub fn focusFallback(server: *Server, gone: *View) ?*View {
         const g = gone.geometry();
         const out = server.outputAt(g.x +| @divTrunc(g.width, 2), g.y +| @divTrunc(g.height, 2));
         if (out) |o| {
             var it = server.views.iterator(.forward);
             while (it.next()) |v| {
-                if (v == gone or !v.visible()) continue;
+                if (v == gone or !server.focusable(v)) continue;
                 const vg = v.geometry();
                 if (server.outputAt(vg.x +| @divTrunc(vg.width, 2), vg.y +| @divTrunc(vg.height, 2)) == o) return v;
             }
         }
         var it = server.views.iterator(.forward);
-        while (it.next()) |v| if (v != gone and v.visible()) return v;
+        while (it.next()) |v| if (v != gone and server.focusable(v)) return v;
         return null;
     }
 
@@ -309,6 +320,21 @@ pub const Server = struct {
         return null;
     }
 
+    /// After windows were hidden or shown: the keyboard leaves a window
+    /// that is hidden now; the pointer follows what is under it.
+    pub fn afterVisibilityChange(server: *Server) void {
+        if (server.focused) |f| if (!f.visible()) server.focus(server.focusFallback(f));
+        input.refocusPointer(server);
+    }
+
+    /// `ws` was just shown: its most recently focused window gets the
+    /// keyboard; an empty workspace takes it from the hidden windows.
+    pub fn focusWorkspace(server: *Server, ws: *Workspace) void {
+        var it = server.views.iterator(.forward);
+        while (it.next()) |v| if (v.workspace == ws and server.focusable(v)) return server.focus(v);
+        if (server.focused) |f| if (!f.visible()) server.focus(null);
+    }
+
     /// Fullscreen and maximized windows follow output and panel changes.
     pub fn refitViews(server: *Server) void {
         var it = server.views.iterator(.forward);
@@ -361,6 +387,8 @@ pub const Server = struct {
         // A dying output is still listed here: wlroots removes it from the
         // layout (firing this event) before our destroy handler runs.
         while (outs.next()) |o| if (o.inLayout()) o.arrangeLayers();
+        // Workspaces of an output that left move with their windows first.
+        workspace.rescue(server);
         if (server.activeOutputBox()) |box| {
             var it = server.views.iterator(.forward);
             while (it.next()) |v| {
@@ -392,6 +420,8 @@ pub const Output = struct {
     id: u32,
     /// Area left for windows, output-local (layer-shell exclusive zones removed).
     usable: wlr.Box = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
+    /// The workspace shown here (see workspace.zig).
+    active_ws: ?*Workspace = null,
     layers: wl.list.Head(LayerSurface, .link) = undefined,
 
     frame: wl.Listener(*wlr.Output) = .init(handleFrame),
@@ -454,6 +484,7 @@ pub const Output = struct {
     fn handleDestroy(listener: *wl.Listener(*wlr.Output), _: *wlr.Output) void {
         const output: *Output = @fieldParentPtr("destroy", listener);
         layer_shell.closeAll(output);
+        workspace.outputGone(output.server, output);
         output.frame.link.remove();
         output.request_state.link.remove();
         output.destroy.link.remove();

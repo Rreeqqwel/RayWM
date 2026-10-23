@@ -31,6 +31,7 @@ const Server = srv.Server;
 const gpa = srv.gpa;
 const LayerSurface = @import("layer.zig").LayerSurface;
 const input = @import("input.zig");
+const Workspace = @import("workspace.zig").Workspace;
 
 /// Longest a newly mapped window stays hidden waiting for its first size.
 pub const reveal_timeout_ms = 150;
@@ -88,6 +89,10 @@ pub const View = struct {
     decisions: u32 = 0,
     /// Black rectangle under a fullscreen window, covering its output.
     backdrop: ?*wlr.SceneRect = null,
+    /// Null: on no workspace, always shown on its output.
+    workspace: ?*Workspace = null,
+    /// Wants attention (e.g. activation requested while hidden).
+    urgent: bool = false,
 
     commit: wl.Listener(*wlr.Surface) = .init(handleCommit),
     map: wl.Listener(void) = .init(handleMap),
@@ -343,9 +348,50 @@ pub const View = struct {
     // ---- visibility, stacking and state ---------------------------------------
 
     /// Logically visible: may have keyboard focus. (It may not be drawn
-    /// yet, see `revealed`.)
+    /// yet, see `revealed`.) Windows of a workspace that is not shown are
+    /// hidden, whatever plugins ask (raywm.view_show).
     pub fn visible(view: *View) bool {
-        return view.mapped and !view.hidden;
+        if (!view.mapped or view.hidden) return false;
+        const ws = view.workspace orelse return true;
+        return ws.isActive();
+    }
+
+    /// Moves the window to workspace `ws` (null: none), onto its output.
+    pub fn setWorkspace(view: *View, ws: ?*Workspace) void {
+        const old = view.workspace;
+        if (old == ws) return;
+        if (ws) |w| if (w.output) |to| if (view.output()) |from| if (from != to) view.moveToOutput(from, to);
+        view.workspace = ws;
+        view.updateVisibility();
+        view.server.afterVisibilityChange();
+        if (view.announced) view.server.emitArgs(.view_workspace, view.id, &.{ .{ .int = if (ws) |w| w.id else 0 }, .{ .int = if (old) |w| w.id else 0 } });
+    }
+
+    /// Same place relative to the output, on another output (kept inside
+    /// it); fullscreen and maximized windows take the new output's size.
+    pub fn moveToOutput(view: *View, from: *srv.Output, to: *srv.Output) void {
+        if (view.isFullscreen()) {
+            view.fullscreen_output = to.id;
+            return view.refit();
+        }
+        const a = from.box();
+        const b = to.box();
+        const t = view.targetBox();
+        if (view.maximized) {
+            if (view.normal) |*n| {
+                n.x += b.x - a.x;
+                n.y += b.y - a.y;
+            }
+            view.x += b.x - a.x;
+            view.y += b.y - a.y;
+            return view.refit();
+        }
+        const x = std.math.clamp(t.x +| (b.x - a.x), b.x, @max(b.x, b.x +| b.width -| @min(t.width, b.width)));
+        const y = std.math.clamp(t.y +| (b.y - a.y), b.y, @max(b.y, b.y +| b.height -| @min(t.height, b.height)));
+        if (view.pending) |*p| {
+            p.x = x;
+            p.y = y;
+        } else view.move(x, y);
     }
 
     pub fn updateVisibility(view: *View) void {
@@ -766,6 +812,8 @@ pub const View = struct {
         view.mapped = true;
         view.hidden = false;
         view.revealed = false;
+        // On the workspace shown where it appears (rules may move it).
+        if (view.output() orelse server.activeOutput()) |o| view.workspace = o.active_ws;
         server.views.prepend(view);
         view.restack();
         // view_new is for window rules (floating, geometry, ...), view_map
@@ -796,6 +844,8 @@ pub const View = struct {
         view.maximized = false;
         view.normal = null;
         view.removeBackdrop();
+        view.workspace = null;
+        view.urgent = false;
         if (view.reveal_timer) |t| t.remove();
         view.reveal_timer = null;
         view.revealed = false;

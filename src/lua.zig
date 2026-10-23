@@ -36,6 +36,15 @@ pub const Event = enum {
     view_request_fullscreen,
     /// The client asks to be maximized: (id, on).
     view_request_maximize,
+    /// A workspace was created (id) or removed (id; already stale).
+    workspace_add,
+    workspace_remove,
+    /// A workspace is shown on its output: (id, previously shown id or 0).
+    workspace_activate,
+    /// Renamed, moved to another output, or its urgency changed.
+    workspace_change,
+    /// A window moved to another workspace: (view, workspace or 0, old or 0).
+    view_workspace,
 };
 /// Extra handler arguments after the id (most events have none).
 pub const Arg = union(enum) { int: i64, boolean: bool, nil };
@@ -65,7 +74,20 @@ pub const ViewInfo = struct {
     /// Process id of the client, 0 if unknown.
     pid: i32 = 0,
 };
-pub const OutputInfo = struct { box: Box, usable: Box };
+pub const OutputInfo = struct { box: Box, usable: Box, name: ?[*:0]const u8 = null, workspace: u32 = 0 };
+pub const WorkspaceInfo = struct {
+    name: [*:0]const u8,
+    /// Name of the output it was created on.
+    home: [*:0]const u8,
+    output: u32,
+    active: bool,
+    urgent: bool,
+    orphan: bool,
+};
+pub const WorkspaceCmd = union(enum) { activate, rename: []const u8, set_output: u32, remove };
+pub const WorkspaceResult = enum { ok, stale, no_output, bad_name };
+pub const AdoptResult = enum { ok, stale, owned };
+pub const CreateResult = union(enum) { ok: u32, stale, bad_name, failed };
 /// Border drawn outside a window: width in pixels (0 removes it) and a
 /// premultiplied RGBA color.
 pub const Border = struct { width: i32, color: [4]f32 };
@@ -83,6 +105,8 @@ pub const ViewCmd = union(enum) {
     /// `output` 0: the output the window is on.
     fullscreen: struct { on: bool, output: u32 },
     maximize: bool,
+    /// 0: no workspace (always shown on its output).
+    workspace: u32,
 };
 /// `busy`: a pointer grab is active (compositor move/resize, a held button
 /// or a client's popup grab); warping is refused then.
@@ -155,7 +179,8 @@ pub fn Runtime(comptime H: type) type {
         /// `warned_dup`: a duplicate binding of this plugin was reported.
         const Plugin = struct { name: [:0]u8, teardown: c_int, dead: bool = false, torn_down: bool = false, warned_dup: bool = false };
         /// `manage`: the plugin lays out this view (no free move/resize).
-        const Kind = union(enum) { event: Event, bind: Key, timer: u64, manage: u32 };
+        /// `workspace`: the plugin owns this workspace (see workspace.zig).
+        const Kind = union(enum) { event: Event, bind: Key, timer: u64, manage: u32, workspace: u32 };
         /// Every resource a plugin registers. Removed only by sweep(), never
         /// while a dispatch loop may be iterating.
         const Reg = struct { id: u32, plugin: u32, ref: c_int, kind: Kind, dead: bool = false };
@@ -246,8 +271,14 @@ pub fn Runtime(comptime H: type) type {
             } else self.config_ok = self.pcall(null, 0, 0);
             self.in_config = false;
             self.leave();
+            // Workspaces whose plugin did not come back are released.
+            self.settleWorkspaces();
             // The most common reason for "my keys do nothing".
             if (!self.hasBindings()) self.limits.warn("no plugin registered key bindings: only the built-in Super+Return, Super+Shift+E and Super+Shift+R work");
+        }
+
+        fn settleWorkspaces(self: *Self) void {
+            if (@hasDecl(Api, "workspacesSettled")) Api.workspacesSettled(self.host);
         }
 
         fn initState(L: ?*c.lua_State) callconv(.c) c_int {
@@ -327,7 +358,10 @@ pub fn Runtime(comptime H: type) type {
                 self.reload_requested = false;
                 log.info("reloading {s}", .{self.config_path});
                 self.stop();
-                self.start() catch self.limits.report("raywm", "reload failed: out of memory; Lua is disabled until the next reload");
+                self.start() catch {
+                    self.limits.report("raywm", "reload failed: out of memory; Lua is disabled until the next reload");
+                    self.settleWorkspaces(); // no plugin can own them now
+                };
                 self.reload_requested = false;
             }
         }
@@ -366,6 +400,7 @@ pub fn Runtime(comptime H: type) type {
                     } else {
                         if (r.ref != no_ref) c.luaL_unref(self.L, c.LUA_REGISTRYINDEX, r.ref);
                         if (r.kind == .manage) released_manage = true;
+                        if (r.kind == .workspace) if (@hasDecl(Api, "workspaceOrphan")) Api.workspaceOrphan(self.host, r.kind.workspace);
                     }
                 }
                 self.regs.shrinkRetainingCapacity(j);
@@ -580,25 +615,41 @@ pub fn Runtime(comptime H: type) type {
         }
 
         const globals = .{
-            .{ "load", lLoad },                           .{ "views", lViews },
-            .{ "view", lView },                           .{ "focused", lFocused },
-            .{ "outputs", lOutputs },                     .{ "view_move", viewCmd(.move) },
-            .{ "view_place", viewCmd(.place) },           .{ "view_opacity", viewCmd(.opacity) },
-            .{ "view_raise", viewCmd(.raise) },           .{ "view_focus", viewCmd(.focus) },
-            .{ "view_close", viewCmd(.close) },           .{ "view_show", viewCmd(.show) },
-            .{ "view_border", viewCmd(.border) },         .{ "pointer", lPointer },
-            .{ "pointer_warp", lPointerWarp },            .{ "spawn", lSpawn },
-            .{ "quit", lQuit },                           .{ "reload", lReload },
+            .{ "load", lLoad },                   .{ "views", lViews },
+            .{ "view", lView },                   .{ "focused", lFocused },
+            .{ "outputs", lOutputs },             .{ "view_move", viewCmd(.move) },
+            .{ "view_place", viewCmd(.place) },   .{ "view_opacity", viewCmd(.opacity) },
+            .{ "view_raise", viewCmd(.raise) },   .{ "view_focus", viewCmd(.focus) },
+            .{ "view_close", viewCmd(.close) },   .{ "view_show", viewCmd(.show) },
+            .{ "view_border", viewCmd(.border) }, .{ "pointer", lPointer },
+            .{ "pointer_warp", lPointerWarp },    .{ "spawn", lSpawn },
+            .{ "quit", lQuit },                   .{ "reload", lReload },
             .{ "log", lLog },
-            // v0.2.0
-                                        .{ "view_floating", viewCmd(.floating) },
-            .{ "view_fullscreen", viewCmd(.fullscreen) }, .{ "view_maximize", viewCmd(.maximize) },
+        } ++ globals_v020;
+
+        /// Added in v0.2.0 (api = 1 still: additions only).
+        const globals_v020 = .{
+            .{ "view_floating", viewCmd(.floating) },
+            .{ "view_fullscreen", viewCmd(.fullscreen) },
+            .{ "view_maximize", viewCmd(.maximize) },
+            .{ "view_workspace", viewCmd(.workspace) },
+            .{ "workspaces", lWorkspaces },
+            .{ "workspace", lWorkspace },
+            .{ "workspace_activate", wsCmd(.activate) },
+            .{ "workspace_rename", wsCmd(.rename) },
+            .{ "workspace_set_output", wsCmd(.set_output) },
+            .{ "workspace_remove", wsCmd(.remove) },
         };
 
         const ctx_fns = .{
             .{ "on", ctxOn },         .{ "bind", ctxBind },
             .{ "timer", ctxTimer },   .{ "cancel", ctxCancel },
             .{ "manage", ctxManage },
+        } ++ ctx_fns_v020;
+
+        const ctx_fns_v020 = .{
+            .{ "workspace_create", ctxWorkspaceCreate },
+            .{ "workspace_adopt", ctxWorkspaceAdopt },
         };
 
         /// raywm.load(name): loads plugins/<name>.lua next to the config.
@@ -688,6 +739,9 @@ pub fn Runtime(comptime H: type) type {
                 setInt(L, "id", oid);
                 pushBox(L, info.usable);
                 c.lua_setfield(L, -2, "usable");
+                _ = c.lua_pushstring(L, info.name orelse "");
+                c.lua_setfield(L, -2, "name");
+                setInt(L, "workspace", info.workspace);
                 n += 1;
                 c.lua_rawseti(L, -2, n);
             }
@@ -727,6 +781,69 @@ pub fn Runtime(comptime H: type) type {
             setBool(L, "xwayland", info.xwayland);
             setInt(L, "pid", info.pid);
             return 1;
+        }
+
+        fn pushWorkspace(L: ?*c.lua_State, id: u32, w: WorkspaceInfo) void {
+            c.lua_createtable(L, 0, 7);
+            setInt(L, "id", id);
+            _ = c.lua_pushstring(L, w.name);
+            c.lua_setfield(L, -2, "name");
+            _ = c.lua_pushstring(L, w.home);
+            c.lua_setfield(L, -2, "home");
+            setInt(L, "output", w.output);
+            setBool(L, "active", w.active);
+            setBool(L, "urgent", w.urgent);
+            setBool(L, "orphan", w.orphan);
+        }
+
+        /// raywm.workspaces() -> { {id, name, home, output, active, urgent, orphan}, ... }
+        fn lWorkspaces(L: ?*c.lua_State) callconv(.c) c_int {
+            const self = get(L);
+            var buf: [max_list]u32 = undefined;
+            const ids = buf[0..Api.workspaces(self.host, &buf)];
+            c.lua_createtable(L, @intCast(ids.len), 0);
+            var n: c.lua_Integer = 0;
+            for (ids) |wid| {
+                const info = Api.workspace(self.host, wid) orelse continue;
+                pushWorkspace(L, wid, info);
+                n += 1;
+                c.lua_rawseti(L, -2, n);
+            }
+            return 1;
+        }
+
+        fn lWorkspace(L: ?*c.lua_State) callconv(.c) c_int {
+            const wid = checkId(L, 1);
+            const info = Api.workspace(get(L).host, wid) orelse return stale(L);
+            pushWorkspace(L, wid, info);
+            return 1;
+        }
+
+        fn wsCmd(comptime tag: std.meta.Tag(WorkspaceCmd)) c.lua_CFunction {
+            return struct {
+                fn f(L: ?*c.lua_State) callconv(.c) c_int {
+                    const self = get(L);
+                    const wid = checkId(L, 1);
+                    const cmd: WorkspaceCmd = switch (tag) {
+                        .rename => .{ .rename = std.mem.span(c.luaL_checklstring(L, 2, null)) },
+                        .set_output => .{ .set_output = checkId(L, 2) },
+                        inline else => |t| t,
+                    };
+                    const r = Api.workspaceCmd(self.host, wid, cmd);
+                    if (r != .ok) {
+                        c.lua_pushnil(L);
+                        _ = c.lua_pushstring(L, @tagName(r));
+                        return 2;
+                    }
+                    // A removed workspace is no registration of anybody any more.
+                    if (tag == .remove) for (self.regs.items) |*reg| if (reg.kind == .workspace and reg.kind.workspace == wid) {
+                        reg.dead = true;
+                        self.sweep_needed = true;
+                    };
+                    c.lua_pushboolean(L, 1);
+                    return 1;
+                }
+            }.f;
         }
 
         /// raywm.pointer() -> { x, y, busy }
@@ -782,6 +899,7 @@ pub fn Runtime(comptime H: type) type {
                             .output = if (c.lua_type(L, 3) <= c.LUA_TNIL) 0 else checkId(L, 3),
                         } },
                         .maximize => .{ .maximize = c.lua_toboolean(L, 2) != 0 },
+                        .workspace => .{ .workspace = if (c.lua_type(L, 2) <= c.LUA_TNIL) 0 else checkId(L, 2) },
                         .border => .{ .border = border(L) },
                         inline else => |t| t,
                     };
@@ -919,6 +1037,59 @@ pub fn Runtime(comptime H: type) type {
             }
             c.lua_pushboolean(L, 1);
             return 1;
+        }
+
+        /// Errors that would make a registration fail, checked before the
+        /// host creates anything that would then have no owner.
+        fn checkRegister(L: ?*c.lua_State) void {
+            const self = get(L);
+            if (self.plugins.items[owner(L)].dead) _ = c.luaL_error(L, "plugin is unloaded");
+            if (self.regs.items.len >= self.limits.max_registrations) _ = c.luaL_error(L, "too many registrations");
+            self.regs.ensureUnusedCapacity(gpa, 1) catch {
+                _ = c.luaL_error(L, "out of memory");
+            };
+        }
+
+        /// ctx.workspace_create(output, name) -> id, or nil + "stale" | "bad_name" | "failed".
+        /// The workspace belongs to this plugin (see workspace.zig).
+        fn ctxWorkspaceCreate(L: ?*c.lua_State) callconv(.c) c_int {
+            const self = get(L);
+            const oid = checkId(L, 1);
+            const name = std.mem.span(c.luaL_checklstring(L, 2, null));
+            checkRegister(L);
+            const wid = switch (Api.workspaceCreate(self.host, oid, name)) {
+                .ok => |w| w,
+                .stale => return stale(L),
+                .bad_name => return failWith(L, "bad_name"),
+                .failed => return failWith(L, "failed"),
+            };
+            _ = register(L, 0, .{ .workspace = wid });
+            c.lua_settop(L, -2);
+            c.lua_pushinteger(L, wid);
+            return 1;
+        }
+
+        /// ctx.workspace_adopt(id) -> true, or nil + "stale" | "owned": takes
+        /// over an orphaned workspace (after a reload or a plugin error).
+        fn ctxWorkspaceAdopt(L: ?*c.lua_State) callconv(.c) c_int {
+            const self = get(L);
+            const wid = checkId(L, 1);
+            checkRegister(L);
+            switch (Api.workspaceAdopt(self.host, wid)) {
+                .ok => {},
+                .stale => return stale(L),
+                .owned => return failWith(L, "owned"),
+            }
+            _ = register(L, 0, .{ .workspace = wid });
+            c.lua_settop(L, -2);
+            c.lua_pushboolean(L, 1);
+            return 1;
+        }
+
+        fn failWith(L: ?*c.lua_State, why: [*:0]const u8) c_int {
+            c.lua_pushnil(L);
+            _ = c.lua_pushstring(L, why);
+            return 2;
         }
 
         /// ctx.cancel(id): drops a timer, event handler or binding.

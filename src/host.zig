@@ -6,6 +6,7 @@ const xkb = @import("xkbcommon");
 const lua = @import("lua");
 const srv = @import("server.zig");
 const input = @import("input.zig");
+const ws = @import("workspace.zig");
 const Server = srv.Server;
 
 pub const Runtime = lua.Runtime(Server);
@@ -41,6 +42,8 @@ pub fn view(server: *Server, id: u32) ?lua.ViewInfo {
         .fullscreen = v.isFullscreen(),
         .fullscreen_output = v.fullscreen_output,
         .maximized = v.maximized,
+        .workspace = if (v.workspace) |w| w.id else 0,
+        .urgent = v.urgent,
         .managed = v.managed(),
         .pid = v.pid(),
     };
@@ -70,6 +73,10 @@ pub fn viewCmd(server: *Server, id: u32, cmd: lua.ViewCmd) bool {
         .maximize => |on| {
             v.decisions +%= 1;
             v.setMaximized(on);
+        },
+        .workspace => |wid| {
+            const w = if (wid == 0) null else ws.byId(server, wid) orelse return false;
+            v.setWorkspace(w);
         },
     }
     input.refocusPointer(server);
@@ -124,7 +131,76 @@ pub fn output(server: *Server, id: u32) ?lua.OutputInfo {
     return .{
         .box = .{ .x = b.x, .y = b.y, .w = b.width, .h = b.height },
         .usable = .{ .x = b.x + u.x, .y = b.y + u.y, .w = u.width, .h = u.height },
+        .name = o.wlr_output.name,
+        .workspace = if (o.active_ws) |w| w.id else 0,
     };
+}
+
+// ---- workspaces (see workspace.zig) ---------------------------------------
+
+pub fn workspaces(server: *Server, buf: []u32) usize {
+    var n: usize = 0;
+    var it = server.workspaces.iterator(.forward);
+    while (it.next()) |w| {
+        if (n == buf.len) break;
+        buf[n] = w.id;
+        n += 1;
+    }
+    return n;
+}
+
+pub fn workspace(server: *Server, id: u32) ?lua.WorkspaceInfo {
+    const w = ws.byId(server, id) orelse return null;
+    return .{
+        .name = w.name,
+        .home = w.home,
+        .output = if (w.output) |o| o.id else 0,
+        .active = w.isActive(),
+        .urgent = w.urgent,
+        .orphan = w.orphan,
+    };
+}
+
+pub fn workspaceCreate(server: *Server, output_id: u32, name: []const u8) lua.CreateResult {
+    const o = server.outputById(output_id) orelse return .stale;
+    if (!o.inLayout()) return .stale;
+    const w = ws.Workspace.create(server, o, name) catch |err| return switch (err) {
+        error.BadName => .bad_name,
+        else => .failed,
+    };
+    return .{ .ok = w.id };
+}
+
+pub fn workspaceAdopt(server: *Server, id: u32) lua.AdoptResult {
+    const w = ws.byId(server, id) orelse return .stale;
+    if (!w.orphan) return .owned;
+    w.orphan = false;
+    return .ok;
+}
+
+/// Its plugin is gone (error, reload): kept until the next settle.
+pub fn workspaceOrphan(server: *Server, id: u32) void {
+    if (ws.byId(server, id)) |w| w.orphan = true;
+}
+
+/// After every (re)load of the configuration.
+pub fn workspacesSettled(server: *Server) void {
+    ws.settle(server);
+}
+
+pub fn workspaceCmd(server: *Server, id: u32, cmd: lua.WorkspaceCmd) lua.WorkspaceResult {
+    const w = ws.byId(server, id) orelse return .stale;
+    switch (cmd) {
+        .activate => if (!w.activate()) return .no_output,
+        .rename => |name| w.rename(name) catch return .bad_name,
+        .set_output => |oid| {
+            const o = server.outputById(oid) orelse return .stale;
+            if (!o.inLayout()) return .stale;
+            w.setOutput(o);
+        },
+        .remove => w.destroy(),
+    }
+    return .ok;
 }
 
 /// "Super+Shift+Return" -> modifiers + level-0 keysym (see input.zig).

@@ -16,6 +16,17 @@ const Fake = struct {
     last_cmd: ?std.meta.Tag(lua.ViewCmd) = null,
     fs_outputs: [4]u32 = @splat(99),
     n_fs: usize = 0,
+    /// A tiny workspace registry with the core's ownership rules.
+    ws: [8]FakeWs = undefined,
+    n_ws: usize = 0,
+    settles: usize = 0,
+
+    const FakeWs = struct { id: u32, name: [16:0]u8, alive: bool, orphan: bool };
+
+    fn wsById(f: *Fake, id: u32) ?*FakeWs {
+        for (f.ws[0..f.n_ws]) |*w| if (w.alive and w.id == id) return w;
+        return null;
+    }
 
     pub const Api = struct {
         pub fn views(_: *Fake, buf: []u32) usize {
@@ -65,6 +76,48 @@ const Fake = struct {
         }
         pub fn managedChanged(f: *Fake, _: u32) void {
             f.managed_changes += 1;
+        }
+        pub fn workspaces(f: *Fake, buf: []u32) usize {
+            var n: usize = 0;
+            for (f.ws[0..f.n_ws]) |w| if (w.alive) {
+                buf[n] = w.id;
+                n += 1;
+            };
+            return n;
+        }
+        pub fn workspace(f: *Fake, id: u32) ?lua.WorkspaceInfo {
+            const w = f.wsById(id) orelse return null;
+            return .{ .name = &w.name, .home = "FAKE-1", .output = 1, .active = false, .urgent = false, .orphan = w.orphan };
+        }
+        pub fn workspaceCreate(f: *Fake, out: u32, name: []const u8) lua.CreateResult {
+            if (out != 1) return .stale;
+            if (name.len == 0 or name.len > 15) return .bad_name;
+            if (f.n_ws == f.ws.len) return .failed;
+            var w: FakeWs = .{ .id = @intCast(100 + f.n_ws), .name = @splat(0), .alive = true, .orphan = false };
+            @memcpy(w.name[0..name.len], name);
+            f.ws[f.n_ws] = w;
+            f.n_ws += 1;
+            return .{ .ok = w.id };
+        }
+        pub fn workspaceAdopt(f: *Fake, id: u32) lua.AdoptResult {
+            const w = f.wsById(id) orelse return .stale;
+            if (!w.orphan) return .owned;
+            w.orphan = false;
+            return .ok;
+        }
+        pub fn workspaceOrphan(f: *Fake, id: u32) void {
+            if (f.wsById(id)) |w| w.orphan = true;
+        }
+        pub fn workspacesSettled(f: *Fake) void {
+            f.settles += 1;
+            for (f.ws[0..f.n_ws]) |*w| if (w.alive and w.orphan) {
+                w.alive = false;
+            };
+        }
+        pub fn workspaceCmd(f: *Fake, id: u32, cmd: lua.WorkspaceCmd) lua.WorkspaceResult {
+            const w = f.wsById(id) orelse return .stale;
+            if (cmd == .remove) w.alive = false;
+            return .ok;
         }
         pub fn pointer(_: *Fake) lua.PointerInfo {
             return .{ .x = 10, .y = 20, .busy = false };
@@ -578,4 +631,38 @@ test "v0.2.0 foundation: version, view metadata, event arguments, managed hook" 
     try t.expect(f.managed_changes > mid);
     try t.expect(!rt.managed(1));
     try t.expectEqual(0, takeErrors());
+}
+
+test "workspaces: owned by their plugin, orphaned on unload, adopted or released after a reload" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/ws.lua", opts);
+    defer rt.destroy();
+    const t = std.testing;
+    try t.expectEqual(0, takeErrors());
+    try t.expectEqual(1, f.count("adopted:0"));
+    try t.expectEqual(1, f.count("created:100:101"));
+    try t.expectEqual(1, f.count("stale:nil"));
+    try t.expectEqual(1, f.count("badname:nil:bad_name"));
+    try t.expectEqual(1, f.count("owned:nil:owned")); // owned by a live plugin
+    try t.expectEqual(1, f.settles); // after the first config run
+
+    // Reload: both become orphans; "one" is adopted, "two" is released
+    // once init.lua has run.
+    rt.requestReload();
+    try t.expectEqual(1, f.count("adopted:1"));
+    try t.expectEqual(2, f.settles);
+    rt.emit(.layout, 0);
+    try t.expectEqual(1, f.count("list:one"));
+
+    // A plugin error orphans its workspace but releases nothing: the
+    // windows stay where they are until the next (re)load.
+    rt.emit(.view_title, 1);
+    try t.expect(hasError("wsowner:"));
+    try t.expect(f.wsById(100).?.orphan);
+    try t.expectEqual(2, f.settles);
+    rt.requestReload();
+    try t.expectEqual(2, f.count("adopted:1"));
+    try t.expect(!f.wsById(100).?.orphan);
+    _ = takeErrors();
 }
