@@ -573,7 +573,8 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, g: *Global
             } else if (std.mem.eql(u8, name, std.mem.span(wl.Output.interface.name))) {
                 // Bound so that wl_surface.enter can name the output, and
                 // for fullscreen requests on a given output.
-                const o = registry.bind(global.name, wl.Output, 1) catch return;
+                const o = registry.bind(global.name, wl.Output, @min(global.version, 2)) catch return;
+                o.setListener(?*anyopaque, outputListener, null);
                 if (g.n_outputs < g.outputs.len) {
                     g.outputs[g.n_outputs] = o;
                     g.n_outputs += 1;
@@ -678,6 +679,13 @@ const Child = struct {
         c.buffer = next;
     }
 };
+
+fn outputListener(_: *wl.Output, event: wl.Output.Event, _: ?*anyopaque) void {
+    switch (event) {
+        .scale => |sc| step("output scale {d}", .{sc.factor}),
+        else => {},
+    }
+}
 
 fn surfaceListener(_: *wl.Surface, event: wl.Surface.Event, _: ?*anyopaque) void {
     switch (event) {

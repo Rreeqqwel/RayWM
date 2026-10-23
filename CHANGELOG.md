@@ -8,6 +8,31 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ### Added
 
+- **Output configuration**:
+  - wlr-output-management (wlr-randr, kanshi): mode and refresh rate
+    (also custom modes), scale (HiDPI), rotation, position, enabling
+    and disabling, adaptive sync; tested before it is applied, atomic for
+    all outputs it changes;
+  - `raywm.output_configure(name or id, { mode, scale, transform,
+    position, enabled, adaptive_sync })`, `raywm.output_modes(id)`;
+    `raywm.outputs()` entries have name, description, make, model,
+    serial, scale, transform, mode, physical size, power and
+    `enabled`; `raywm.outputs({ all = true })` lists disabled outputs
+    too;
+  - `config/plugins/outputs.lua` (in the example `init.lua`, with an
+    empty list) applies settings by output name or description at
+    startup and on hotplug;
+  - a configuration that would disable every output is refused, from
+    clients and from Lua alike;
+  - a disabled output stops being usable like an unplugged one
+    (`output_remove`; its workspaces move to another output) and comes
+    back where it was when enabled again (`output_add`; workspaces.lua
+    moves its workspaces home); placing one output never moves another;
+  - output power (wlr-output-power-management, DPMS): a powered-off
+    output stays in the layout;
+  - gamma control (wlr-gamma-control: gammastep, wlsunset), applied by
+    wlroots' scene; not verifiable on headless outputs, which have no
+    gamma ramp.
 - **Screen locking** (ext-session-lock-v1; works with swaylock):
   - while locked, only the locker's surfaces are drawn: every other
     layer is hidden and each output has an opaque background below the

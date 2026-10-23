@@ -39,6 +39,13 @@ return {
           if w then out:write(string.format("where %d %s@%s\n", id, w.name, w.home)) end
         end
       end
+      if raywm.output_configure then
+        for _, o in ipairs(raywm.outputs({ all = true })) do
+          out:write(string.format("output %s %d,%d %dx%d scale=%s transform=%s enabled=%s power=%s mode=%dx%d usable=%d,%d %dx%d\n",
+            o.name, o.x, o.y, o.w, o.h, tostring(o.scale), o.transform, tostring(o.enabled), tostring(o.power),
+            o.mode.w, o.mode.h, o.usable.x, o.usable.y, o.usable.w, o.usable.h))
+        end
+      end
       if raywm.workspaces then
         local names = {}
         for _, o in ipairs(raywm.outputs()) do names[o.id] = o.name end
