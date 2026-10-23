@@ -49,6 +49,9 @@ jobs:
         run: |
           find config tests -name '*.lua' -print0 | xargs -0 -n1 luac5.4 -p
 
+      - name: Lint (computed bools passed to C, see src/cabi.zig)
+        run: tests/lint.sh
+
       - name: Build (Debug)
         run: zig build
 

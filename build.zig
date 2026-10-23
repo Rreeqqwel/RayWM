@@ -251,6 +251,9 @@ pub fn build(b: *std.Build) void {
     core_tests_mod.addImport("raywm", core);
     core_tests_mod.addImport("xkbcommon", xkbcommon);
     for ([_][]const u8{ "wayland-server", "xkbcommon", "pixman-1", "libinput" }) |lib| core_tests_mod.linkSystemLibrary(lib, .{});
+    // An optimized C callee, like the system libraries RayWM calls (see
+    // src/cabi.zig): it reads a bool argument as the caller passed it.
+    core_tests_mod.addCSourceFile(.{ .file = b.path("tests/support/raw_bool.c"), .flags = &.{"-O2"} });
     const core_tests = b.addTest(.{ .root_module = core_tests_mod, .use_llvm = use_llvm, .use_lld = use_llvm });
     test_step.dependOn(&b.addRunArtifact(core_tests).step);
 

@@ -25,6 +25,7 @@ const LayerSurface = layer_shell.LayerSurface;
 const workspace = @import("workspace.zig");
 const Workspace = workspace.Workspace;
 const gpa = srv.gpa;
+const cabi = @import("cabi.zig");
 const log = std.log.scoped(.output);
 
 pub const Output = struct {
@@ -307,7 +308,7 @@ fn buildState(o: *Output, cfg: Config, state: *wlr.Output.State) ConfigError!boo
         changed = true;
     };
     if (cfg.adaptive_sync) |on| if ((w.adaptive_sync_status == .enabled) != on) {
-        state.setAdaptiveSyncEnabled(on);
+        cabi.call(on, wlr.Output.State.setAdaptiveSyncEnabled, .{state});
         changed = true;
     };
     return changed;
@@ -477,7 +478,7 @@ pub const Management = struct {
         if (w.enabled == on) return;
         var state = wlr.Output.State.init();
         defer state.finish();
-        state.setEnabled(on);
+        cabi.call(on, wlr.Output.State.setEnabled, .{&state});
         if (on) if (w.current_mode orelse w.preferredMode()) |md| state.setMode(md);
         if (!w.commitState(&state)) return log.warn("output {s}: could not power it {s}", .{ w.name, if (on) "on" else "off" });
         log.info("output {s} powered {s}", .{ w.name, if (on) "on" else "off" });

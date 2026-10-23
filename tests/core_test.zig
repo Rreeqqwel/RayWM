@@ -8,6 +8,31 @@ const srv = raywm.srv;
 const host = raywm.host;
 const t = std.testing;
 
+extern fn raywm_test_raw_bool(b: bool) c_uint;
+var runtime_true = true;
+noinline fn yes() bool {
+    return runtime_true;
+}
+// Like View.setSuspendedState(view, !view.visible()): the bool reaches C
+// through the parameter of a Zig function.
+noinline fn viaHelper(on: bool) c_uint {
+    return raywm.cabi.call(on, raywm_test_raw_bool, .{});
+}
+noinline fn direct(on: bool) c_uint {
+    return raywm_test_raw_bool(on);
+}
+
+test "computed bools reach C as 0 or 1 (workaround for ziglang/zig#35373)" {
+    try t.expectEqual(@as(c_uint, 0), viaHelper(!yes()));
+    try t.expectEqual(@as(c_uint, 1), viaHelper(yes()));
+    try t.expectEqual(@as(c_uint, 1), viaHelper(!(!yes())));
+    try t.expectEqual(@as(c_uint, 0), raywm.cabi.call(!yes(), raywm_test_raw_bool, .{}));
+    // What the workaround avoids. Zig 0.16.0 Debug passes 0xfe here; a fixed
+    // compiler passes 0, so it is only reported, not asserted.
+    const raw = direct(!yes());
+    if (raw != 0) std.debug.print("note: this compiler passes !true to C as {d} (ziglang/zig#35373)\n", .{raw});
+}
+
 test "configure serials compare correctly across u32 wrap-around" {
     try t.expect(srv.serialReached(10, 10));
     try t.expect(srv.serialReached(11, 10));

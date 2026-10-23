@@ -32,6 +32,7 @@ const gpa = srv.gpa;
 const LayerSurface = @import("layer.zig").LayerSurface;
 const input = @import("input.zig");
 const Workspace = @import("workspace.zig").Workspace;
+const cabi = @import("cabi.zig");
 
 /// Longest a newly mapped window stays hidden waiting for its first size.
 pub const reveal_timeout_ms = 150;
@@ -208,7 +209,7 @@ pub const View = struct {
 
     pub fn setActivated(view: *View, on: bool) void {
         switch (view.impl) {
-            .xdg => |t| _ = t.setActivated(on),
+            .xdg => |t| _ = cabi.call(on, wlr.XdgToplevel.setActivated, .{t}),
         }
     }
 
@@ -234,19 +235,19 @@ pub const View = struct {
 
     pub fn setResizing(view: *View, on: bool) u32 {
         return switch (view.impl) {
-            .xdg => |t| t.setResizing(on),
+            .xdg => |t| cabi.call(on, wlr.XdgToplevel.setResizing, .{t}),
         };
     }
 
     fn setFullscreenState(view: *View, on: bool) void {
         switch (view.impl) {
-            .xdg => |t| _ = t.setFullscreen(on),
+            .xdg => |t| _ = cabi.call(on, wlr.XdgToplevel.setFullscreen, .{t}),
         }
     }
 
     fn setMaximizedState(view: *View, on: bool) void {
         switch (view.impl) {
-            .xdg => |t| _ = t.setMaximized(on),
+            .xdg => |t| _ = cabi.call(on, wlr.XdgToplevel.setMaximized, .{t}),
         }
     }
 
@@ -395,7 +396,7 @@ pub const View = struct {
     }
 
     pub fn updateVisibility(view: *View) void {
-        view.tree.node.setEnabled(view.visible() and view.revealed);
+        cabi.call(view.visible() and view.revealed, wlr.SceneNode.setEnabled, .{&view.tree.node});
         view.server.updateIdleInhibit();
     }
 
@@ -696,7 +697,7 @@ pub const View = struct {
     /// while fullscreen (it would be outside the output).
     fn layoutBorder(view: *View) void {
         const b = if (view.border) |*b| b else return;
-        for (b.rects) |r| r.node.setEnabled(!view.isFullscreen());
+        for (b.rects) |r| cabi.call(!view.isFullscreen(), wlr.SceneNode.setEnabled, .{&r.node});
         const g = view.windowBox();
         if (b.laid_out[0] == g.width and b.laid_out[1] == g.height) return;
         b.laid_out = .{ g.width, g.height };

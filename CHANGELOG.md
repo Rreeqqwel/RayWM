@@ -209,6 +209,14 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ### Fixed
 
+- **Booleans passed to wlroots** (`src/cabi.zig`). Zig 0.16.0 passes
+  `bool` arguments of C functions without zero extension
+  ([ziglang/zig#35373](https://codeberg.org/ziglang/zig/issues/35373),
+  fixed for Zig 0.17), so wlroots could read a `false` as true. In Debug
+  builds this kept plugin borders enabled around fullscreen windows.
+  Computed booleans now reach C as constants; `tests/lint.sh` flags new
+  direct calls and `tests/core_test.zig` checks the values an optimized C
+  function gets.
 - tests: the "client-side move and resize" pointer scenario raced its
   own client and failed about 1 run in 10.
 

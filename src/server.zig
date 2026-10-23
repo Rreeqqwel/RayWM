@@ -16,6 +16,7 @@ const lock = @import("lock.zig");
 const output_mod = @import("output.zig");
 const inputconfig = @import("inputconfig.zig");
 const protocols = @import("protocols.zig");
+const cabi = @import("cabi.zig");
 
 pub const gpa = std.heap.c_allocator;
 const log = std.log.scoped(.server);
@@ -388,7 +389,7 @@ pub const Server = struct {
             on = true;
             break;
         };
-        server.idle_notifier.setInhibited(on);
+        cabi.call(on, wlr.IdleNotifierV1.setInhibited, .{server.idle_notifier});
     }
 
     /// Fullscreen and maximized windows follow output and panel changes.

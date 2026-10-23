@@ -82,9 +82,12 @@ pub const Protocols = struct {
         p.request_primary.link.remove();
     }
 
+    /// Returns constants only: libwayland reads the result as a C bool (see
+    /// src/cabi.zig on computed bools crossing into C with Zig 0.16).
     fn filter(client: *const wl.Client, global: *const wl.Global, p: *Protocols) bool {
         if (p.security.lookupClient(client) == null) return true;
-        return !isPrivileged(std.mem.span(global.getInterface().name));
+        if (isPrivileged(std.mem.span(global.getInterface().name))) return false;
+        return true;
     }
 
     /// wp_cursor_shape_v1: a named cursor instead of a client buffer, from
