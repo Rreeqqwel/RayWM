@@ -271,6 +271,10 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 ### Fixed
 
 - Dialog reparenting now restacks descendants and restores focus correctly.
+- Output/device teardown precedes scene/cursor/renderer destruction, including
+  active and abandoned session-lock backgrounds.
+- Initial window-rule opacity is reapplied when a deferred window is revealed;
+  headless outputs do not advertise an invalid DRM scanout feedback target.
 - Non-finite Lua numeric arguments are rejected before native conversions.
 - Activation requires actual recent forwarded input and a focused source;
   enter serials, expired grants and replay cannot steal focus.

@@ -99,12 +99,13 @@ def measure(bin_dir, cfg, candidate):
                 driver = [str(new_bin / 'raywm-test-input')]
                 sample['motion_sync_roundtrip'] = subprocess.check_output(driver + ['benchmark','1000'],env=env,stderr=subprocess.STDOUT,text=True).strip()
                 if candidate:
-                    sample['animation_cpu_ms_1_2s'] = []
+                    sample['animation_samples'] = []
                     for _ in range(3):
                         before = cpu_ms(process.pid)
+                        began = time.monotonic()
                         subprocess.run(driver + ['key','super','down','key','t','down','key','t','up','key','super','up'], env=env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
                         time.sleep(1.2)
-                        sample['animation_cpu_ms_1_2s'].append(cpu_ms(process.pid)-before)
+                        sample['animation_samples'].append(dict(cpu_ms=cpu_ms(process.pid)-before, elapsed_s=time.monotonic()-began))
                     before = cpu_ms(process.pid)
                     time.sleep(10)
                     sample['after_animation_idle_cpu_ms_10s'] = cpu_ms(process.pid)-before

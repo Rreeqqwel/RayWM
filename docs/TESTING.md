@@ -72,15 +72,15 @@ passes when the invalid keymap is rejected.
 | Additional suite | Actual client-level assertions |
 |---|---|
 | `windows.sh` / `workspaces.sh` / `rules.sh` | 16 / 12 / 6 scenarios: layout/state/visibility/dialog reparenting, workspace/hotplug/reload, real rule policy |
-| `session.sh` / `outputs.sh` / `devices.sh` | 7 / 7 / 3 scenarios: real locker/idle clients, output transactions/power/gamma, virtual device settings |
+| `session.sh` / `outputs.sh` / `devices.sh` | 9 / 7 / 3 scenarios: real locker/idle clients, output transactions/power/gamma, virtual device settings |
 | `protocols.sh` / `shell.sh` | 8 / 16 scenarios: actual globals/filtering/selections and xdg initial-configure/decorations/state; activation enter/missing-source/expiry/replay/destruction regressions |
 | `captures.sh` | 10 pointer lock/confine/relative/shortcut-inhibit scenarios with lifecycle and lock coverage |
 | `taskbar.sh` | 9 foreign-toplevel/ext-workspace request/state/lifecycle scenarios |
 | `xwayland.sh` | 6 actual XCB scenarios: X11 map/focus/move/resize/floating/state/workspace/menus, clipboard both directions, early/long-lived process crash, output hotplug; exact known upstream XWM BadWindow/property diagnostics are printed and allowed, all other errors fail |
 | `data.sh` | 10 Wayland-client scenarios: UTF-8 DnD/icon/finish, outside cancellation, dead source/target, invalid serial, session lock, composition/surrounding/preedit/delete/focus, duplicate/replacement IME, candidate popup pixels/destruction and virtual-keyboard reinjection without feedback |
-| `effects.sh` | 6 pixel/lifecycle scenarios: rectangle updates/input transparency/reload, native transform/cancel/interrupt, independent close/workspace snapshots, reentrant workspace removal and shipped visual example |
+| `effects.sh` | 7 pixel/lifecycle scenarios: rectangle updates/input transparency/reload, native transform/cancel/interrupt, independent close/workspace snapshots, reentrant workspace removal, shipped visual example and initial rule opacity after reveal |
 | `ipc.sh` | 3035 query/action/framing/subscription/resource/disconnect checks plus lock action gating and replacement-inode preservation; malformed JSON, nesting/size/time limits, client admission, slow consumer and fd stability |
-| `package.sh ARCHIVE` | disposable extraction, payload hashes/provenance, no test-only code, binary help, installation/refusal/force/numbered backup/config preservation/symlink and argument checks |
+| `package.sh ARCHIVE` | disposable extraction, payload hashes/provenance, no test-only code, binary help, installation/refusal/force/numbered backup/config preservation/symlink/argument checks, actual production registry and live raywmctl query |
 
 All automated input is injected only into a private test compositor. Headless
 GLES2 runs exercise the renderer through a render node; neither those runs nor

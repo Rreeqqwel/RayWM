@@ -205,17 +205,32 @@ This is independent of the retained computed-C-bool workaround.
 | Gate | Recorded state |
 |---|---|
 | Debug/test-input build | PASS, 30/30 build steps |
-| Production ReleaseSafe build | PASS, 8/8 steps before the final output guard; final guard rebuild in progress at this checkpoint |
+| Production ReleaseSafe build | PASS, 8/8 steps, including final output/lifecycle fixes |
 | Units and shipped Lua compatibility | PASS, 38/38 Zig tests; dwindle25/focus19/workspaces12/rules10 and screenshot145 checks |
 | Formatting, AST, Lua/shell syntax and C-bool lint | PASS |
-| Complete Debug headless matrix | PASS; extra data10/effects6 and all seven documentation examples passed independently |
-| ReleaseSafe full headless matrix | Running at this checkpoint; final report records result |
-| Selected ReleaseSafe GLES2 | capture10/taskbar9/shell16/data10/Xwayland6 PASS; effects initially FAIL on backend feedback, rerun after fix in progress |
+| Debug headless matrix | PASS at recorded checkpoints; extra data10/effects6 and all seven documentation examples passed independently. Final native bug regressions also ran with ReleaseSafe/GLES2. |
+| ReleaseSafe headless matrix | Full run exposed the locked-shutdown defect; all suites have subsequent PASS evidence after targeted lifecycle reruns. Complete logs retain the initial failure. |
+| Selected ReleaseSafe GLES2 | PASS: capture10/taskbar9/shell16/data10/Xwayland6, effects7, outputs7/protocols8 and session9; initial feedback/diagnostic failures retained separately |
 | Physical DRM/KMS/input/hotplug/toolkits | SKIPPED; [hardware procedure](HARDWARE-TESTING.md) |
-| Performance | PASS as measured samples, not thresholds; [PERFORMANCE.md](PERFORMANCE.md) and raw JSON. Recheck final output guard before final report. |
+| Performance | PASS as measured samples, not thresholds; [PERFORMANCE.md](PERFORMANCE.md) and raw JSON. Final native-code samples are repeated before final packaging. |
 | Security review | Native ownership/filtering/activation/lock/IPC boundaries reviewed; actual client regression evidence and uncovered areas in TESTING.md/SECURITY.md |
 | Release packaging/installer/reproducibility | Implemented; archive validation pending this checkpoint |
 | Publication | Not authorized; no push/merge/tag/GitHub Release |
+
+The final lifecycle regression (`ed023e8`) reproduces two compositor aborts
+against the retained old production binary: shutdown while actively locked,
+and shutdown after a locker died. The backend now destroys outputs/devices
+before their scene/cursor/renderer resources and registries. Both cases and
+all nine session scenarios pass on pixman and GLES2. A test-side unlock race
+now waits for the lock client's replacement keyboard; asynchronous autostart
+processes are checked for multiplicity rather than completion order. Neither
+change makes the compositor block on child processes.
+
+The initial-opacity pixel regression (`0ef7f3c`) shows opaque red on the old
+M9–10 compositor and half-opacity red after the existing reveal fix. Production
+packaging checks the virtual-pointer manager's creation symbol and test-only
+markers, rather than rejecting the interface name in the security deny-list.
+The archive test additionally connects to its actual production registry.
 
 ## Deliberate limitations
 
