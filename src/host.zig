@@ -237,6 +237,11 @@ pub fn spawn(_: *Server, cmd: [*:0]const u8) void {
     srv.spawn(cmd);
 }
 
+/// raywm.locked(): the session is locked (ext-session-lock-v1).
+pub fn locked(server: *Server) bool {
+    return server.session_lock.locked();
+}
+
 pub fn quit(server: *Server) void {
     server.wl_server.terminate();
 }

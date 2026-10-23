@@ -12,6 +12,7 @@ const layer_shell = @import("layer.zig");
 const LayerSurface = layer_shell.LayerSurface;
 const workspace = @import("workspace.zig");
 const Workspace = workspace.Workspace;
+const lock = @import("lock.zig");
 
 pub const gpa = std.heap.c_allocator;
 const log = std.log.scoped(.server);
@@ -44,6 +45,9 @@ pub const Server = struct {
     seat: *wlr.Seat,
     cursor: *wlr.Cursor,
     cursor_mgr: *wlr.XcursorManager,
+    session_lock: lock.SessionLock = undefined,
+    idle_notifier: *wlr.IdleNotifierV1 = undefined,
+    idle_inhibit: *wlr.IdleInhibitManagerV1 = undefined,
 
     /// Mapped views, most recently focused first.
     views: wl.list.Head(View, .link) = undefined,
@@ -73,6 +77,9 @@ pub const Server = struct {
     new_popup: wl.Listener(*wlr.XdgPopup) = .init(newPopup),
     new_layer_surface: wl.Listener(*wlr.LayerSurfaceV1) = .init(LayerSurface.create),
     new_input: wl.Listener(*wlr.InputDevice) = .init(input.newInput),
+    new_inhibitor: wl.Listener(*wlr.IdleInhibitorV1) = .init(IdleInhibitor.create),
+    /// Live idle inhibitors (see IdleInhibitor).
+    inhibitors: wl.list.Head(IdleInhibitor, .link) = undefined,
     request_cursor: wl.Listener(*wlr.Seat.event.RequestSetCursor) = .init(input.requestCursor),
     request_selection: wl.Listener(*wlr.Seat.event.RequestSetSelection) = .init(input.requestSelection),
     cursor_motion: wl.Listener(*wlr.Pointer.event.Motion) = .init(input.motion),
@@ -122,6 +129,11 @@ pub const Server = struct {
         server.outputs.init();
         server.keyboards.init();
         server.workspaces.init();
+        try server.session_lock.init(server);
+        server.idle_notifier = try wlr.IdleNotifierV1.create(wl_server);
+        server.idle_inhibit = try wlr.IdleInhibitManagerV1.create(wl_server);
+        server.idle_inhibit.events.new_inhibitor.add(&server.new_inhibitor);
+        server.inhibitors.init();
         backend.events.new_output.add(&server.new_output);
         output_layout.events.change.add(&server.layout_change);
         server.xdg_shell.events.new_toplevel.add(&server.new_toplevel);
@@ -160,7 +172,7 @@ pub const Server = struct {
             "new_output",        "layout_change",  "new_toplevel",      "new_popup",
             "new_input",         "request_cursor", "request_selection", "cursor_motion",
             "cursor_motion_abs", "cursor_button",  "cursor_axis",       "cursor_frame",
-            "new_layer_surface",
+            "new_layer_surface", "new_inhibitor",
         }) |name| @field(server, name).link.remove();
         server.scene.tree.node.destroy();
         server.view_ids.deinit(gpa);
@@ -265,6 +277,8 @@ pub const Server = struct {
     /// window keeps the keyboard until it leaves fullscreen.
     pub fn focus(server: *Server, view: ?*View) void {
         server.focus_requests +%= 1;
+        // A locked session gives the keyboard to lock surfaces only.
+        if (server.session_lock.locked()) return;
         if (view) |v| if (server.coveredByFullscreen(v)) return;
         if (view != null and view == server.focused) {
             // Clicking the focused window takes the keyboard back from an
@@ -298,9 +312,18 @@ pub const Server = struct {
 
     /// Gives the keyboard to a layer surface, or back to the focused view.
     pub fn focusLayer(server: *Server, ls: ?*LayerSurface) void {
+        if (server.session_lock.locked()) return;
         server.layer_focus = ls;
         if (ls) |l| return server.keyboardEnter(l.wlr_layer.surface);
         if (server.focused) |v| server.keyboardEnter(v.surface()) else server.seat.keyboardNotifyClearFocus();
+    }
+
+    /// After an unlock: the keyboard goes back to where it was.
+    pub fn restoreKeyboard(server: *Server) void {
+        if (server.layer_focus) |ls| return server.keyboardEnter(ls.wlr_layer.surface);
+        const v = server.focused orelse return server.focus(server.firstVisible());
+        if (!server.focusable(v)) return server.focus(server.focusFallback(v));
+        server.keyboardEnter(v.surface());
     }
 
     fn keyboardEnter(server: *Server, surface: *wlr.Surface) void {
@@ -325,6 +348,7 @@ pub const Server = struct {
     pub fn afterVisibilityChange(server: *Server) void {
         if (server.focused) |f| if (!f.visible()) server.focus(server.focusFallback(f));
         input.refocusPointer(server);
+        server.updateIdleInhibit();
     }
 
     /// `ws` was just shown: its most recently focused window gets the
@@ -333,6 +357,18 @@ pub const Server = struct {
         var it = server.views.iterator(.forward);
         while (it.next()) |v| if (v.workspace == ws and server.focusable(v)) return server.focus(v);
         if (server.focused) |f| if (!f.visible()) server.focus(null);
+    }
+
+    /// Idle notifications are held back while a visible surface has an
+    /// idle inhibitor. Called when inhibitors or visibility change.
+    pub fn updateIdleInhibit(server: *Server) void {
+        var on = false;
+        var it = server.inhibitors.iterator(.forward);
+        while (it.next()) |ii| if (ii.active()) {
+            on = true;
+            break;
+        };
+        server.idle_notifier.setInhibited(on);
     }
 
     /// Fullscreen and maximized windows follow output and panel changes.
@@ -389,6 +425,7 @@ pub const Server = struct {
         while (outs.next()) |o| if (o.inLayout()) o.arrangeLayers();
         // Workspaces of an output that left move with their windows first.
         workspace.rescue(server);
+        if (server.session_lock.locked()) server.session_lock.arrange();
         if (server.activeOutputBox()) |box| {
             var it = server.views.iterator(.forward);
             while (it.next()) |v| {
@@ -422,9 +459,16 @@ pub const Output = struct {
     usable: wlr.Box = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
     /// The workspace shown here (see workspace.zig).
     active_ws: ?*Workspace = null,
+    /// While the session is locked (see lock.zig): an opaque background,
+    /// the commit count when locking started, and whether a frame
+    /// committed since then was presented.
+    lock_bg: ?*wlr.SceneRect = null,
+    lock_seq: u32 = 0,
+    lock_presented: bool = false,
     layers: wl.list.Head(LayerSurface, .link) = undefined,
 
     frame: wl.Listener(*wlr.Output) = .init(handleFrame),
+    present: wl.Listener(*wlr.Output.event.Present) = .init(handlePresent),
     request_state: wl.Listener(*wlr.Output.event.RequestState) = .init(handleRequestState),
     destroy: wl.Listener(*wlr.Output) = .init(handleDestroy),
 
@@ -442,8 +486,11 @@ pub const Output = struct {
         const layout_output = try server.output_layout.addAuto(wlr_output);
         server.scene_layout.addOutput(layout_output, scene_output);
         wlr_output.events.frame.add(&output.frame);
+        wlr_output.events.present.add(&output.present);
         wlr_output.events.request_state.add(&output.request_state);
         wlr_output.events.destroy.add(&output.destroy);
+        // Appears blank while the session is locked.
+        server.session_lock.prepareOutput(output);
         server.emit(.output_add, output.id);
     }
 
@@ -461,6 +508,15 @@ pub const Output = struct {
         return b;
     }
 
+    pub fn layoutLockBackground(output: *Output) void {
+        const r = output.lock_bg orelse return;
+        if (!output.inLayout()) return r.node.setEnabled(false);
+        const b = output.box();
+        r.node.setEnabled(true);
+        r.node.setPosition(b.x, b.y);
+        r.setSize(b.width, b.height);
+    }
+
     /// The usable area in layout coordinates.
     pub fn usableBox(output: *Output) wlr.Box {
         const b = output.box();
@@ -476,6 +532,11 @@ pub const Output = struct {
         output.scene_output.sendFrameDone(&now);
     }
 
+    fn handlePresent(listener: *wl.Listener(*wlr.Output.event.Present), event: *wlr.Output.event.Present) void {
+        const output: *Output = @fieldParentPtr("present", listener);
+        if (event.presented) output.server.session_lock.presented(output, event.commit_seq);
+    }
+
     fn handleRequestState(listener: *wl.Listener(*wlr.Output.event.RequestState), event: *wlr.Output.event.RequestState) void {
         const output: *Output = @fieldParentPtr("request_state", listener);
         _ = output.wlr_output.commitState(event.state);
@@ -485,7 +546,9 @@ pub const Output = struct {
         const output: *Output = @fieldParentPtr("destroy", listener);
         layer_shell.closeAll(output);
         workspace.outputGone(output.server, output);
+        if (output.lock_bg) |r| r.node.destroy();
         output.frame.link.remove();
+        output.present.link.remove();
         output.request_state.link.remove();
         output.destroy.link.remove();
         output.link.remove();
@@ -577,3 +640,43 @@ pub fn spawn(cmd: [*:0]const u8) void {
     }
     while (std.c.waitpid(pid, null, 0) < 0 and std.c._errno().* == @intFromEnum(posix.E.INTR)) {}
 }
+
+/// An idle inhibitor (idle-inhibit-unstable-v1: a video player keeping the
+/// screen on). It holds back idle notifications (ext-idle-notify-v1) while
+/// its surface is visible: a window that is shown, or a mapped layer
+/// surface.
+pub const IdleInhibitor = struct {
+    server: *Server,
+    wlr_inhibitor: *wlr.IdleInhibitorV1,
+    link: wl.list.Link = undefined,
+    destroy: wl.Listener(*wlr.Surface) = .init(handleDestroy),
+
+    fn create(listener: *wl.Listener(*wlr.IdleInhibitorV1), wlr_inhibitor: *wlr.IdleInhibitorV1) void {
+        const server: *Server = @fieldParentPtr("new_inhibitor", listener);
+        const ii = gpa.create(IdleInhibitor) catch return log.err("out of memory", .{});
+        ii.* = .{ .server = server, .wlr_inhibitor = wlr_inhibitor };
+        server.inhibitors.append(ii);
+        wlr_inhibitor.events.destroy.add(&ii.destroy);
+        server.updateIdleInhibit();
+    }
+
+    fn handleDestroy(listener: *wl.Listener(*wlr.Surface), _: *wlr.Surface) void {
+        const ii: *IdleInhibitor = @fieldParentPtr("destroy", listener);
+        const server = ii.server;
+        ii.destroy.link.remove();
+        ii.link.remove();
+        gpa.destroy(ii);
+        server.updateIdleInhibit();
+    }
+
+    fn active(ii: *IdleInhibitor) bool {
+        const root = ii.wlr_inhibitor.surface.getRootSurface();
+        if (!root.mapped) return false;
+        if (wlr.XdgSurface.tryFromWlrSurface(root)) |xs| {
+            const tree = @import("view.zig").Popup.treeOf(xs) orelse return false;
+            if (View.fromNode(&tree.node)) |v| return v.visible();
+            return true;
+        }
+        return true; // a layer surface or another role: mapped is visible
+    }
+};

@@ -45,6 +45,9 @@ pub const Event = enum {
     workspace_change,
     /// A window moved to another workspace: (view, workspace or 0, old or 0).
     view_workspace,
+    /// The session was locked / unlocked (ext-session-lock-v1); id 0.
+    session_lock,
+    session_unlock,
 };
 /// Extra handler arguments after the id (most events have none).
 pub const Arg = union(enum) { int: i64, boolean: bool, nil };
@@ -111,7 +114,7 @@ pub const ViewCmd = union(enum) {
 /// `busy`: a pointer grab is active (compositor move/resize, a held button
 /// or a client's popup grab); warping is refused then.
 pub const PointerInfo = struct { x: i32, y: i32, busy: bool };
-pub const WarpResult = enum { ok, busy, exclusive, outside };
+pub const WarpResult = enum { ok, busy, exclusive, outside, locked };
 pub const Key = struct { mods: u32, sym: u32 };
 pub const Limits = struct {
     memory: usize = 64 << 20,
@@ -202,6 +205,13 @@ pub fn Runtime(comptime H: type) type {
         exhausted: bool = false,
         /// False when no Lua state exists (only after a failed reload).
         alive: bool = false,
+        /// The first configuration load of this compositor is running (or
+        /// has not finished): raywm.startup() functions run after it.
+        first_load: bool = true,
+        /// raywm.startup() functions queued during the first load.
+        startup_fns: std.ArrayList(c_int) = .empty,
+        /// Commands raywm.spawn_once() started; kept across reloads.
+        spawned_once: std.StringHashMapUnmanaged(void) = .empty,
         plugins: std.ArrayList(Plugin) = .empty,
         regs: std.ArrayList(Reg) = .empty,
         next_id: u32 = 1,
@@ -219,6 +229,10 @@ pub fn Runtime(comptime H: type) type {
             self.stop();
             self.plugins.deinit(gpa);
             self.regs.deinit(gpa);
+            self.startup_fns.deinit(gpa);
+            var keys = self.spawned_once.keyIterator();
+            while (keys.next()) |k| gpa.free(k.*);
+            self.spawned_once.deinit(gpa);
             gpa.free(self.config_path);
             gpa.destroy(self);
         }
@@ -273,8 +287,28 @@ pub fn Runtime(comptime H: type) type {
             self.leave();
             // Workspaces whose plugin did not come back are released.
             self.settleWorkspaces();
+            if (self.first_load) self.runStartup();
             // The most common reason for "my keys do nothing".
             if (!self.hasBindings()) self.limits.warn("no plugin registered key bindings: only the built-in Super+Return, Super+Shift+E and Super+Shift+R work");
+        }
+
+        /// raywm.startup() functions, in the order they were given, once.
+        fn runStartup(self: *Self) void {
+            self.first_load = false;
+            const fns = self.startup_fns;
+            self.startup_fns = .empty;
+            defer {
+                var list = fns;
+                list.deinit(gpa);
+            }
+            for (fns.items) |ref| {
+                if (!self.alive) break;
+                if (!self.enter()) break;
+                _ = c.lua_rawgeti(self.L, c.LUA_REGISTRYINDEX, ref);
+                c.luaL_unref(self.L, c.LUA_REGISTRYINDEX, ref);
+                _ = self.pcallAs("startup", 0, 0);
+                self.leave();
+            }
         }
 
         fn settleWorkspaces(self: *Self) void {
@@ -412,6 +446,29 @@ pub fn Runtime(comptime H: type) type {
                 if (released_manage) self.managedChanged(0);
             }
             self.armTimer();
+        }
+
+        /// Like pcall, for code that belongs to no plugin: errors are
+        /// reported as `source` and unload nothing.
+        fn pcallAs(self: *Self, source: []const u8, nargs: c_int, nres: c_int) bool {
+            const L = self.L;
+            if (self.depth <= 1) {
+                self.budget = self.limits.instructions;
+                if (self.exhausted) {
+                    self.exhausted = false;
+                    c.lua_sethook(L, hook, c.LUA_MASKCOUNT, hook_step);
+                }
+            }
+            const base = c.lua_gettop(L) - nargs;
+            c.lua_pushcclosure(L, traceback, 0);
+            c.lua_rotate(L, base, 1);
+            const rc = c.lua_pcallk(L, nargs, nres, base, 0, null);
+            c.lua_rotate(L, base, -1);
+            c.lua_settop(L, -2);
+            if (rc == c.LUA_OK) return true;
+            self.limits.report(source, str(L, -1, "error"));
+            c.lua_settop(L, -2);
+            return false;
         }
 
         /// Calls the function below `nargs` arguments on the stack. On error
@@ -643,6 +700,9 @@ pub fn Runtime(comptime H: type) type {
             .{ "workspace_rename", wsCmd(.rename) },
             .{ "workspace_set_output", wsCmd(.set_output) },
             .{ "workspace_remove", wsCmd(.remove) },
+            .{ "locked", lLocked },
+            .{ "startup", lStartup },
+            .{ "spawn_once", lSpawnOnce },
         };
 
         const ctx_fns = .{
@@ -931,6 +991,50 @@ pub fn Runtime(comptime H: type) type {
         fn lSpawn(L: ?*c.lua_State) callconv(.c) c_int {
             Api.spawn(get(L).host, c.luaL_checklstring(L, 1, null));
             return 0;
+        }
+
+        fn lLocked(L: ?*c.lua_State) callconv(.c) c_int {
+            c.lua_pushboolean(L, @intFromBool(Api.locked(get(L).host)));
+            return 1;
+        }
+
+        /// raywm.startup(fn) -> true if fn will run: once per compositor
+        /// start, after init.lua, in order; not again on reload. Only while
+        /// init.lua runs (plugin setup included).
+        fn lStartup(L: ?*c.lua_State) callconv(.c) c_int {
+            const self = get(L);
+            c.luaL_checktype(L, 1, c.LUA_TFUNCTION);
+            if (!self.in_config) return c.luaL_error(L, "raywm.startup is only allowed while init.lua runs");
+            if (!self.first_load) {
+                c.lua_pushboolean(L, 0);
+                return 1;
+            }
+            self.startup_fns.ensureUnusedCapacity(gpa, 1) catch return c.luaL_error(L, "out of memory");
+            c.lua_pushvalue(L, 1);
+            self.startup_fns.appendAssumeCapacity(c.luaL_ref(L, c.LUA_REGISTRYINDEX));
+            c.lua_pushboolean(L, 1);
+            return 1;
+        }
+
+        /// raywm.spawn_once(cmd) -> true if started: like raywm.spawn, but a
+        /// command already started this way by this compositor (before a
+        /// reload, say) is not started again.
+        fn lSpawnOnce(L: ?*c.lua_State) callconv(.c) c_int {
+            const self = get(L);
+            const cmd = c.luaL_checklstring(L, 1, null);
+            const text = std.mem.span(cmd);
+            if (self.spawned_once.contains(text)) {
+                c.lua_pushboolean(L, 0);
+                return 1;
+            }
+            const owned = gpa.dupe(u8, text) catch return c.luaL_error(L, "out of memory");
+            self.spawned_once.put(gpa, owned, {}) catch {
+                gpa.free(owned);
+                return c.luaL_error(L, "out of memory");
+            };
+            Api.spawn(self.host, cmd);
+            c.lua_pushboolean(L, 1);
+            return 1;
         }
 
         fn lQuit(L: ?*c.lua_State) callconv(.c) c_int {

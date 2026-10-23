@@ -396,6 +396,7 @@ pub const View = struct {
 
     pub fn updateVisibility(view: *View) void {
         view.tree.node.setEnabled(view.visible() and view.revealed);
+        view.server.updateIdleInhibit();
     }
 
     pub fn setHidden(view: *View, hidden: bool) void {

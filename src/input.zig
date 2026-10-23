@@ -111,6 +111,7 @@ pub const Keyboard = struct {
 
     fn handleKey(listener: *wl.Listener(*wlr.Keyboard.event.Key), event: *wlr.Keyboard.event.Key) void {
         const kb: *Keyboard = @fieldParentPtr("key", listener);
+        kb.server.idle_notifier.notifyActivity(kb.server.seat);
         const wlr_kb = kb.device.toKeyboard();
         const keycode = event.keycode + 8; // libinput -> xkb
         var handled = false;
@@ -146,6 +147,9 @@ pub const Keyboard = struct {
                 return true;
             }
         }
+        // A locked session: keys go to the lock surface only (VT switching
+        // above still works). Not even the fallback bindings run.
+        if (kb.server.session_lock.locked()) return false;
         // Bindings match the unshifted (level 0) keysym, so "Super+Shift+1"
         // works regardless of what Shift+1 produces in the layout.
         const mods = @as(u32, @bitCast(wlr_kb.getModifiers())) & mod_mask;
@@ -284,12 +288,14 @@ pub fn requestSelection(listener: *wl.Listener(*wlr.Seat.event.RequestSetSelecti
 
 pub fn motion(listener: *wl.Listener(*wlr.Pointer.event.Motion), event: *wlr.Pointer.event.Motion) void {
     const server: *Server = @fieldParentPtr("cursor_motion", listener);
+    server.idle_notifier.notifyActivity(server.seat);
     server.cursor.move(event.device, event.delta_x, event.delta_y);
     processMotion(server, event.time_msec);
 }
 
 pub fn motionAbsolute(listener: *wl.Listener(*wlr.Pointer.event.MotionAbsolute), event: *wlr.Pointer.event.MotionAbsolute) void {
     const server: *Server = @fieldParentPtr("cursor_motion_abs", listener);
+    server.idle_notifier.notifyActivity(server.seat);
     server.cursor.warpAbsolute(event.device, event.x, event.y);
     processMotion(server, event.time_msec);
 }
@@ -377,6 +383,7 @@ pub fn pointerBusy(server: *Server) bool {
 /// pointer-constraints support; if it gets one, warps must respect it.
 /// Pointer focus follows (enter/leave/motion); keyboard focus never does.
 pub fn warpPointer(server: *Server, x: f64, y: f64) lua.WarpResult {
+    if (server.session_lock.locked()) return .locked;
     if (pointerBusy(server)) return .busy;
     if (server.layer_focus) |ls| if (ls.wlr_layer.current.keyboard_interactive == .exclusive) return .exclusive;
     if (!server.cursor.warp(null, x, y)) return .outside;
@@ -471,6 +478,7 @@ pub fn endGrab(server: *Server) void {
 
 pub fn button(listener: *wl.Listener(*wlr.Pointer.event.Button), event: *wlr.Pointer.event.Button) void {
     const server: *Server = @fieldParentPtr("cursor_button", listener);
+    server.idle_notifier.notifyActivity(server.seat);
     if (server.grab.mode != .none) {
         // Other buttons are ignored during a grab; only the grab's own
         // release ends it. Super+drag: the client never saw the press, so
@@ -520,6 +528,7 @@ pub fn button(listener: *wl.Listener(*wlr.Pointer.event.Button), event: *wlr.Poi
 
 pub fn axis(listener: *wl.Listener(*wlr.Pointer.event.Axis), event: *wlr.Pointer.event.Axis) void {
     const server: *Server = @fieldParentPtr("cursor_axis", listener);
+    server.idle_notifier.notifyActivity(server.seat);
     server.seat.pointerNotifyAxis(event.time_msec, event.orientation, event.delta, event.delta_discrete, event.source, event.relative_direction);
 }
 

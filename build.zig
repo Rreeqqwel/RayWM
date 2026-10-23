@@ -15,6 +15,9 @@ pub fn build(b: *std.Build) void {
     scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
     scanner.addSystemProtocol("stable/tablet/tablet-v2.xml");
     scanner.addSystemProtocol("staging/color-management/color-management-v1.xml");
+    scanner.addSystemProtocol("staging/ext-session-lock/ext-session-lock-v1.xml");
+    scanner.addSystemProtocol("staging/ext-idle-notify/ext-idle-notify-v1.xml");
+    scanner.addSystemProtocol("unstable/idle-inhibit/idle-inhibit-unstable-v1.xml");
     scanner.addCustomProtocol(b.path("protocol/wlr-layer-shell-unstable-v1.xml"));
     if (test_input) {
         scanner.addCustomProtocol(b.path("tests/protocol/wlr-virtual-pointer-unstable-v1.xml"));
@@ -38,6 +41,9 @@ pub fn build(b: *std.Build) void {
     scanner.generate("zwp_tablet_manager_v2", 1);
     scanner.generate("wp_color_manager_v1", 2);
     scanner.generate("zwlr_layer_shell_v1", 4);
+    scanner.generate("ext_session_lock_manager_v1", 1);
+    scanner.generate("ext_idle_notifier_v1", 2);
+    scanner.generate("zwp_idle_inhibit_manager_v1", 1);
 
     const wayland = b.createModule(.{ .root_source_file = scanner.result });
     const xkbcommon = b.dependency("xkbcommon", .{}).module("xkbcommon");
@@ -116,6 +122,22 @@ pub fn build(b: *std.Build) void {
         copier.root_module.addImport("wayland", wayland);
         copier.root_module.linkSystemLibrary("wayland-client", .{});
         b.installArtifact(copier);
+
+        // A screen locker for tests/session.sh (lock, unlock, crash).
+        const locker = b.addExecutable(.{
+            .name = "raywm-test-lock",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("tests/lock_client.zig"),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+            }),
+            .use_llvm = use_llvm,
+            .use_lld = use_llvm,
+        });
+        locker.root_module.addImport("wayland", wayland);
+        locker.root_module.linkSystemLibrary("wayland-client", .{});
+        b.installArtifact(locker);
     }
     exe.root_module.linkSystemLibrary("wayland-server", .{});
     exe.root_module.linkSystemLibrary("xkbcommon", .{});

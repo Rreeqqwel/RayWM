@@ -74,6 +74,9 @@ const Fake = struct {
         pub fn armTimer(f: *Fake, ms: ?u32) void {
             f.timer_ms = ms;
         }
+        pub fn locked(_: *Fake) bool {
+            return false;
+        }
         pub fn managedChanged(f: *Fake, _: u32) void {
             f.managed_changes += 1;
         }
@@ -665,4 +668,39 @@ test "workspaces: owned by their plugin, orphaned on unload, adopted or released
     try t.expectEqual(2, f.count("adopted:1"));
     try t.expect(!f.wsById(100).?.orphan);
     _ = takeErrors();
+}
+
+test "raywm.startup runs once after init.lua, in order; spawn_once survives reloads" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/startup.lua", opts);
+    defer rt.destroy();
+    const t = std.testing;
+    try t.expectEqual(1, f.count("startup-returned:true"));
+    try t.expectEqual(1, f.count("once-first:true"));
+    try t.expectEqual(1, f.count("once-second:false"));
+    try t.expectEqual(1, f.count("once-cmd"));
+    // In registration order, after init.lua (so after "plain"); an error in
+    // one is reported as "startup" and does not stop the others.
+    var order: [5]usize = undefined;
+    for ([_][]const u8{ "plain", "startup:1", "startup:2", "startup:3", "startup:after-error" }, 0..) |want, i| {
+        order[i] = for (f.log.items, 0..) |l, j| {
+            if (std.mem.eql(u8, l, want)) break j;
+        } else return error.TestMissing;
+    }
+    for (1..order.len) |i| try t.expect(order[i - 1] < order[i]);
+    try t.expect(hasError("startup: tests/lua/startup.lua:8: startup boom"));
+    try t.expectEqual(1, takeErrors());
+
+    // Reload: the config runs again, startup functions and once-commands do not.
+    rt.requestReload();
+    try t.expectEqual(2, f.count("plain"));
+    try t.expectEqual(1, f.count("startup:1"));
+    try t.expectEqual(1, f.count("startup-returned:false"));
+    try t.expectEqual(1, f.count("once-cmd"));
+    try t.expectEqual(2, f.count("once-second:false"));
+    // Outside init.lua it is an error.
+    rt.emit(.layout, 0);
+    try t.expectEqual(1, f.count("late:false"));
+    try t.expectEqual(0, takeErrors());
 }
