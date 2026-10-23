@@ -393,6 +393,7 @@ pub const View = struct {
     /// origin is the window geometry's top-left.
     fn syncPosition(view: *View) void {
         view.tree.node.setPosition(view.x, view.y);
+        view.server.taskbar.schedule();
     }
 
     // ---- visibility, stacking and state ---------------------------------------
@@ -1085,6 +1086,7 @@ pub const View = struct {
         view.restack();
         view.restackChildren();
         view.raise();
+        view.server.taskbar.schedule();
         const server = view.server;
         if (server.focused) |f| if (!server.focusable(f)) server.focus(server.focusFallback(f));
         input.refocusPointer(server);
@@ -1101,8 +1103,9 @@ pub const View = struct {
         if (view.mapped and view.decisions == before) view.setMinimized(true);
     }
 
-    /// xdg-activation: the client asks for focus, `user` when wlroots
-    /// verified the token came from user input in a focused window.
+    /// xdg-activation: `user` means the token was exchanged from a recent
+    /// native key/button press with a source surface still focused at
+    /// token commit (see protocols.zig), in addition to wlroots validation.
     /// Plugins see view_request_activate(id, user); if none decided (focus,
     /// urgent, minimize, ...), a user request un-minimizes and focuses the
     /// window when it is on a shown workspace; anything else marks it urgent.

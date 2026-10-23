@@ -37,6 +37,7 @@ tests/focus.sh
 tests/docs.sh
 tests/input.sh                              # needs the -Dtest-input build
 tests/pointer.sh                            # needs the -Dtest-input build
+tests/captures.sh zig-out/test-input/bin     # pointer constraints and shortcut inhibitors
 tests/navigation.sh                         # needs the -Dtest-input build (and grim for one scenario)
 tests/screenshot.sh                         # needs the -Dtest-input build
 tests/stress.sh                             # needs the -Dtest-input build
@@ -51,6 +52,13 @@ The interaction suites share their session helpers in
 `tests/support/harness.sh`.
 
 ## Test suites
+
+`tests/captures.sh` adds ten real-client scenarios for pointer locking,
+confinement, relative motion, shortcut inhibition, oneshot and persistent
+lifetime, client destruction, region updates and holes, cursor hints,
+plugin warps, emergency capture release, and session-lock interactions.
+Its default build directory is `zig-out/test-input/bin`; an alternate
+test build directory can be passed as its first argument.
 
 | Suite | Kind | What it covers |
 |---|---|---|

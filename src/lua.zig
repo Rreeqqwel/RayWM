@@ -56,9 +56,10 @@ pub const Event = enum {
     /// The client asks to be minimized: (id). Granted unless a handler
     /// changes the window's state.
     view_request_minimize,
-    /// The client asks for focus (xdg-activation): (id, user). `user`: the
-    /// request comes from user input in a focused window (e.g. a click on
-    /// a link). Default: focus it when it can be seen, else mark it urgent.
+    /// The client asks for focus (xdg-activation): (id, user). `user` means
+    /// a token exchanged from a recent forwarded key/button press and a
+    /// supplied source surface still focused when the token was committed.
+    /// Default: focus it when it can be seen, else mark it urgent.
     view_request_activate,
 };
 /// Extra handler arguments after the id (most events have none).

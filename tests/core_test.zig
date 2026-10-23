@@ -41,6 +41,19 @@ test "configure serials compare correctly across u32 wrap-around" {
     try t.expect(!srv.serialReached(0xffff_fff0, 2));
 }
 
+test "relative motion keeps missing axes and bounds fixed-point wire deltas" {
+    try t.expectEqual(@as(f64, 105), raywm.input.motionAxis(100, 5));
+    try t.expectEqual(@as(f64, 100), raywm.input.motionAxis(100, std.math.nan(f64)));
+    try t.expectEqual(@as(f64, 100), raywm.input.motionAxis(100, std.math.inf(f64)));
+    try t.expectEqual(std.math.floatMax(f64), raywm.input.motionAxis(std.math.floatMax(f64), std.math.floatMax(f64)));
+    const Captures = @FieldType(srv.Server, "constraints");
+    try t.expectEqual(@as(f64, 0), Captures.finiteDelta(std.math.nan(f64)));
+    try t.expectEqual(@as(f64, 0), Captures.finiteDelta(-std.math.inf(f64)));
+    try t.expectEqual(@as(f64, 8388607), Captures.finiteDelta(1e30));
+    try t.expectEqual(@as(f64, -8388608), Captures.finiteDelta(-1e30));
+    try t.expectEqual(@as(f64, 12.5), Captures.finiteDelta(12.5));
+}
+
 test "key specs parse to modifiers and level-0 keysyms" {
     const s: *srv.Server = undefined; // parseKey does not touch the server
     const logo: u32 = 64;

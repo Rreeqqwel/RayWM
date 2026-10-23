@@ -11,6 +11,7 @@ const zwlr = wayland.client.zwlr;
 const zwp = wayland.client.zwp;
 const wp = wayland.client.wp;
 const zxdg = wayland.client.zxdg;
+const captures = @import("support/captures.zig");
 
 /// Optional protocols (bound when the compositor has them), used by the
 /// RAYWM_TEST_SINGLE_PIXEL, _FRACTIONAL, _PRESENTATION, _CURSOR_SHAPE,
@@ -76,6 +77,9 @@ const SeatUse = struct {
     /// RAYWM_TEST_TOKEN_TO: serial of the F7 press that asks for an
     /// activation token; requested by the main loop.
     token_request: ?u32 = null,
+    token_enter_serial: u32 = 0,
+    token_press_serial: u32 = 0,
+    capture: ?*captures.Capture = null,
 
     /// What a pointer event's surface is, for the log.
     fn kind(use: *SeatUse, surface: ?*wl.Surface) []const u8 {
@@ -230,6 +234,9 @@ pub fn main() !void {
                 step("subsurface mapped", .{});
             }
             use.listen(&globals);
+            var capture: captures.Capture = undefined;
+            try capture.init(compositor, surface, use.seat, use.pointer);
+            use.capture = &capture;
             // RAYWM_TEST_IDLE_INHIBIT: keeps the session from going idle
             // while this window is visible.
             if (std.c.getenv("RAYWM_TEST_IDLE_INHIBIT") != null) {
@@ -265,8 +272,12 @@ pub fn main() !void {
                     step("grabbing popup mapped", .{});
                 }
                 if (use.token_request) |serial| {
-                    use.token_request = null;
-                    try requestToken(surface, .{ .seat = use.seat, .serial = serial }, .{ .write_to = std.c.getenv("RAYWM_TEST_TOKEN_TO").? });
+                    const go = std.c.getenv("RAYWM_TEST_TOKEN_GO");
+                    if (go == null or std.c.access(go.?, 0) == 0) {
+                        if (go) |path| _ = std.c.unlink(path);
+                        use.token_request = null;
+                        try requestToken(surface, .{ .seat = use.seat, .serial = serial }, .{ .write_to = std.c.getenv("RAYWM_TEST_TOKEN_TO").? });
+                    }
                 }
                 try pollActivation(surface);
                 if (state.close_requested and std.c.getenv("RAYWM_TEST_CLOSE") != null) {
@@ -422,6 +433,7 @@ fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, use: *SeatUse)
     const log_ptr = std.c.getenv("RAYWM_TEST_PTR") != null;
     switch (event) {
         .enter => |e| {
+            use.token_enter_serial = e.serial;
             use.ptr_on = e.surface;
             // RAYWM_TEST_CURSOR_SHAPE: a named cursor (wp_cursor_shape_v1).
             if (std.c.getenv("RAYWM_TEST_CURSOR_SHAPE") != null) if (extras.cursor_shape) |m| {
@@ -445,6 +457,8 @@ fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, use: *SeatUse)
         .button => |b| {
             const on_popup = use.popup != null and use.ptr_on != null and use.ptr_on == use.popup.?.surface;
             if (log_ptr) step("ptr button {d} {s} {s}", .{ b.button, @tagName(b.state), use.kind(use.ptr_on) });
+            if (b.button == 0x112 and b.state == .pressed and tokenMode("pointer") and std.c.getenv("RAYWM_TEST_TOKEN_TO") != null)
+                use.token_request = b.serial;
             if (b.button == 0x110 and b.state == .pressed and std.c.getenv("RAYWM_TEST_CSD_MOVE") != null) if (use.toplevel) |t| {
                 t.move(use.seat, b.serial);
                 step("csd move requested", .{});
@@ -565,6 +579,7 @@ fn keyboardListener(_: *wl.Keyboard, event: wl.Keyboard.Event, use: *SeatUse) vo
             step("kbd keymap", .{});
         },
         .enter => |e| {
+            use.token_enter_serial = e.serial;
             var buf: [256]u8 = undefined;
             var w: std.Io.Writer = .fixed(&buf);
             for (e.keys.slice(u32)) |k| w.print(" {d}", .{k}) catch {};
@@ -573,7 +588,13 @@ fn keyboardListener(_: *wl.Keyboard, event: wl.Keyboard.Event, use: *SeatUse) vo
         .leave => step("kbd leave", .{}),
         .repeat_info => |r| step("kbd repeat {d} {d}", .{ r.rate, r.delay }),
         .key => |k| {
+            if (k.state == .pressed) if (use.capture) |capture| capture.key(k.key);
             step("kbd key {d} {s}", .{ k.key, @tagName(k.state) });
+            if (k.state == .pressed and k.key == 63 and std.c.getenv("RAYWM_TEST_METADATA_KEYS") != null) if (use.toplevel) |t| {
+                t.setTitle("Changed title");
+                t.setAppId("changed-app");
+                step("metadata changed", .{});
+            };
             // RAYWM_TEST_REQUEST_KEYS: F9 toggles a fullscreen request, F10
             // a maximize request.
             if (k.state == .pressed and std.c.getenv("RAYWM_TEST_REQUEST_KEYS") != null) if (use.toplevel) |t| if (use.state) |st| {
@@ -590,7 +611,17 @@ fn keyboardListener(_: *wl.Keyboard, event: wl.Keyboard.Event, use: *SeatUse) vo
             };
             // RAYWM_TEST_TOKEN_TO: F7 asks for an activation token for this
             // key press (as a terminal does when a link is clicked).
-            if (k.state == .pressed and k.key == 65 and std.c.getenv("RAYWM_TEST_TOKEN_TO") != null) use.token_request = k.serial;
+            if (k.state == .pressed and std.c.getenv("RAYWM_TEST_TOKEN_TO") != null) {
+                if (k.key == 65) {
+                    use.token_press_serial = k.serial;
+                    use.token_request = if (tokenMode("enter")) use.token_enter_serial else k.serial;
+                    step("input token queued", .{});
+                } else if (k.key == 66 and tokenMode("reuse")) {
+                    // F8 deliberately reuses the F7 serial, rather than
+                    // the new key's serial: one input grants one token.
+                    use.token_request = use.token_press_serial;
+                }
+            }
             if (use.layer) |layer| if (k.key == 87 and k.state == .pressed) {
                 layer.setKeyboardInteractivity(.none);
                 use.surface.commit();
@@ -660,6 +691,7 @@ fn makeBufferMargin(shm: *wl.Shm, content_w: i32, content_h: i32, m: i32) !*wl.B
 fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, g: *Globals) void {
     switch (event) {
         .global => |global| {
+            captures.bind(registry, global.name, std.mem.span(global.interface));
             const name = std.mem.span(global.interface);
             if (std.mem.eql(u8, name, std.mem.span(wl.Compositor.interface.name))) {
                 g.compositor = registry.bind(global.name, wl.Compositor, 4) catch return;
@@ -843,10 +875,19 @@ fn decorationListener(_: *zxdg.ToplevelDecorationV1, event: zxdg.ToplevelDecorat
 //   (and deletes it) and asks to activate this window with it.
 // RAYWM_TEST_ACTIVATE_SELF=<file>: once <file> exists (and is deleted),
 //   gets a token without any input event and activates this window with it.
+// RAYWM_TEST_TOKEN_MODE=enter|no-surface|reuse: deliberately weaken the
+//   request, or let F8 request a second token from the previous F7 serial.
+// RAYWM_TEST_TOKEN_GO=<file>: defer a queued request until this file exists.
+// RAYWM_TEST_TOKEN_BACKUP=<file>: save the same token to test wire replay.
 
 const TokenUse = union(enum) { write_to: [*:0]const u8, activate: *wl.Surface };
 var token_use: TokenUse = undefined;
 var token_pending = false;
+
+fn tokenMode(mode: []const u8) bool {
+    const value = std.c.getenv("RAYWM_TEST_TOKEN_MODE") orelse return false;
+    return std.mem.eql(u8, std.mem.span(value), mode);
+}
 
 fn requestToken(surface: *wl.Surface, input: ?struct { seat: *wl.Seat, serial: u32 }, use: TokenUse) !void {
     const act = extras.activation orelse return error.NoActivation;
@@ -854,7 +895,7 @@ fn requestToken(surface: *wl.Surface, input: ?struct { seat: *wl.Seat, serial: u
     token.setListener(?*anyopaque, tokenListener, null);
     if (input) |i| {
         token.setSerial(i.serial, i.seat);
-        token.setSurface(surface);
+        if (!tokenMode("no-surface")) token.setSurface(surface);
     }
     token.commit();
     token_use = use;
@@ -871,6 +912,7 @@ fn tokenListener(token: *xdg.ActivationTokenV1, event: xdg.ActivationTokenV1.Eve
             switch (token_use) {
                 .write_to => |path| {
                     writeFile(path, name) catch return step("token not written", .{});
+                    if (std.c.getenv("RAYWM_TEST_TOKEN_BACKUP")) |backup| writeFile(backup, name) catch return step("token backup failed", .{});
                     step("token written", .{});
                 },
                 .activate => |surface| {
@@ -884,7 +926,7 @@ fn tokenListener(token: *xdg.ActivationTokenV1, event: xdg.ActivationTokenV1.Eve
 
 /// Whether the hold loop must wake up to look for activation files.
 fn activationFiles() bool {
-    return std.c.getenv("RAYWM_TEST_ACTIVATE_FROM") != null or std.c.getenv("RAYWM_TEST_ACTIVATE_SELF") != null;
+    return std.c.getenv("RAYWM_TEST_ACTIVATE_FROM") != null or std.c.getenv("RAYWM_TEST_ACTIVATE_SELF") != null or std.c.getenv("RAYWM_TEST_TOKEN_GO") != null;
 }
 
 fn pollActivation(surface: *wl.Surface) !void {

@@ -30,12 +30,18 @@ pub fn build(b: *std.Build) void {
     scanner.addSystemProtocol("unstable/xdg-foreign/xdg-foreign-unstable-v2.xml");
     scanner.addSystemProtocol("unstable/xdg-decoration/xdg-decoration-unstable-v1.xml");
     scanner.addSystemProtocol("staging/xdg-activation/xdg-activation-v1.xml");
+    scanner.addSystemProtocol("staging/ext-foreign-toplevel-list/ext-foreign-toplevel-list-v1.xml");
+    scanner.addSystemProtocol("staging/ext-workspace/ext-workspace-v1.xml");
+    scanner.addSystemProtocol("unstable/pointer-constraints/pointer-constraints-unstable-v1.xml");
+    scanner.addSystemProtocol("unstable/relative-pointer/relative-pointer-unstable-v1.xml");
+    scanner.addSystemProtocol("unstable/keyboard-shortcuts-inhibit/keyboard-shortcuts-inhibit-unstable-v1.xml");
     // wlr-protocols as shipped with wlroots 0.20.2 (its protocol/ directory).
     scanner.addCustomProtocol(b.path("protocol/wlr-layer-shell-unstable-v1.xml"));
     scanner.addCustomProtocol(b.path("protocol/wlr-output-management-unstable-v1.xml"));
     scanner.addCustomProtocol(b.path("protocol/wlr-output-power-management-unstable-v1.xml"));
     scanner.addCustomProtocol(b.path("protocol/wlr-gamma-control-unstable-v1.xml"));
     scanner.addCustomProtocol(b.path("protocol/wlr-data-control-unstable-v1.xml"));
+    scanner.addCustomProtocol(b.path("protocol/wlr-foreign-toplevel-management-unstable-v1.xml"));
     // Client side for raywm-test-client only (presentation feedback); the
     // compositor side is wlroots'. The copy works around a scanner bug.
     scanner.addCustomProtocol(b.path("tests/protocol/presentation-time.xml"));
@@ -82,6 +88,12 @@ pub fn build(b: *std.Build) void {
     scanner.generate("wp_presentation", 2);
     scanner.generate("zxdg_decoration_manager_v1", 1);
     scanner.generate("xdg_activation_v1", 1);
+    scanner.generate("zwlr_foreign_toplevel_manager_v1", 3);
+    scanner.generate("ext_foreign_toplevel_list_v1", 1);
+    scanner.generate("ext_workspace_manager_v1", 1);
+    scanner.generate("zwp_pointer_constraints_v1", 1);
+    scanner.generate("zwp_relative_pointer_manager_v1", 1);
+    scanner.generate("zwp_keyboard_shortcuts_inhibit_manager_v1", 1);
 
     const wayland = b.createModule(.{ .root_source_file = scanner.result });
     const xkbcommon = b.dependency("xkbcommon", .{}).module("xkbcommon");
@@ -192,6 +204,21 @@ pub fn build(b: *std.Build) void {
         probe.root_module.addImport("wayland", wayland);
         probe.root_module.linkSystemLibrary("wayland-client", .{});
         b.installArtifact(probe);
+
+        const taskbar_client = b.addExecutable(.{
+            .name = "raywm-test-taskbar",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("tests/taskbar_client.zig"),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+            }),
+            .use_llvm = use_llvm,
+            .use_lld = use_llvm,
+        });
+        taskbar_client.root_module.addImport("wayland", wayland);
+        taskbar_client.root_module.linkSystemLibrary("wayland-client", .{});
+        b.installArtifact(taskbar_client);
     }
     exe.root_module.linkSystemLibrary("wayland-server", .{});
     exe.root_module.linkSystemLibrary("xkbcommon", .{});

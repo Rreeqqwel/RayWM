@@ -2,8 +2,9 @@
 //! -Dtest-input. Creates a virtual pointer and keyboard and runs commands
 //! given as arguments, with a roundtrip after each one:
 //!   move X Y          absolute pointer position in layout pixels
+//!   relative DX DY    relative motion (also unaccelerated)
 //!   down|up left|right|middle
-//!   key NAME down|up  NAME: super, ctrl, alt, shift, f7 .. f12,
+//!   key NAME down|up  NAME: super, ctrl, alt, shift, f5 .. f12,
 //!                     a-z, 0-9, tab, print, escape, space, return,
 //!                     left, right, up, down, comma, period
 //!   group N           locks keyboard layout group N (0 = first layout), as
@@ -50,6 +51,8 @@ const keys = [_]Key{
     .{ .name = "p", .code = KEY_P },
     .{ .name = "print", .code = KEY_SYSRQ },
     .{ .name = "escape", .code = KEY_ESC },
+    .{ .name = "f5", .code = 63 },
+    .{ .name = "f6", .code = 64 },
     .{ .name = "f7", .code = 65 },
     .{ .name = "f8", .code = 66 },
     .{ .name = "f9", .code = KEY_F9 },
@@ -148,6 +151,12 @@ pub fn main(init: std.process.Init) !void {
             const x = try std.fmt.parseInt(u32, a, 10);
             const y = try std.fmt.parseInt(u32, b, 10);
             pointer.motionAbsolute(time, x, y, extent_w, extent_h);
+            pointer.frame();
+            i += 3;
+        } else if (std.mem.eql(u8, cmd, "relative")) {
+            const dx = try std.fmt.parseFloat(f64, a);
+            const dy = try std.fmt.parseFloat(f64, b);
+            pointer.motion(time, wl.Fixed.fromDouble(dx), wl.Fixed.fromDouble(dy));
             pointer.frame();
             i += 3;
         } else if (std.mem.eql(u8, cmd, "down") or std.mem.eql(u8, cmd, "up")) {

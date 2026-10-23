@@ -51,16 +51,66 @@ pub fn isPrivileged(interface: []const u8) bool {
     return false;
 }
 
+/// A short-lived grant for an actual forwarded key/button press. Client
+/// destruction clears the entry before its pointer can become stale.
+const InputGrant = struct {
+    client: ?*wl.Client = null,
+    serial: u32 = 0,
+    deadline: u64 = 0,
+    destroy: wl.Listener(*wl.Client) = .init(handleDestroy),
+
+    fn clear(g: *InputGrant) void {
+        if (g.client != null) g.destroy.link.remove();
+        g.client = null;
+    }
+
+    fn handleDestroy(listener: *wl.Listener(*wl.Client), _: *wl.Client) void {
+        const g: *InputGrant = @fieldParentPtr("destroy", listener);
+        g.clear();
+    }
+};
+
+/// Keep verification outside token.data, which remains available to other
+/// compositor integrations. wlroots destroys tokens on use, expiry or
+/// shutdown; the listener clears our pointer in every case.
+const TokenGrant = struct {
+    token: ?*wlr.XdgActivationTokenV1 = null,
+    destroy: wl.Listener(void) = .init(handleDestroy),
+
+    fn clear(g: *TokenGrant) void {
+        if (g.token != null) g.destroy.link.remove();
+        g.token = null;
+    }
+
+    fn handleDestroy(listener: *wl.Listener(void)) void {
+        const g: *TokenGrant = @fieldParentPtr("destroy", listener);
+        g.clear();
+    }
+};
+
+fn monotonicMs() u64 {
+    const ts = srv.timestamp();
+    return @as(u64, @intCast(ts.sec)) * std.time.ms_per_s + @as(u64, @intCast(ts.nsec)) / std.time.ns_per_ms;
+}
+
 pub const Protocols = struct {
     server: *Server,
     security: *wlr.SecurityContextManagerV1,
     cursor_shape: *wlr.CursorShapeManagerV1,
     decoration: *wlr.XdgDecorationManagerV1,
     activation: *wlr.XdgActivationV1,
+    /// At most 64 input grants and 64 verified tokens, with no allocations
+    /// on input paths. Older entries are conservatively downgraded to
+    /// urgency-only activation if the bounded ring wraps.
+    input_grants: [64]InputGrant = @splat(.{}),
+    token_grants: [64]TokenGrant = @splat(.{}),
+    next_input_grant: usize = 0,
+    next_token_grant: usize = 0,
     request_set_shape: wl.Listener(*wlr.CursorShapeManagerV1.event.RequestSetShape) = .init(handleSetShape),
     request_primary: wl.Listener(*wlr.Seat.event.RequestSetPrimarySelection) = .init(handleRequestPrimary),
     new_decoration: wl.Listener(*wlr.XdgToplevelDecorationV1) = .init(handleNewDecoration),
     request_activate: wl.Listener(*wlr.XdgActivationV1.event.RequestActivate) = .init(handleRequestActivate),
+    new_token: wl.Listener(*wlr.XdgActivationTokenV1) = .init(handleNewToken),
 
     pub fn init(p: *Protocols, server: *Server) !void {
         const display = server.wl_server;
@@ -84,6 +134,7 @@ pub const Protocols = struct {
         server.seat.events.request_set_primary_selection.add(&p.request_primary);
         p.decoration.events.new_toplevel_decoration.add(&p.new_decoration);
         p.activation.events.request_activate.add(&p.request_activate);
+        p.activation.events.new_token.add(&p.new_token);
         display.setGlobalFilter(*Protocols, filter, p);
     }
 
@@ -92,6 +143,9 @@ pub const Protocols = struct {
         p.request_primary.link.remove();
         p.new_decoration.link.remove();
         p.request_activate.link.remove();
+        p.new_token.link.remove();
+        for (&p.input_grants) |*g| g.clear();
+        for (&p.token_grants) |*g| g.clear();
     }
 
     /// Returns constants only: libwayland reads the result as a C bool (see
@@ -122,14 +176,57 @@ pub const Protocols = struct {
         view.attachDecoration(deco);
     }
 
-    /// xdg-activation: wlroots only emits this for a valid token (known,
-    /// not expired). A token with a seat was checked when it was made: its
-    /// serial came from an input event of that client, and the surface
-    /// that asked for it (if named) had keyboard or pointer focus.
-    fn handleRequestActivate(_: *wl.Listener(*wlr.XdgActivationV1.event.RequestActivate), event: *wlr.XdgActivationV1.event.RequestActivate) void {
+    /// Called only for presses actually forwarded to the seat. A grant
+    /// must be exchanged for a token within five seconds, exactly once.
+    pub fn recordInput(p: *Protocols, client: *wl.Client, serial: u32) void {
+        if (serial == 0 or p.server.session_lock.locked()) return;
+        const g = &p.input_grants[p.next_input_grant];
+        p.next_input_grant = (p.next_input_grant + 1) % p.input_grants.len;
+        g.clear();
+        g.client = client;
+        g.serial = serial;
+        g.deadline = monotonicMs() + 5000;
+        client.addDestroyListener(&g.destroy);
+    }
+
+    /// wlroots validates seat serials broadly (including enter/leave).
+    /// RayWM additionally requires a recent, forwarded key/button press
+    /// from this client and a supplied source surface still holding
+    /// keyboard/pointer focus when the token is committed.
+    fn handleNewToken(listener: *wl.Listener(*wlr.XdgActivationTokenV1), token: *wlr.XdgActivationTokenV1) void {
+        const p: *Protocols = @fieldParentPtr("new_token", listener);
+        if (p.server.session_lock.locked() or token.seat != p.server.seat) return;
+        const surface = token.surface orelse return;
+        const seat = p.server.seat;
+        if (surface != seat.keyboard_state.focused_surface and surface != seat.pointer_state.focused_surface) return;
+        const client = surface.resource.getClient();
+        const now = monotonicMs();
+        for (&p.input_grants) |*g| {
+            if (g.client != client or g.serial != token.serial) continue;
+            const fresh = now <= g.deadline;
+            g.clear(); // one input serial can grant only one token
+            if (!fresh) return;
+            const verified = &p.token_grants[p.next_token_grant];
+            p.next_token_grant = (p.next_token_grant + 1) % p.token_grants.len;
+            verified.clear();
+            verified.token = token;
+            token.events.destroy.add(&verified.destroy);
+            return;
+        }
+    }
+
+    /// wlroots consumes known, unexpired tokens after this callback. Only
+    /// one exchanged from a native input grant can authorize focus.
+    fn handleRequestActivate(listener: *wl.Listener(*wlr.XdgActivationV1.event.RequestActivate), event: *wlr.XdgActivationV1.event.RequestActivate) void {
+        const p: *Protocols = @fieldParentPtr("request_activate", listener);
         const view = View.fromWlrSurface(event.surface) orelse return;
-        log.debug("activation of view {d} (user: {})", .{ view.id, event.token.seat != null });
-        view.requestActivate(event.token.seat != null);
+        const user = for (&p.token_grants) |*g| {
+            if (g.token != event.token) continue;
+            g.clear();
+            break true;
+        } else false;
+        log.debug("activation of view {d} (user: {})", .{ view.id, user });
+        view.requestActivate(user);
     }
 
     /// Middle-click paste: like the clipboard, set by the focused client.

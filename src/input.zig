@@ -141,7 +141,14 @@ pub const Keyboard = struct {
         };
         if (!handled) {
             kb.server.seat.setKeyboard(wlr_kb);
+            const seat = kb.server.seat;
+            const before = kb.server.wl_server.getSerial();
+            const surface = seat.keyboard_state.focused_surface;
+            const default_grab = !seat.keyboardHasGrab();
             kb.server.seat.keyboardNotifyKey(event.time_msec, event.keycode, event.state);
+            const serial = kb.server.wl_server.getSerial();
+            if (event.state == .pressed and default_grab and serial != before and surface != null and seat.keyboard_state.focused_surface == surface)
+                kb.server.protocols.recordInput(surface.?.resource.getClient(), serial);
         }
     }
 
@@ -165,6 +172,15 @@ pub const Keyboard = struct {
         const keymap = wlr_kb.keymap orelse return false;
         const active = state.keyGetLayout(keycode);
         const sym = bindingSym(keymap, keycode, active);
+        // A client may capture shortcuts, but the user can always release
+        // captures with Ctrl+Alt+Escape; VT switching above also stays live.
+        const escape_mods = @as(u32, @bitCast(wlr.Keyboard.ModifierMask{ .ctrl = true, .alt = true }));
+        if (mods == escape_mods and sym == xkb.Keysym.Escape) {
+            kb.server.constraints.escape();
+            refocusPointer(kb.server);
+            return true;
+        }
+        if (kb.server.constraints.inhibited()) return false;
         const handled = if (sym) |s| handleBinding(kb.server, mods, s) else false;
         if (srv.verbose and (handled or mods & ~shift_mask != 0)) traceKey(keymap, mods, keycode, active, sym, handled);
         return handled;
@@ -300,17 +316,38 @@ pub fn requestSelection(listener: *wl.Listener(*wlr.Seat.event.RequestSetSelecti
     server.seat.setSelection(event.source, event.serial);
 }
 
+/// wlroots' NaN axis convention, with an overflow guard before region math.
+pub fn motionAxis(position: f64, delta: f64) f64 {
+    if (!std.math.isFinite(delta)) return position;
+    const result = position + delta;
+    return if (std.math.isFinite(result)) result else position;
+}
+
 pub fn motion(listener: *wl.Listener(*wlr.Pointer.event.Motion), event: *wlr.Pointer.event.Motion) void {
     const server: *Server = @fieldParentPtr("cursor_motion", listener);
     server.idle_notifier.notifyActivity(server.seat);
-    server.cursor.move(event.device, event.delta_x, event.delta_y);
+    server.constraints.relativeMotion(event.time_msec, event.delta_x, event.delta_y, event.unaccel_dx, event.unaccel_dy);
+    // wlroots uses NaN to mean "this axis did not change". Preserve it
+    // before clipping the endpoint; no non-finite value reaches pixman.
+    var x = motionAxis(server.cursor.x, event.delta_x);
+    var y = motionAxis(server.cursor.y, event.delta_y);
+    server.constraints.endpoint(&x, &y);
+    server.cursor.warpClosest(event.device, x, y);
+    if (server.constraints.active) |active| if (active.type == .locked) return;
     processMotion(server, event.time_msec);
 }
 
 pub fn motionAbsolute(listener: *wl.Listener(*wlr.Pointer.event.MotionAbsolute), event: *wlr.Pointer.event.MotionAbsolute) void {
     const server: *Server = @fieldParentPtr("cursor_motion_abs", listener);
     server.idle_notifier.notifyActivity(server.seat);
-    server.cursor.warpAbsolute(event.device, event.x, event.y);
+    var x: f64 = undefined;
+    var y: f64 = undefined;
+    server.cursor.absoluteToLayoutCoords(event.device, event.x, event.y, &x, &y);
+    if (!std.math.isFinite(x)) x = server.cursor.x;
+    if (!std.math.isFinite(y)) y = server.cursor.y;
+    server.constraints.endpoint(&x, &y);
+    server.cursor.warpClosest(event.device, x, y);
+    if (server.constraints.active) |active| if (active.type == .locked) return;
     processMotion(server, event.time_msec);
 }
 
@@ -370,6 +407,7 @@ fn focusHit(server: *Server, hit: ?Hit, time_msec: ?u32) void {
 /// surface has the pointer until the last button is released, so no other
 /// client sees the release of a press it never got.
 pub fn refocusPointer(server: *Server) void {
+    server.constraints.sync();
     if (server.grab.mode != .none) return;
     if (implicitGrab(server)) {
         if (server.seat.pointer_state.focused_surface != null and grabOrigin(server) == null) {
@@ -393,12 +431,14 @@ pub fn pointerBusy(server: *Server) bool {
 /// Moves the cursor for a plugin (raywm.pointer_warp). Refused while a
 /// grab owns the pointer, because moving it would drag a window or pull
 /// a held interaction somewhere else, and while an exclusive layer
-/// surface (a lock screen, a launcher) holds the keyboard. RayWM has no
-/// pointer-constraints support; if it gets one, warps must respect it.
+/// surface (a lock screen, a launcher) holds the keyboard. An active
+/// pointer constraint also refuses plugin warps.
 /// Pointer focus follows (enter/leave/motion); keyboard focus never does.
 pub fn warpPointer(server: *Server, x: f64, y: f64) lua.WarpResult {
     if (server.session_lock.locked()) return .locked;
     if (pointerBusy(server)) return .busy;
+    server.constraints.sync();
+    if (server.constraints.active != null) return .busy;
     if (server.layer_focus) |ls| if (ls.wlr_layer.current.keyboard_interactive == .exclusive) return .exclusive;
     if (!server.cursor.warp(null, x, y)) return .outside;
     const now = srv.timestamp();
@@ -534,7 +574,10 @@ pub fn button(listener: *wl.Listener(*wlr.Pointer.event.Button), event: *wlr.Poi
             }
         };
     }
-    _ = server.seat.pointerNotifyButton(event.time_msec, event.button, event.state);
+    const surface = server.seat.pointer_state.focused_surface;
+    const serial = server.seat.pointerNotifyButton(event.time_msec, event.button, event.state);
+    if (event.state == .pressed and surface != null and server.seat.pointer_state.focused_surface == surface)
+        server.protocols.recordInput(surface.?.resource.getClient(), serial);
     // The last held button is up: the implicit grab is over and focus
     // follows the cursor again.
     if (event.state == .released and server.seat.pointer_state.button_count == 0) refocusPointer(server);

@@ -1,7 +1,7 @@
 # Security
 
-RayWM v0.1.x is experimental software. It runs as your user, owns your
-display, and receives all keyboard and pointer input. Treat it with the
+RayWM is experimental software. The v0.2 development branch runs as your
+user, owns your display, and receives all keyboard and pointer input. Treat it with the
 same care as any other compositor.
 
 ## Lua plugins are trusted code — there is no sandbox
@@ -31,6 +31,104 @@ What RayWM *does* do, to contain mistakes rather than attacks:
 Crafted Lua bytecode passed to `load` can crash the Lua VM. This is
 another reason why plugins have to be trusted.
 
+## Wayland clients and privileged protocols
+
+Ordinary clients connected to RayWM's Wayland socket are trusted to use
+the privileged protocols RayWM advertises. There is no per-application
+permission prompt or portal policy in the compositor.
+
+- **Screen capture.** `wlr-screencopy-unstable-v1` lets ordinary clients
+  capture every RayWM output, whether or not `screenshot.lua` is loaded.
+  Unloading that plugin only removes its bindings. A nested RayWM session
+  captures its own outputs, not the parent compositor's desktop.
+- **Clipboard and primary selection.** wlr-data-control and
+  ext-data-control let ordinary clients read and replace selections
+  without keyboard focus. This enables wl-clipboard and clipboard
+  managers, and also exposes copied data to other ordinary clients.
+  Screen locking does not revoke their clipboard-manager access.
+- **Desktop control.** Ordinary clients can use the advertised output
+  configuration, power, gamma, layer-shell and session-lock protocols.
+  Taskbar/workspace management has the same trust boundary when those
+  managers are implemented. A global listed in the filter is not by
+  itself an implemented capability; see the development acceptance
+  ledger for current feature status.
+
+RayWM implements `security-context-v1` through wlroots. A launcher can
+provide a dedicated listening socket for restricted clients. wlroots
+attaches context metadata to clients accepted through that socket;
+RayWM's global filter then denies privileged globals both when the
+registry is advertised and when a client attempts to bind them.
+The policy is based on the presence of that context, not on trusting a
+particular `app_id` or `sandbox_engine` string.
+
+The denied interfaces include screencopy/image capture, both data-control
+protocols, output management/power/gamma, foreign-toplevel/workspace
+management, session lock, layer shell, virtual input, input methods, and
+the security-context manager itself. The exact list lives in
+`src/protocols.zig`; some entries reserve the boundary for protocols that
+are not yet implemented. Core drawing/input protocols and ordinary
+focused-client clipboard operations remain available.
+
+This filter does not create an OS sandbox, authenticate an application,
+or detect sandboxes automatically. A sandbox launcher must prevent its
+clients from reaching the unrestricted Wayland socket. It also does not
+isolate trusted Lua plugins or protect against other processes with the
+same user's unrestricted filesystem/process access. The headless
+security-context regression uses a real restricted listener; it does
+not establish compatibility with every sandbox launcher.
+
+## Session locking
+
+`ext-session-lock-v1` owns the visual/input lock state. RayWM hides the
+other scene layers and places opaque backgrounds under lock surfaces.
+It sends the initial `locked` event only after each enabled output has
+presented a frame committed after that state was applied. Outputs
+without a lock surface remain covered. While locking or locked,
+ordinary window/layer focus and compositor key bindings are refused;
+VT switching remains available. Screenshots show the lock scene.
+
+The locker is trusted to authenticate the user before sending
+`unlock_and_destroy`. RayWM does not implement authentication or verify
+that a lock client is swaylock. A second locker is refused while the
+current lock object exists. If its client dies without unlocking,
+RayWM enters the **abandoned** state, keeps other layers hidden and
+input restricted, and turns the lock background dark red. An ordinary
+client that obtains a new lock in this state can unlock it; this permits
+recovery but is not an authentication boundary against already running
+unrestricted clients. Restricted security-context clients cannot bind
+the lock manager.
+
+The lock does not stop background applications, clipboard managers or
+trusted Lua plugins, and it cannot defend against the user killing the
+compositor, malicious same-user processes or a compromised locker.
+Physical DRM/KMS, VT and monitor-hotplug behavior still requires the
+manual checks in [HARDWARE-TESTING.md](docs/HARDWARE-TESTING.md).
+
+## Activation requests
+
+For `xdg-activation-v1`, wlroots rejects unknown/expired tokens and
+consumes a token after an activation request. RayWM exposes a boolean
+named `user` to `view_request_activate` handlers: it is true when the
+token was exchanged from a key/button press actually forwarded to the
+client, with a supplied source surface still holding pointer or keyboard
+focus when the token was committed. RayWM requires this in addition to
+wlroots' broader seat-client serial validation, which also accepts enter
+and other seat events. A press must be exchanged within five seconds and
+can authorize only one token. Missing source surfaces, enter serials,
+expired input grants and reused serials cannot authorize focus.
+
+The native input and verified-token registries each hold at most 64
+entries. When full, older grants lose their authorization and requests
+fall back to urgency. Client/token destroy listeners remove the native
+references, and the input path performs no allocation for these grants.
+RayWM does not use the token's `app_id` as an authenticated identity or
+enforce target-app matching.
+
+Without a plugin decision, a verified request restores/focuses a
+mapped window on a shown workspace if native focus rules permit it;
+otherwise the window becomes urgent. This is a focus-stealing policy,
+not a permission mechanism for screen, clipboard or session access.
+
 ## Other notes
 
 - **Test-only virtual input.** Builds made with `zig build -Dtest-input`
@@ -38,20 +136,6 @@ another reason why plugins have to be trusted.
   client inject input. Such builds are for the test suite only, log a
   `TEST BUILD` warning at startup, and are never distributed. Release
   packages are checked to contain no such code (`scripts/package.sh`).
-- **Screen capture (since v0.1.1).** RayWM advertises
-  `wlr-screencopy-unstable-v1` (and `xdg-output`) so that tools such as
-  grim can take screenshots. The protocol has no permission model:
-  **every client connected to RayWM's Wayland socket can capture the
-  whole screen**, at any time, whether or not `screenshot.lua` is loaded.
-  Unloading the plugin only removes its key bindings. This is the same
-  as on other wlroots compositors that offer screencopy, but it matters
-  if you run untrusted Wayland clients. There is no switch to turn it
-  off in v0.1.1. Nested RayWM sessions use their own socket; clients of
-  the outer session cannot use RayWM's screencopy, and RayWM's clients
-  capture only RayWM's outputs.
-- **Other protocols.** RayWM does not implement data control, input
-  inhibition or security-context protocols. Clipboard contents are only
-  sent to the focused client.
 - **Screenshot files** are created with mode 0600 in the user's
   pictures directory; temporary files for clipboard copies live in
   `$XDG_RUNTIME_DIR` and are removed after use.

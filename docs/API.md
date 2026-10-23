@@ -11,11 +11,12 @@ against `src/lua.zig` and `src/host.zig`, and most of it is covered by
 - [Limits and trust model](#limits-and-trust-model)
 - [Ids](#ids)
 - [`raywm` functions](#raywm-global)
+- [v0.2 additions](#v02-additions)
 - [Pointer and border (v0.1.2)](#pointer-and-border-v012)
 - [`ctx` functions](#ctx-per-plugin)
 - [Events](#events)
 - [Examples](#examples)
-- [Not supported in v0.1](#not-supported-in-v01)
+- [Current limits](#current-limits)
 
 ## Loading: the one contract
 
@@ -116,8 +117,9 @@ Windows, outputs and timers are plain integers:
 - every call checks the id it is given.
 
 A command on a window that no longer exists returns `nil, "stale"`; it
-does not raise an error. Lua only sees **mapped** windows, i.e. windows
-the user can currently see.
+does not raise an error. Lua sees **mapped** windows, including minimized
+windows and windows on inactive workspaces. Check `visible` before
+choosing a focus target.
 
 ## `raywm` (global)
 
@@ -160,6 +162,106 @@ its old size. Once that has happened, `view_resized` fires and
 the window simply moves. A second `view_place` before the client has
 acknowledged the first one always sends a new request.
 
+## v0.2 additions
+
+These additions retain `api = 1`. Test for individual functions when a
+plugin also supports an older RayWM. `raywm.version` identifies the
+compositor build; it is independent of the plugin API version.
+
+`view(id)` additionally reports `parent` (0 for none), `min_w`, `min_h`,
+`max_w`, `max_h` (0 means no client limit), `floating`, `managed`,
+`fullscreen`, `fullscreen_output` (0 when not fullscreen), `maximized`,
+`workspace` (0 for no workspace), `minimized`, `urgent`, `xwayland`,
+`pid`, and `decoration` (`"client"`, `"server"`, or nil without a decoration
+object). `visible` combines plugin hiding, native workspace visibility,
+map state and minimization. It does not report occlusion by another
+window. `focused` is the compositor's selected window; an exclusive
+layer surface or session locker may currently hold the keyboard.
+
+Window commands return `true` or `nil, "stale"`:
+
+| Function | Behavior |
+|---|---|
+| `view_floating(id, on)` | Change floating intent; layout plugins respond to `view_state`. The shipped floating plugin restores the last floating geometry. |
+| `view_fullscreen(id, on [, output])` | Enter/leave native fullscreen. An omitted/zero output selects the window's output. Invalid output IDs fall back to the window's output. |
+| `view_maximize(id, on)` | Fill the output's usable area; leaving restores normal geometry. |
+| `view_workspace(id, workspace)` | Move to a native workspace; nil/0 removes workspace membership. A stale workspace fails without moving the view. |
+| `view_minimize(id, on)` | Hide or restore; a minimized window remains mapped and queryable. |
+| `view_urgent(id, on)` | Set urgency; focusing clears it and updates its workspace's urgency. |
+| `view_decoration(id, mode)` | `"auto"`, `"client"`, `"server"`. Auto follows the client, defaulting to server-side. Server-side means no client title bar; RayWM does not draw a title bar. |
+
+`view_move` and `view_place` during fullscreen/maximize remember normal
+geometry for restoration. Fullscreen windows and their dialogs have a
+native stacking layer above panels. A covered window cannot take focus.
+`view_show(id, true)` only reverses plugin hiding: it cannot reveal an
+inactive workspace or a minimized window. New windows may wait up to
+150 ms for a requested initial size before their scene nodes are shown.
+
+`workspaces()` returns entries
+`{id, name, home, output, active, urgent, orphan}`; `workspace(id)`
+returns one entry or `nil, "stale"`. `home` is the original output name;
+`output` is the current output ID or 0. At most one workspace is active
+per output. The core moves workspaces off disconnected outputs; policy
+may move them home later.
+
+| Function | Result / ownership |
+|---|---|
+| `ctx.workspace_create(output, name)` | Workspace ID, or `nil, "stale"/"bad_name"/"failed"`; owned by the calling plugin. |
+| `ctx.workspace_adopt(id)` | `true`, or `nil, "stale"/"owned"`; take over an orphan after reload/error. |
+| `raywm.workspace_activate(id)` | `true`, or `nil, "stale"/"no_output"`. |
+| `raywm.workspace_rename(id, name)` | `true`, or `nil, "stale"/"bad_name"`. |
+| `raywm.workspace_set_output(id, output)` | `true`, or `nil, "stale"`. |
+| `raywm.workspace_remove(id)` | `true`, or `nil, "stale"`; windows become workspace-less. |
+
+Workspace registrations become orphaned on plugin unload. After a
+configuration load, unadopted orphans dissolve and their windows become
+workspace-less and visible. Reloading a workspace plugin should adopt
+its old workspaces before creating new ones. See the shipped
+`workspaces.lua` for a complete implementation.
+
+`outputs({all = true})` also lists disabled outputs. Output entries add
+`name`, `description`, `make`, `model`, `serial`, `workspace`, `enabled`,
+`power`, `scale`, `transform`, `adaptive_sync`, `mode = {w, h, refresh}`
+(refresh in millihertz), and `physical = {w, h}` (millimetres).
+`output_modes(id)` returns `{w, h, refresh, preferred, current}` entries,
+or `nil, "stale"`.
+
+`output_configure(name_or_id, options)` accepts `enabled`, `mode`
+(`"1920x1080@60"`, `"1920x1080"`, or `{w=1920,h=1080,refresh=60}` with
+refresh in Hz), `scale`, `transform` (`"normal"`, `"90"`, `"180"`, `"270"`,
+`"flipped"`, `"flipped-90"`, `"flipped-180"`, `"flipped-270"`), `position`
+(`"auto"` or `{x,y}`), and `adaptive_sync`. Missing fields are unchanged.
+The core tests the transaction before applying it and refuses to disable
+the last output. Results are `true` or `nil` plus `stale`, `no_output_left`,
+`bad_mode`, `bad_scale`, `bad_transform`, `rejected`, or `failed`.
+
+`input_configure(match, settings)` accepts `"*"`, `"type:keyboard"`,
+`"type:pointer"`, `"type:touchpad"`, or an exact device name. Settings
+include `xkb_rules/model/layout/variant/options` (each prefixed `xkb_`),
+`repeat_rate`, `repeat_delay`, `accel_speed`, `accel_profile`,
+`natural_scroll`, `left_handed`, `tap`, `tap_drag`, `drag_lock`, `dwt`,
+`middle_emulation`, `scroll_method`, `scroll_button`, `click_method`,
+and `send_events`. Unknown fields/types raise Lua errors. More specific
+matches override fields from broader matches. Settings reset at the
+start of a reload and apply after configuration completes; calls from
+later callbacks apply immediately. Unsupported hardware settings are
+reported by the native input implementation.
+
+`input_devices()` lists `{id,name,type,virtual,libinput}`.
+`keyboard_layout()` returns `{active,names}` (indexes start at 1), or nil
+without a keyboard. `keyboard_set_layout(index)` changes all compatible
+keyboards, returning true or nil when none accepts that index.
+
+`locked()` reports native session-lock state. `startup(fn)` schedules
+`fn` once after the first configuration load; it is only allowed during
+configuration/plugin setup and returns false on reload. `spawn_once(cmd)`
+starts a command only once per compositor lifetime; it records the
+attempt, does not monitor the process, and returns whether it started
+that attempt.
+
+Numeric API arguments must be finite. Opacity is clamped to 0..1 before
+native conversion; NaN/infinity raise a Lua argument error.
+
 ## Pointer and border (v0.1.2)
 
 These were added in v0.1.2 without changing `api = 1`. A plugin that
@@ -180,7 +282,12 @@ gets `enter`); keyboard focus does not change. It returns `true`, or
   then would drag a window or pull a held interaction elsewhere;
 - `"exclusive"`: an exclusive layer surface (a launcher or lock screen)
   holds the keyboard;
-- `"outside"`: the position is not on any output.
+- `"outside"`: the position is not on any output;
+- `"locked"`: the session is locked.
+
+An active native pointer constraint also returns `"busy"`. The emergency
+Ctrl+Alt+Escape binding releases pointer capture and shortcut inhibition
+until keyboard focus changes.
 
 **`raywm.view_border(id, width, color)`** draws a solid border of
 `width` pixels (`0`–`64`) around the window, outside its geometry, in
@@ -248,7 +355,8 @@ not grow any internal list.
 
 ## Events
 
-Every handler receives one integer id.
+Every handler receives an integer id, followed by the event-specific
+arguments below. Existing handlers may ignore additional arguments.
 
 | Event | id | When |
 |---|---|---|
@@ -259,6 +367,20 @@ Every handler receives one integer id.
 | `view_resized` | view | a size requested with `view_place` took effect |
 | `output_add` / `output_remove` | output | a monitor appeared or disappeared |
 | `layout` | output, or `0` | output geometry or usable area changed: a mode change, hotplug, or a panel appearing or disappearing |
+| `view_new` | view | mapped, before `view_map`; window rules run here |
+| `view_state` | view | floating/fullscreen/maximize/minimize/urgency changed after announcement |
+| `view_app_id` | view | mapped client's application ID changed |
+| `view_request_fullscreen` | view | extra `(on, output_id_or_0)`; default grants unless a handler decides |
+| `view_request_maximize` | view | extra `(on)`; default grants unless a handler decides |
+| `view_request_minimize` | view | default minimizes unless a handler decides |
+| `view_request_activate` | view | extra `(user)`; activation policy, see SECURITY.md |
+| `workspace_add` / `workspace_remove` | workspace | created / already removed (stale ID) |
+| `workspace_activate` | workspace | extra `(previous_id_or_0)`; now shown on its output |
+| `workspace_change` | workspace | name, output or urgency changed |
+| `view_workspace` | view | extra `(new_workspace_or_0, old_workspace_or_0)` |
+| `session_lock` / `session_unlock` | `0` | native lock state changed |
+| `input_add` / `input_remove` | device | input device appeared/disappeared; separate ID space |
+| `keyboard_layout` | `0` | extra `(index)` starting at 1 |
 
 When the focused window closes, `view_focus` (for the next window, or
 `0`) fires before `view_unmap`.
@@ -370,17 +492,18 @@ return {
 The shipped `config/plugins/dwindle.lua` is a complete layout plugin,
 and `config/plugins/focus.lua` a complete focus-navigation plugin.
 
-## Not supported in v0.1
+## Current limits
 
 - Per-frame callbacks, animations and drawing other than window borders
-  (rectangles, text, images). `on_frame` and more decorations are
-  planned for v0.2.
+  (rectangles, text, images). Animation/visual work is tracked in
+  [DEVELOPMENT.md](DEVELOPMENT.md); no per-frame Lua callback is promised.
 - Pointer events in Lua (motion, buttons, focus-follows-mouse). The
   pointer can be read and warped, not observed.
 - Blur, shadows, rounded corners and shaders. The wlroots scene renderer
   cannot do these; they would need a custom renderer.
-- Workspaces; maximize and fullscreen (the requests are answered but
-  ignored); Xwayland; touch; tablets.
+- Xwayland, cross-client drag-and-drop and text input/IME are tracked as
+  outstanding milestones in [DEVELOPMENT.md](DEVELOPMENT.md). Touch and
+  tablet input are not implemented.
 - Reading screen contents from Lua. Screenshots are taken by external
   programs through the wlr-screencopy protocol; the shipped
   `config/plugins/screenshot.lua` starts them with `raywm.spawn`. API v1

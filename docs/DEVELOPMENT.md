@@ -1,0 +1,213 @@
+# v0.2.0 continuation ledger
+
+This is an engineering record for the continuation started on 2026-10-23.
+It describes inspected source and recorded checks. It is not a declaration
+that v0.2.0 is ready for production or physical hardware.
+
+Status terms used here:
+
+- **PASS**: the stated check was run and passed for the stated build.
+- **FAIL**: the check ran and failed.
+- **SKIPPED**: the check was not run, with a reason.
+- **NOT IMPLEMENTED**: the requested capability has no implementation.
+- **PENDING**: implementation exists, but continuation validation is outstanding.
+
+## Recovered state
+
+The checkout initially contained branch `feature/v0.2.0-complete`, HEAD
+`1da71f9f43100ea9615353fc62139d49cc1d6821`:
+`feat(core): window states and requests (xdg-shell v7, decorations, minimize, activation)`.
+The worktree was dirty. No reset, clean, history rewrite, push, merge or
+release tag was used to recover it.
+
+The tracked edits were `.github/workflows/ci.yml`, `CHANGELOG.md`,
+`config/plugins/{binds,dwindle,window-rules,workspaces}.lua`,
+`config/rules.lua`, and the dwindle, rules and workspace Lua tests.
+They implement the second part of the shell work: shipped policy,
+regressions and integration-test wiring for the already committed native
+shell changes. Untracked files included `tests/shell.sh`, `tests/shell/`,
+the foreign-toplevel protocol XML, local Claude instructions and tools,
+`graphify-out/`, and `dist-v0.1.1-backup/`. The foreign-toplevel XML alone
+does not implement the protocol.
+
+A recovery snapshot is stored locally in `recovery/handoff-20261023/`.
+Its `head.txt`, `status.txt`, `history.txt`, `tracked.patch`, and
+`untracked.tar.gz` preserve the recovered state. These are recovery
+materials, not release inputs; the original local files remain in place.
+Recorded SHA256 values:
+
+| File | SHA256 |
+|---|---|
+| `tracked.patch` | `51a024171d2b773152bf19d119a6a3e40481dc372db1311b9cd9b8d3a63b513b` |
+| `status.txt` | `6ba9615608476229f65e4b2c08928ab5486f8ff9c4d845a7b62642eb6e5c44fd` |
+| `history.txt` | `8d35e1c540d5b5a5d71e80240333f3c9359198ecf82b8b3aa44418e605bd7dca` |
+| `head.txt` | `59b6d57642abb2a8eeae67dccb1b7e474ae085aef0647a579404c6c9be67f3da` |
+| `untracked.tar.gz` | `70016792d698e81a0445ad5ad848ded869e1fcfc7db350c20cae87e0e4514e77` |
+
+The previous developer's original scratchpad `PLAN.md` was subsequently
+found and copied, without modifying its source, into the same recovery
+directory. `PLAN.sha256` records its SHA256:
+`bb77782c3788630d697f2bb6597530efbce86481f4b4d87975e96b75f61a4ff6`.
+This addition does not alter the original snapshot's `SHA256.json`.
+
+There is no `v0.1.2` Git tag in the recovered repository. The comparison
+baseline is `89278579a0d00e42183eb6e93fcf3b77402d90dc`, the parent of
+the first v0.2 implementation commit `9391194`. It contains the v0.1.2
+version bump (`8334d9a`), documentation, output-mode addition and final
+pointer-test determinism fix. The latter changes the final regression
+click to the middle button, avoiding a new client-side move being
+started by the assertion itself. This baseline choice preserves the
+complete pre-v0.2 state without inventing a release tag.
+
+## Inspected milestone state at recovery
+
+The evidence below is implementation and test-source evidence. Existing
+test files or historical reported passes do not mean the continuation
+has rerun them successfully.
+
+| Milestone | Inspected state | Evidence and acceptance still needed |
+|---|---|---|
+| F/1: advanced dwindle and floating windows | Implemented; PENDING validation | `9391194`, `a97a3a7`; split resize/toggle, swaps, gaps, client minimum sizes, native floating state and remembered geometry, deferred first reveal; Lua tests and window/input suites. |
+| 2: fullscreen/maximize | Implemented; PENDING validation | `043e434`; native configure/state and backdrop, output-aware placement, focus exclusion, dialogs; `tests/windows.sh`. |
+| 3: workspaces | Implemented; PENDING validation | `f93a962`, `fe47d8a`; native visibility/focus and plugin ownership, orphan/adopt reload, one shown per output; `tests/workspaces.sh` and Lua tests. |
+| 4: window rules | Implemented; PENDING validation | `2261584`; policy plugin runs on `view_new`; matching and actions, dialog default; `tests/rules.sh` and Lua tests. |
+| 5: session locking/idle | Implemented; PENDING validation | `51ad238`, `2ea9865`; `src/lock.zig`, idle globals and visible-surface inhibition, startup/spawn-once API; `tests/session.sh` with real swaylock/swayidle and probe locker. |
+| 6: output configuration | Implemented; PENDING validation | `a3b6a80`, `c088da9`; output transactions, output power/gamma; `tests/outputs.sh` and unit coverage. Hardware properties need physical testing. |
+| 7: input configuration | Implemented; PENDING validation | `70aa837`, `c3f729a`; layered settings, keymaps/repeat and libinput controls; `tests/devices.sh` and unit coverage. Hardware settings need physical testing. |
+| 8A: protocol globals and sandbox handling | Implemented; PENDING validation | `ce08e80`, `413684c`; `src/protocols.zig`, buffers/scaling/presentation, selections, cursor shapes, security-context filtering, C-bool ABI workaround; `tests/protocols.sh` and ABI unit/lint checks. |
+| 8B: shell/decorations | Native first part committed; second part interrupted | `1da71f9`; xdg-shell v7, decoration negotiation, minimize, activation and urgency. Dirty policy/tests constitute B2; validate/reconcile before committing. Initial configure and decoration timing require particular scrutiny. |
+| 8C: pointer constraints | NOT IMPLEMENTED | No manager, constraint lifecycle, relative-motion routing or client regression suite at recovery. |
+| 8D: taskbar/workspace protocols | NOT IMPLEMENTED | Foreign-toplevel XML is untracked; no native manager or workspace-protocol bridge at recovery. |
+| 9: Xwayland | NOT IMPLEMENTED | `View.Impl` contains only `.xdg`; `.unmanaged` scene layer and `ViewInfo.xwayland = false` are preparatory fields. |
+| 10: drag-and-drop/text input/IME | NOT IMPLEMENTED | `wl_data_device_manager` supports selections, but no request-start-drag handler or drag icon lifecycle; no text-input/input-method globals or focus bridge. |
+| 11: animation infrastructure | NOT IMPLEMENTED | Existing opacity/position setters are immediate; no frame-driven animation state/cancellation or Lua animation registrations. |
+| 12: visual extension API | NOT IMPLEMENTED beyond existing border/opacity | Four scene rectangles form a window border; there is no general plugin-owned visual-handle registry. Blur/rounded-corner support must not be inferred from `wlr_scene`. |
+| 13: external IPC | NOT IMPLEMENTED | No local server, versioned wire contract, subscriptions, access checks or resource-limit implementation. |
+| 14: plugin ecosystem | Strong existing foundation; PENDING completion | API v1 additive changes, protected callbacks, deferred cleanup, ownership of handlers/binds/timers/managed views/workspaces, orphan adoption, trusted-code limits and compatibility fixtures exist. New resource ownership, examples and API documentation remain necessary. |
+
+## Continuation results
+
+These results are separate from the recovered state above. Baseline logs
+are in `/tmp/raywm-handoff-baseline/` on the development machine. They
+are transient evidence paths, not release archive contents.
+
+| Check at takeover | Result |
+|---|---|
+| Debug and test-input builds | PASS |
+| Zig format/AST, Lua and shell syntax, C-bool lint | PASS |
+| `zig build test --summary all` | PASS: 33/33 Zig tests, plus shipped Lua suites |
+| smoke, focus, docs examples | PASS; docs checked five API examples |
+| input / pointer / navigation / screenshot | PASS: 12 / 13 / 11 / 8 scenarios, headless pixman |
+| workspaces / rules / session / outputs / devices / protocols / shell | PASS: 12 / 6 / 7 / 7 / 3 / 8 / 9 scenarios, headless pixman |
+| stress | PASS; recorded RSS 18,428 to 19,536 KiB, delta 1,108 KiB below the 16 MiB guard. This is a stress-test sample, not a controlled v0.1.2 comparison. |
+| original window scenarios | PASS: 15 original scenarios |
+| added reparenting regression before its fix | FAIL: the first run used an old test client and produced six setup/assertion failures; after rebuilding that client, three assertions reproduced the actual descendant stacking/focus defect. |
+
+Validated local continuation commits:
+
+| Commit | Change and result |
+|---|---|
+| `0e61750` | Reconciled and committed the interrupted B2 shell-state policy and real client integration tests. |
+| `a2b7661` | Restacked descendants and restored native focus after dialog reparenting. The new client-level regression failed before the fix; window suite PASS, 16 scenarios afterward. |
+| `f0ff48b` | Rejected NaN/infinite Lua numeric arguments before native conversion/calls. Its regression failed before the fix; unit suite PASS, 34/34 afterward. |
+
+The pointer-constraint implementation subsequently brought the current
+core/Lua unit total to **35/35 PASS**, and the C implementation's
+headless GLES2 capture/constraint suite passed **10/10**. This GLES2 run
+used OpenGL ES 3.2, Mesa 26.2.5 and an AMD Radeon RX 580 through radeonsi;
+its renderer log was `/tmp/tmp.pztGA4tN7P/raywm.log`. The managed sandbox
+did not expose the render node, but the authorized host test could use
+it. A missing render node in one sandbox view must not be recorded as
+proof that the host has no GPU. These results still do not establish
+physical DRM/KMS/input or monitor-hotplug compatibility.
+
+Activation validation is also being strengthened: only a recent native
+forwarded key/button press, exchanged once within five seconds with a
+source surface still focused at token commit, authorizes focus. Bounded
+input/token registries use destroy listeners and leave `token.data`
+untouched. Existing F7 activation and new real-client enter-serial,
+missing-source, expired-grant, serial/token replay, pointer-press and
+focus-loss regressions passed together (10 activation scenarios).
+The complete shell suite subsequently passed **16 scenarios**, including
+source destruction both before grant exchange and after token creation
+(`/tmp/raywm-activation-full.log`). The source-destruction case kills
+only its private test clients; a token already minted from verified input
+remains usable when the source application exits.
+The enter/no-source/expired-grant regression was also run against a
+copied pre-fix compositor with the new test client: **FAIL, six assertions
+across three scenarios**, because each request incorrectly stole focus
+(`/tmp/raywm-activation-before.log`). The comparison did not reset or
+modify the shared worktree.
+
+### Historical performance evidence
+
+The recovered `PLAN.md` records the previous developer's M0 measurements
+for a ReleaseSafe test build of v0.1.2 plus output-mode support, headless
+pixman: 25.5 ms median startup (23.8–28.7 ms, ten samples), 0 ms idle CPU
+over ten seconds with zero/three windows, RSS 14.5/18.5 MiB with
+zero/three windows, a 4.1 MiB binary (663 KiB stripped), and 2,646 native
+source lines. It also records a local GLES2 smoke pass. These are
+**historical developer-reported measurements**, not measurements rerun
+or independently reproduced by the continuation. They do not establish
+candidate performance or a v0.2 speedup.
+
+## Architecture retained
+
+The native core owns Wayland protocol state, the seat, outputs, scene
+nodes and deterministic resource teardown. `View` is the shared window
+abstraction: backend-specific requests belong behind its methods, while
+focus, workspaces, stacking, fullscreen and Lua policy use it through
+integer IDs. The native workspace model enforces visibility and focus;
+Lua decides names, bindings and layout policy.
+
+`src/lua.zig` owns one Lua 5.4 VM. Registrations carry a plugin index and
+are marked dead before deferred compaction. No Lua callback retains a
+native pointer. Plugins are trusted user code, not a security sandbox:
+their standard libraries can access files and start commands. New
+animations and visuals must use the same bounded registration and
+ownership model, with native per-frame work and cleanup on cancellation,
+view destruction, plugin unload and reload.
+
+The wlroots 0.20.1 Zig bindings and installed wlroots 0.20.x C headers
+are the API/lifetime references. `src/cabi.zig` branches computed booleans
+into constant C-call arguments because of a Zig 0.16 bool ABI issue;
+new native setters must preserve this convention.
+
+## Acceptance matrix
+
+This table starts as PENDING/SKIPPED/NOT IMPLEMENTED and is updated only
+after a corresponding check actually runs. A compositor build alone is
+insufficient evidence for protocol functionality.
+
+| Gate | Recovery status | Required evidence |
+|---|---|---|
+| Debug and ReleaseSafe builds | Debug/test-input PASS; candidate ReleaseSafe PENDING | Full build logs, exact Zig and dependency versions. |
+| Zig formatting/AST and Lua syntax | Baseline PASS; final changed-file checks PENDING | Repository formatting/AST commands, `luac5.4 -p`, native C-bool lint. |
+| Core/Lua unit and shipped-policy tests | PASS at recorded checkpoints: 33/33 baseline, 34/34 finite-number fix, 35/35 with constraints | `zig build test --summary all`; rerun when subsequent native changes require it. |
+| Existing Wayland integration regressions | Baseline PASS, with reproduced/fixed new reparenting regression | See actual per-suite counts above; final combined run PENDING. |
+| M8 protocol completion | PENDING | Real client requests, initial configure timing, resource destruction, constraints, taskbar/workspace state and security-context filtering. |
+| Xwayland lifecycle/interoperability | NOT IMPLEMENTED | X clients mapping/focus/move/resize/workspaces/fullscreen, X/Wayland clipboard, process crash/restart, stale-surface cleanup. |
+| DnD/text-input/IME | NOT IMPLEMENTED | Cross-client transfer and cancel/disconnect; IME commit/preedit and keyboard/pointer focus changes; v0.1.2 implicit-grab regressions. |
+| Animations and visuals | NOT IMPLEMENTED | Frame pacing, easing/interruption/cancel, no Lua per-frame callback, reload and resource destruction; observable scene results. |
+| IPC | NOT IMPLEMENTED | Schema/version, bounded parsing/queues, same-user access, private socket permissions, subscriptions/actions, invalid requests and disconnects; no code-evaluation action. |
+| Lua v1 compatibility and plugin lifecycle | PENDING | Existing compatibility fixtures plus ownership/error/reload tests for every new registration. |
+| GLES2 | PASS: constraints/capture 10/10, headless; wider candidate matrix PENDING | Renderer details above; pixman passes do not establish GLES2 compatibility. |
+| Physical DRM/KMS/input/hotplug | SKIPPED: physical hardware session not exercised | [Hardware procedure](HARDWARE-TESTING.md), dated manual results and device details. |
+| Performance | PENDING | Same-machine v0.1.2 comparison: idle CPU, RSS, startup, input/frame scheduling, animation cost and binary size. Keep historical numbers separate. |
+| Documentation/security review | PENDING | README, architecture, API, configuration, testing, install and SECURITY must agree with implemented behavior and limitations. |
+| Release archive/checksum/reproducibility | PENDING | ReleaseSafe non-test binary; isolated staging, manifest/commit, archive built twice with identical SHA256, archive installation checks. |
+| Publication | Not authorized | No push, merge, final tag or GitHub Release without separate authorization. |
+
+The recovered packaging script removes the whole `dist` directory before
+building. Packaging must preserve any existing artifacts. Its version
+examples and `build.zig.zon` still say v0.1.2; `raywm.version` says
+`0.2.0-dev`. These inconsistencies must be resolved before producing a
+v0.2.0 release artifact.
+
+The recovered README, API, architecture, testing and security documents
+are mostly v0.1.2. In particular, SECURITY's assertion that data control
+and security-context are absent is stale: ordinary clients currently
+have data-control clipboard access, while clients labeled through
+security-context are filtered. Local IPC and Lua trust boundaries must
+be explained independently; a trusted same-user socket is not a Lua
+execution interface.

@@ -17,6 +17,8 @@ const output_mod = @import("output.zig");
 const inputconfig = @import("inputconfig.zig");
 const protocols = @import("protocols.zig");
 const cabi = @import("cabi.zig");
+const Constraints = @import("constraints.zig").Constraints;
+const Taskbar = @import("taskbar.zig").Taskbar;
 
 pub const gpa = std.heap.c_allocator;
 const log = std.log.scoped(.server);
@@ -53,6 +55,8 @@ pub const Server = struct {
     output_mgmt: output_mod.Management = undefined,
     output_mgmt_ready: bool = false,
     protocols: protocols.Protocols = undefined,
+    constraints: Constraints = undefined,
+    taskbar: Taskbar = .{},
     idle_notifier: *wlr.IdleNotifierV1 = undefined,
     idle_inhibit: *wlr.IdleInhibitManagerV1 = undefined,
 
@@ -150,6 +154,8 @@ pub const Server = struct {
         try server.output_mgmt.init(server);
         server.output_mgmt_ready = true;
         try server.protocols.init(server);
+        try server.constraints.init(server);
+        try server.taskbar.init(server);
         server.idle_notifier = try wlr.IdleNotifierV1.create(wl_server);
         server.idle_inhibit = try wlr.IdleInhibitManagerV1.create(wl_server);
         server.idle_inhibit.events.new_inhibitor.add(&server.new_inhibitor);
@@ -188,9 +194,11 @@ pub const Server = struct {
         if (server.timer) |t| t.remove();
         server.timer = null;
         server.wl_server.destroyClients();
+        server.taskbar.deinit();
         server.output_mgmt.deinit();
         server.output_mgmt_ready = false;
         server.protocols.deinit();
+        server.constraints.deinit();
         inline for (.{
             "new_output",        "layout_change",  "new_toplevel",      "new_popup",
             "new_input",         "request_cursor", "request_selection", "cursor_motion",
@@ -215,12 +223,15 @@ pub const Server = struct {
 
     pub fn emit(server: *Server, ev: lua.Event, id: u32) void {
         log.debug("event {s} id={d}", .{ @tagName(ev), id });
+        if (ev == .view_unmap) server.taskbar.unmap(id);
         if (server.rt) |rt| rt.emit(ev, id);
+        server.taskbar.schedule();
     }
 
     pub fn emitArgs(server: *Server, ev: lua.Event, id: u32, args: []const lua.Arg) void {
         log.debug("event {s} id={d}", .{ @tagName(ev), id });
         if (server.rt) |rt| rt.emitArgs(ev, id, args);
+        server.taskbar.schedule();
     }
 
     pub fn nextId(server: *Server) u32 {

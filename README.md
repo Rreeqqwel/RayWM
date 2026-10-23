@@ -10,13 +10,12 @@ correctness ahead of artificial code reduction.
 - Everything that is policy is a Lua plugin: tiling, key bindings and
   window rules.
 
-> **Status: v0.1.2, experimental.** It is usable for trying out and for
-> development, nested in another session or from a TTY. Expect missing
-> features (see [Known limitations](#known-limitations)) and an evolving
-> plugin API. v0.1.2 makes pointer input protocol-correct (implicit
-> pointer grab), fixes key bindings on non-Latin keyboard layouts, and
-> adds directional focus, a focus cycle and a focus border
-> ([CHANGELOG](CHANGELOG.md); upgrading: [below](#upgrading-from-v011)).
+> **Status: v0.2.0 development, experimental.** The continuation preserves
+> the v0.1.2 core and adds native window state, workspaces, configuration
+> and protocol support. Remaining work and validation are recorded in
+> [the development ledger](docs/DEVELOPMENT.md). This checkout is not a
+> published v0.2.0 release. Headless tests do not establish physical
+> hardware compatibility.
 
 ## Features
 
@@ -28,11 +27,27 @@ correctness ahead of artificial code reduction.
   - Key bindings that work in every layout of the keymap (e.g. `us,ru`).
   - Multiple outputs with hotplug.
   - VT switching on a real session.
-- **Layer-shell** (wlr-layer-shell v4) for external panels, docks,
+- **Layer-shell** (wlr-layer-shell v5) for external panels, docks,
   launchers and wallpapers: exclusive zones, keyboard interactivity,
   popups.
-- **Floating windows** with interactive move/resize (Super + drag, or
-  the client's own title bar).
+- **Native window state:** floating, fullscreen, maximize, minimize and
+  urgency, with configure/ack handling, dialog stacking and focus rules.
+- **Workspaces:** one shown per output, native visibility/focus and hotplug
+  recovery; Lua controls naming, switching, assignment and tiling.
+- **Window rules:** application/title/parent/output/workspace matching,
+  floating dialog defaults, geometry, opacity and decoration choices.
+- **Session lock and idle:** ext-session-lock with abandoned-lock handling,
+  idle notifications/inhibition, and optional swaylock/swayidle autostart.
+- **Output/input configuration:** mode, scale, transform, position,
+  adaptive sync, DPMS and gamma; keyboard layouts/repeat and libinput
+  settings by device or type. Hardware-dependent settings need physical
+  testing.
+- **Wayland protocols:** data control and primary selection, scaling,
+  viewporter/single-pixel buffers, presentation, cursor shape,
+  decorations, activation and security-context filtering. See
+  [SECURITY.md](SECURITY.md) for the unrestricted-client trust boundary.
+- **Interactive move/resize** for floating windows (Super + drag, or the
+  client's own title bar).
 - **Lua 5.4 plugin system (API v1).**
   - One clear loading contract.
   - Per-plugin ownership of every handler, binding and timer.
@@ -41,7 +56,8 @@ correctness ahead of artificial code reduction.
   - Integer ids instead of pointers.
   - Live reload.
 - **Dwindle tiling** (Hyprland-style), written entirely in Lua.
-  - Per-output binary trees, focus-based splits and gaps.
+  - Per-workspace binary trees, focus-based splits, inner/outer gaps,
+    split resizing, swapping and split-direction toggling.
   - Respects panels, and keeps its layout across reloads.
   - Tiled windows are protected from accidental dragging through
     `ctx.manage`.
@@ -136,6 +152,14 @@ With the example configuration (`config/`):
 |---|---|
 | Super+Return | terminal (`$TERMINAL`, default `foot`) |
 | Super+Q | close the focused window |
+| Super+Shift+Space | toggle floating |
+| Super+F / Super+M | toggle fullscreen / maximize |
+| Super+N / Super+Shift+N | minimize / restore the latest minimized visible-workspace window |
+| Super+1..9 / Super+Shift+1..9 | switch workspace / move focused window |
+| Super+Ctrl+H/J/K/L | resize the neighboring dwindle split |
+| Super+Shift+H/J/K/L | swap with the neighboring tile |
+| Super+T | toggle split direction |
+| Ctrl+Alt+Escape | release pointer capture and shortcut inhibition |
 | Super+H / J / K / L | focus the window to the left / below / above / right |
 | Super+Tab / Super+Shift+Tab | focus the next / previous window |
 | Ctrl+Alt+R (or Super+Shift+R) | reload the configuration |
@@ -152,7 +176,8 @@ Super+Shift+E.
 
 ## Dwindle tiling
 
-`config/plugins/dwindle.lua` gives each output a binary tree:
+`config/plugins/dwindle.lua` gives each workspace (or output without
+workspaces) a binary tree:
 - a new window splits the focused window's area along its longer side
   and takes focus, so windows spiral inwards;
 - closing a window gives its area to its sibling;
@@ -196,10 +221,11 @@ absolute path) or `~/Pictures/Screenshots`, named
 overwritten. Escape cancels a selection without saving anything.
 Options: [docs/CONFIGURATION.md](docs/CONFIGURATION.md#screenshots-pluginsscreenshotlua).
 
-**Privacy:** RayWM advertises wlr-screencopy to every client on its
-Wayland socket, whether or not the plugin is loaded. Any program you
-run inside RayWM can therefore read the screen, as on other wlroots
-compositors. See [SECURITY.md](SECURITY.md).
+**Privacy:** unrestricted clients can capture outputs and use data-control
+clipboard access whether or not the screenshot plugin is loaded.
+Clients labeled through a security-context listener are denied those
+privileged globals. The launcher must also isolate the unrestricted
+socket. See [SECURITY.md](SECURITY.md).
 
 ## Lua plugins
 
@@ -231,38 +257,23 @@ Lua standard library. See [SECURITY.md](SECURITY.md). API reference:
 
 ## Known limitations
 
-- **No** Xwayland, workspaces, fullscreen or maximize (the requests are
-  answered and ignored), touch, tablets or HiDPI output scaling.
-- **No** animations, per-frame plugin hooks or decorations beyond a
-  solid window border; these are planned for v0.2. Blur, shadows and
-  rounded corners would need a custom renderer.
-- **No drag and drop between clients** (wl_data_device drags are not
-  started).
-- **No** per-window floating rules: dwindle tiles every window.
-- **Screen capture is open to every client** of the RayWM socket
-  (wlr-screencopy has no permission model). There is no switch to turn
-  it off in v0.1.1.
-- **Clipboard copies flash a helper window.** RayWM does not implement
-  the data-control protocols, so `wl-copy` (and `wl-paste`) briefly map a
-  tiny window to get keyboard focus. With dwindle, the tiles may jump for
-  a moment while that window exists.
-- **A broken `binds.lua` together with a working `screenshot.lua`**
-  disables the core's fallback keys (they apply only while no plugin
-  binds any key); see docs/CONFIGURATION.md.
-- **Optional protocols are not implemented**, so clients warn and fall
-  back. With foot 1.28:
-  - no primary selection (middle-click paste);
-  - no XDG activation (the bell falls back to red margins);
-  - no fractional scaling;
-  - no cursor-shape (client-drawn cursors);
-  - no xdg-toplevel-icon;
-  - no text-input (IME disabled);
-  - no xdg-decoration (clients always draw their own decorations).
-- The release binary targets Arch Linux sonames; other distributions
-  should build from source.
-- Not verified on real hardware from a TTY, with real monitor hotplug,
-  or by a manual GUI session with real input for the screenshot plugin:
-  see [docs/TESTING.md](docs/TESTING.md).
+- Xwayland, cross-client drag-and-drop, text input/IME, animation/visual
+  APIs and external IPC remain tracked milestones in
+  [DEVELOPMENT.md](docs/DEVELOPMENT.md). Do not infer support from a
+  preparatory type or protocol XML.
+- Touch and tablet input are not implemented.
+- Blur, shadows and rounded corners require rendering work beyond the
+  existing scene primitives; they are not implemented.
+- Privileged protocols are available to unrestricted clients without
+  permission prompts. Plugins are trusted user code. See
+  [SECURITY.md](SECURITY.md).
+- A broken binding plugin can leave only other plugins' bindings active;
+  fallback keys apply when no live plugin has bindings.
+- Distribution binaries are dynamically linked; matching sonames are
+  required. Build from source on other distributions.
+- DRM/KMS, GPU rendering, physical input and monitor hotplug require the
+  [manual hardware checks](docs/HARDWARE-TESTING.md). Current automated
+  validation is isolated headless pixman.
 
 ## Testing
 
@@ -286,7 +297,7 @@ container (`.github/workflows/ci.yml`).
 ## Project layout
 
 ```
-src/            Zig core (2591 lines in v0.1.2)
+src/            Zig core
   main.zig        startup, signals, config path
   server.zig      backend, scene, outputs, focus, spawn
   view.zig        xdg-shell toplevels/popups, configure/ack geometry
@@ -294,7 +305,7 @@ src/            Zig core (2591 lines in v0.1.2)
   layer.zig       wlr-layer-shell
   lua.zig         Lua 5.4 host: plugins, isolation, limits
   host.zig        compositor functions exposed to Lua (id-based)
-config/         example ~/.config/raywm (dwindle, bindings, focus, screenshots)
+config/         example ~/.config/raywm (layout, state, workspaces, rules, devices, autostart)
 docs/           INSTALL, CONFIGURATION, API, ARCHITECTURE, TESTING, screenshots/
 tests/          unit, integration, input, pointer, navigation, screenshot and stress tests
 scripts/        package.sh (release archive), install.sh, gallery.sh

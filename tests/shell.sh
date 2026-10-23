@@ -239,4 +239,131 @@ s9() {
     stop
 }
 
-run_scenarios shell s1 s2 s3 s4 s5 s6 s7 s8 s9
+s10() {
+    name="activation rejects an enter serial, missing source, and expired input grant"
+    for mode in enter no-surface stale; do
+        PLUGINS=$helpers start "$cfg" 0
+        launch a $plain RAYWM_TEST_ACTIVATE_FROM="$tmp/token"
+        wait_log a "frame done"
+        if [ "$mode" = stale ]; then
+            launch b $plain RAYWM_TEST_TOKEN_TO="$tmp/token" RAYWM_TEST_TOKEN_GO="$tmp/go"
+        else
+            launch b $plain RAYWM_TEST_TOKEN_TO="$tmp/token" RAYWM_TEST_TOKEN_MODE="$mode"
+        fi
+        wait_log b "frame done"
+        client_key f7
+        if [ "$mode" = stale ]; then
+            wait_log b "input token queued"
+            sleep 5.1
+            touch "$tmp/go"
+        fi
+        wait_log a "activate sent"
+        sleep 0.2
+        dump                                                                  # 1
+        expect 1 "view 12 644,8 628x704 focused=true"
+        expect 1 "shell 11 minimized=false urgent=true decoration=nil"
+        stop
+    done
+}
+
+s11() {
+    name="activation serial grants and protocol tokens are single-use"
+    PLUGINS=$helpers start "$cfg" 0
+    launch a $plain RAYWM_TEST_ACTIVATE_FROM="$tmp/token"
+    wait_log a "frame done"
+    launch b $plain RAYWM_TEST_TOKEN_TO="$tmp/token" RAYWM_TEST_TOKEN_MODE=reuse RAYWM_TEST_TOKEN_BACKUP="$tmp/saved"
+    wait_log b "frame done"
+    client_key f7
+    wait_log a "activate sent"
+    sleep 0.2
+    dump                                                                      # 1
+    expect 1 "view 11 8,8 628x704 focused=true"
+    # A consumed token never triggers a second activation callback.
+    drive move 900 300 down middle up middle sleep 200
+    cp "$tmp/saved" "$tmp/token"
+    sleep 0.4
+    [ "$(count a 'activate sent')" -eq 2 ] || fail "token replay was not sent"
+    dump                                                                      # 2
+    expect 2 "view 12 644,8 628x704 focused=true"
+    expect 2 "shell 11 minimized=false urgent=false decoration=nil"
+    # A different valid token from the same old key serial grants urgency
+    # only. F8 uses the saved F7 serial, not its own fresh serial.
+    client_key f8
+    sleep 0.4
+    [ "$(count a 'activate sent')" -eq 3 ] || fail "serial reuse was not sent"
+    dump                                                                      # 3
+    expect 3 "view 12 644,8 628x704 focused=true"
+    expect 3 "shell 11 minimized=false urgent=true decoration=nil"
+    stop
+}
+
+s12() {
+    name="activation accepts a real pointer button press"
+    PLUGINS=$helpers start "$cfg" 0
+    launch a $plain RAYWM_TEST_ACTIVATE_FROM="$tmp/token"
+    wait_log a "frame done"
+    launch b $plain RAYWM_TEST_TOKEN_TO="$tmp/token" RAYWM_TEST_TOKEN_MODE=pointer
+    wait_log b "frame done"
+    drive move 900 300 down middle up middle sleep 300
+    wait_log a "activate sent"
+    sleep 0.2
+    dump                                                                      # 1
+    expect 1 "view 11 8,8 628x704 focused=true"
+    expect 1 "shell 11 minimized=false urgent=false decoration=nil"
+    stop
+}
+
+s13() {
+    name="activation requires the source surface still focused at token commit"
+    PLUGINS=$helpers start "$cfg" 0
+    launch a $plain RAYWM_TEST_ACTIVATE_FROM="$tmp/token"
+    wait_log a "frame done"
+    launch b $plain RAYWM_TEST_TOKEN_TO="$tmp/token" RAYWM_TEST_TOKEN_GO="$tmp/go"
+    wait_log b "frame done"
+    client_key f7
+    wait_log b "input token queued"
+    launch c $plain
+    wait_log c "frame done"
+    # Ensure b has neither keyboard nor pointer focus.
+    drive move 5 5 sleep 100
+    touch "$tmp/go"
+    wait_log a "activate sent"
+    sleep 0.2
+    dump                                                                      # 1
+    expect_not 1 "view 11 8,8 628x704 focused=true"
+    expect 1 "shell 11 minimized=false urgent=false decoration=nil"
+    [ "$(count c activated)" -eq 1 ] || fail "c lost focus"
+    stop
+}
+
+s14() {
+    name="activation grants survive source destruction without stale client pointers"
+    PLUGINS=$helpers start "$cfg" 0
+    launch a $plain RAYWM_TEST_ACTIVATE_FROM="$tmp/token"
+    wait_log a "frame done"
+    # b exits while a native input grant still points at its client.
+    launch b $plain RAYWM_TEST_TOKEN_TO="$tmp/unused" RAYWM_TEST_TOKEN_GO="$tmp/never"
+    wait_log b "frame done"
+    client_key f7
+    wait_log b "input token queued"
+    kill -KILL "$(cat "$tmp/b.pid")"
+    sleep 0.2
+    # c exchanges its grant for a token, then exits before activation.
+    launch c $plain RAYWM_TEST_TOKEN_TO="$tmp/parked"
+    wait_log c "frame done"
+    client_key f7
+    wait_log c "token written"
+    kill -KILL "$(cat "$tmp/c.pid")"
+    sleep 0.2
+    launch d $plain
+    wait_log d "frame done"
+    cp "$tmp/parked" "$tmp/token"
+    wait_log a "activate sent"
+    sleep 0.2
+    dump                                                                      # 1
+    expect 1 "view 11 8,8 628x704 focused=true"
+    expect 1 "shell 11 minimized=false urgent=false decoration=nil"
+    stop
+}
+
+run_scenarios shell s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11 s12 s13 s14

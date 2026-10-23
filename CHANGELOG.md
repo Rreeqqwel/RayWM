@@ -8,6 +8,15 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ### Added
 
+- **Pointer capture and shell protocols** (`tests/captures.sh`,
+  `tests/taskbar.sh`): pointer locks/confinement, raw relative motion,
+  focused keyboard shortcut inhibition, and Ctrl+Alt+Escape to release
+  captures; wlr foreign-toplevel management, ext-foreign-toplevel-list,
+  and ext-workspace state with transactional activation. Native handles
+  are removed on unmap/destruction, shell actions are refused while
+  locked, and security-context clients cannot bind desktop-control
+  globals. Workspace creation/removal/assignment remain plugin policy;
+  only implemented activation capabilities are advertised.
 - **Window states and requests** (`tests/shell.sh` checks each with real
   clients):
   - xdg-shell v7 (was v2): clients learn what RayWM supports (maximize,
@@ -242,6 +251,17 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ### Fixed
 
+- Dialog parent changes now restack the entire descendant chain and
+  restore keyboard/pointer focus when a detached dialog becomes covered
+  by fullscreen. The real-client regression fails on the inherited core.
+- Activation focus grants require a recent forwarded key/button press,
+  a still-focused source surface, and one-time serial/token use. Enter
+  serials, missing sources, expired/reused grants and unfocused sources
+  only request urgency. Client/token destroy listeners bound native
+  resource lifetimes.
+- Lua numeric boundaries reject NaN/infinity; opacity is clamped before
+  narrowing to native float. Invalid values raise Lua errors rather than
+  reaching renderer or output-conversion code.
 - **Booleans passed to wlroots** (`src/cabi.zig`). Zig 0.16.0 passes
   `bool` arguments of C functions without zero extension
   ([ziglang/zig#35373](https://codeberg.org/ziglang/zig/issues/35373),

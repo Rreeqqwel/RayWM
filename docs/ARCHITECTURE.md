@@ -163,8 +163,22 @@ while a button is held; the pointer stays with the grab surface. The
 optional pointer warp of focus.lua (`raywm.pointer_warp`) is refused
 during every kind of grab and while an exclusive layer surface holds
 the keyboard, so it can neither drag a window nor pull a held
-interaction elsewhere. RayWM has no pointer-constraints protocol, so a
-warp cannot bypass one.
+interaction elsewhere. An active pointer lock or confinement also refuses
+plugin warps. Constraints belong to the pointer-focused surface and only
+activate while its root surface has keyboard focus. Locked pointers receive
+relative motion without moving the visible cursor or sending absolute
+`wl_pointer.motion`; confined motion is clipped along its segment against
+the committed surface-local region, including holes. wlroots owns these
+objects; RayWM drops its active borrow before deactivation, which can free
+a oneshot constraint. Destroy listeners clear the borrow on client exit.
+
+Keyboard shortcut inhibitors activate only for the keyboard-focused
+surface and stop compositor bindings while active. VT switching remains
+available. **Ctrl+Alt+Escape** releases pointer and shortcut captures until
+keyboard focus changes, so a client cannot indefinitely trap compositor
+controls. Session locking deactivates captures before input reaches lock
+surfaces. `tests/captures.sh` checks these rules with real protocol clients,
+including oneshot lifetime, cursor hints, region updates and client death.
 
 **Tests.** `tests/pointer.sh` drives a virtual pointer against real
 clients that log every `wl_pointer` event they receive, and checks the
