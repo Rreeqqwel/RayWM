@@ -19,6 +19,10 @@ pub fn build(b: *std.Build) void {
     scanner.addSystemProtocol("staging/ext-idle-notify/ext-idle-notify-v1.xml");
     scanner.addSystemProtocol("unstable/idle-inhibit/idle-inhibit-unstable-v1.xml");
     scanner.addCustomProtocol(b.path("protocol/wlr-layer-shell-unstable-v1.xml"));
+    // wlr-protocols as shipped with wlroots 0.20.2 (its protocol/ directory).
+    scanner.addCustomProtocol(b.path("protocol/wlr-output-management-unstable-v1.xml"));
+    scanner.addCustomProtocol(b.path("protocol/wlr-output-power-management-unstable-v1.xml"));
+    scanner.addCustomProtocol(b.path("protocol/wlr-gamma-control-unstable-v1.xml"));
     if (test_input) {
         scanner.addCustomProtocol(b.path("tests/protocol/wlr-virtual-pointer-unstable-v1.xml"));
         scanner.addCustomProtocol(b.path("tests/protocol/virtual-keyboard-unstable-v1.xml"));
@@ -44,6 +48,9 @@ pub fn build(b: *std.Build) void {
     scanner.generate("ext_session_lock_manager_v1", 1);
     scanner.generate("ext_idle_notifier_v1", 2);
     scanner.generate("zwp_idle_inhibit_manager_v1", 1);
+    scanner.generate("zwlr_output_manager_v1", 4);
+    scanner.generate("zwlr_output_power_manager_v1", 1);
+    scanner.generate("zwlr_gamma_control_manager_v1", 1);
 
     const wayland = b.createModule(.{ .root_source_file = scanner.result });
     const xkbcommon = b.dependency("xkbcommon", .{}).module("xkbcommon");
@@ -138,6 +145,22 @@ pub fn build(b: *std.Build) void {
         locker.root_module.addImport("wayland", wayland);
         locker.root_module.linkSystemLibrary("wayland-client", .{});
         b.installArtifact(locker);
+
+        // Protocol probe for the integration suites (power, gamma, ...).
+        const probe = b.addExecutable(.{
+            .name = "raywm-test-probe",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("tests/probe_client.zig"),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+            }),
+            .use_llvm = use_llvm,
+            .use_lld = use_llvm,
+        });
+        probe.root_module.addImport("wayland", wayland);
+        probe.root_module.linkSystemLibrary("wayland-client", .{});
+        b.installArtifact(probe);
     }
     exe.root_module.linkSystemLibrary("wayland-server", .{});
     exe.root_module.linkSystemLibrary("xkbcommon", .{});

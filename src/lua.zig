@@ -77,7 +77,41 @@ pub const ViewInfo = struct {
     /// Process id of the client, 0 if unknown.
     pid: i32 = 0,
 };
-pub const OutputInfo = struct { box: Box, usable: Box, name: ?[*:0]const u8 = null, workspace: u32 = 0 };
+pub const OutputInfo = struct {
+    box: Box,
+    usable: Box,
+    name: ?[*:0]const u8 = null,
+    /// The workspace shown there, 0 if none.
+    workspace: u32 = 0,
+    // v0.2.0 (output configuration)
+    description: ?[*:0]const u8 = null,
+    make: ?[*:0]const u8 = null,
+    model: ?[*:0]const u8 = null,
+    serial: ?[*:0]const u8 = null,
+    /// In the layout (usable). False only in raywm.outputs({ all = true }).
+    enabled: bool = true,
+    /// Not powered off (DPMS).
+    power: bool = true,
+    scale: f64 = 1,
+    transform: [*:0]const u8 = "normal",
+    /// Current mode: pixels and refresh in mHz.
+    mode: [3]i32 = .{ 0, 0, 0 },
+    physical: [2]i32 = .{ 0, 0 },
+    adaptive_sync: bool = false,
+};
+pub const ModeInfo = struct { w: i32, h: i32, refresh: i32, preferred: bool, current: bool };
+/// raywm.output_configure options; null: unchanged.
+pub const OutputConfig = struct {
+    enabled: ?bool = null,
+    /// refresh in mHz, 0: the highest of that size.
+    mode: ?[3]i32 = null,
+    scale: ?f64 = null,
+    transform: ?[]const u8 = null,
+    /// null: unchanged; auto: next to the other outputs.
+    position: ?union(enum) { auto, at: [2]i32 } = null,
+    adaptive_sync: ?bool = null,
+};
+pub const OutputTarget = union(enum) { id: u32, name: []const u8 };
 pub const WorkspaceInfo = struct {
     name: [*:0]const u8,
     /// Name of the output it was created on.
@@ -90,6 +124,7 @@ pub const WorkspaceInfo = struct {
 pub const WorkspaceCmd = union(enum) { activate, rename: []const u8, set_output: u32, remove };
 pub const WorkspaceResult = enum { ok, stale, no_output, bad_name };
 pub const AdoptResult = enum { ok, stale, owned };
+pub const OutputResult = enum { ok, stale, no_output_left, bad_mode, bad_scale, bad_transform, rejected, failed };
 pub const CreateResult = union(enum) { ok: u32, stale, bad_name, failed };
 /// Border drawn outside a window: width in pixels (0 removes it) and a
 /// premultiplied RGBA color.
@@ -703,6 +738,8 @@ pub fn Runtime(comptime H: type) type {
             .{ "locked", lLocked },
             .{ "startup", lStartup },
             .{ "spawn_once", lSpawnOnce },
+            .{ "output_modes", lOutputModes },
+            .{ "output_configure", lOutputConfigure },
         };
 
         const ctx_fns = .{
@@ -791,10 +828,23 @@ pub fn Runtime(comptime H: type) type {
             return pushIds(L, buf[0..Api.views(get(L).host, &buf)]);
         }
 
+        fn setStr(L: ?*c.lua_State, name: [*:0]const u8, v: ?[*:0]const u8) void {
+            _ = c.lua_pushstring(L, v orelse "");
+            c.lua_setfield(L, -2, name);
+        }
+
+        /// raywm.outputs([{ all = true }]): outputs in the layout (with
+        /// `all`, also disabled ones).
         fn lOutputs(L: ?*c.lua_State) callconv(.c) c_int {
             const self = get(L);
+            var all = false;
+            if (c.lua_type(L, 1) == c.LUA_TTABLE) {
+                _ = c.lua_getfield(L, 1, "all");
+                all = c.lua_toboolean(L, -1) != 0;
+                c.lua_settop(L, -2);
+            }
             var buf: [max_list]u32 = undefined;
-            const ids = buf[0..Api.outputs(self.host, &buf)];
+            const ids = buf[0..if (all and @hasDecl(Api, "outputsAll")) Api.outputsAll(self.host, &buf) else Api.outputs(self.host, &buf)];
             c.lua_createtable(L, @intCast(ids.len), 0);
             var n: c.lua_Integer = 0;
             for (ids) |oid| {
@@ -803,13 +853,131 @@ pub fn Runtime(comptime H: type) type {
                 setInt(L, "id", oid);
                 pushBox(L, info.usable);
                 c.lua_setfield(L, -2, "usable");
-                _ = c.lua_pushstring(L, info.name orelse "");
-                c.lua_setfield(L, -2, "name");
+                setStr(L, "name", info.name);
                 setInt(L, "workspace", info.workspace);
+                setStr(L, "description", info.description);
+                setStr(L, "make", info.make);
+                setStr(L, "model", info.model);
+                setStr(L, "serial", info.serial);
+                setBool(L, "enabled", info.enabled);
+                setBool(L, "power", info.power);
+                c.lua_pushnumber(L, info.scale);
+                c.lua_setfield(L, -2, "scale");
+                setStr(L, "transform", info.transform);
+                c.lua_createtable(L, 0, 3);
+                setInt(L, "w", info.mode[0]);
+                setInt(L, "h", info.mode[1]);
+                setInt(L, "refresh", info.mode[2]);
+                c.lua_setfield(L, -2, "mode");
+                c.lua_createtable(L, 0, 2);
+                setInt(L, "w", info.physical[0]);
+                setInt(L, "h", info.physical[1]);
+                c.lua_setfield(L, -2, "physical");
+                setBool(L, "adaptive_sync", info.adaptive_sync);
                 n += 1;
                 c.lua_rawseti(L, -2, n);
             }
             return 1;
+        }
+
+        /// raywm.output_modes(id) -> { {w, h, refresh, preferred, current}, ... }
+        fn lOutputModes(L: ?*c.lua_State) callconv(.c) c_int {
+            const oid = checkId(L, 1);
+            var buf: [256]ModeInfo = undefined;
+            const modes = Api.outputModes(get(L).host, oid, &buf) orelse return stale(L);
+            c.lua_createtable(L, @intCast(modes.len), 0);
+            for (modes, 1..) |m, i| {
+                c.lua_createtable(L, 0, 5);
+                setInt(L, "w", m.w);
+                setInt(L, "h", m.h);
+                setInt(L, "refresh", m.refresh);
+                setBool(L, "preferred", m.preferred);
+                setBool(L, "current", m.current);
+                c.lua_rawseti(L, -2, @intCast(i));
+            }
+            return 1;
+        }
+
+        /// "2560x1440@143.97", "1920x1080" -> width, height, refresh (mHz).
+        fn parseMode(text: []const u8) ?[3]i32 {
+            const x = std.mem.indexOfScalar(u8, text, 'x') orelse return null;
+            const at = std.mem.indexOfScalarPos(u8, text, x + 1, '@');
+            const w = std.fmt.parseUnsigned(u16, text[0..x], 10) catch return null;
+            const h = std.fmt.parseUnsigned(u16, text[x + 1 .. at orelse text.len], 10) catch return null;
+            var hz: f64 = 0;
+            if (at) |a| {
+                const t = std.mem.trimEnd(u8, text[a + 1 ..], "Hz");
+                hz = std.fmt.parseFloat(f64, t) catch return null;
+                if (!(hz >= 1 and hz <= 1000)) return null;
+            }
+            if (w == 0 or h == 0) return null;
+            return .{ w, h, @intFromFloat(@round(hz * 1000)) };
+        }
+
+        /// raywm.output_configure(name or id, { enabled, mode, scale,
+        /// transform, position, adaptive_sync }) -> true, or nil + reason.
+        /// Tested before it is applied; refuses to disable the last output.
+        fn lOutputConfigure(L: ?*c.lua_State) callconv(.c) c_int {
+            const self = get(L);
+            const target: OutputTarget = if (c.lua_type(L, 1) == c.LUA_TNUMBER)
+                .{ .id = checkId(L, 1) }
+            else
+                .{ .name = std.mem.span(c.luaL_checklstring(L, 1, null)) };
+            c.luaL_checktype(L, 2, c.LUA_TTABLE);
+            var cfg: OutputConfig = .{};
+            if (c.lua_getfield(L, 2, "enabled") != c.LUA_TNIL) cfg.enabled = c.lua_toboolean(L, -1) != 0;
+            c.lua_settop(L, -2);
+            switch (c.lua_getfield(L, 2, "mode")) {
+                c.LUA_TNIL => {},
+                c.LUA_TSTRING => cfg.mode = parseMode(std.mem.span(c.lua_tolstring(L, -1, null))) orelse
+                    return c.luaL_error(L, "mode must look like \"1920x1080\" or \"1920x1080@60\""),
+                c.LUA_TTABLE => {
+                    var v: [3]i32 = .{ 0, 0, 0 };
+                    inline for (.{ "w", "h" }, 0..) |k, i| {
+                        _ = c.lua_getfield(L, -1, k);
+                        v[i] = @intCast(std.math.clamp(c.lua_tointegerx(L, -1, null), 0, 16384));
+                        c.lua_settop(L, -2);
+                    }
+                    _ = c.lua_getfield(L, -1, "refresh"); // Hz
+                    v[2] = @intFromFloat(@round(std.math.clamp(c.lua_tonumberx(L, -1, null), 0, 1000) * 1000));
+                    c.lua_settop(L, -2);
+                    cfg.mode = v;
+                },
+                else => return c.luaL_error(L, "mode must be a string or { w, h, refresh }"),
+            }
+            c.lua_settop(L, -2);
+            if (c.lua_getfield(L, 2, "scale") != c.LUA_TNIL) cfg.scale = c.luaL_checknumber(L, -1);
+            c.lua_settop(L, -2);
+            if (c.lua_getfield(L, 2, "transform") != c.LUA_TNIL) cfg.transform = std.mem.span(c.luaL_checklstring(L, -1, null));
+            c.lua_settop(L, -2);
+            switch (c.lua_getfield(L, 2, "position")) {
+                c.LUA_TNIL => {},
+                c.LUA_TSTRING => {
+                    if (!std.mem.eql(u8, std.mem.span(c.lua_tolstring(L, -1, null)), "auto")) return c.luaL_error(L, "position must be \"auto\" or { x, y }");
+                    cfg.position = .auto;
+                },
+                c.LUA_TTABLE => {
+                    var xy: [2]i32 = undefined;
+                    inline for (.{ 1, 2 }, 0..) |k, i| {
+                        _ = c.lua_rawgeti(L, -1, k);
+                        xy[i] = @intCast(std.math.clamp(c.luaL_checkinteger(L, -1), -(1 << 24), 1 << 24));
+                        c.lua_settop(L, -2);
+                    }
+                    cfg.position = .{ .at = xy };
+                },
+                else => return c.luaL_error(L, "position must be \"auto\" or { x, y }"),
+            }
+            c.lua_settop(L, -2);
+            if (c.lua_getfield(L, 2, "adaptive_sync") != c.LUA_TNIL) cfg.adaptive_sync = c.lua_toboolean(L, -1) != 0;
+            c.lua_settop(L, -2);
+            const r = Api.outputConfigure(self.host, target, cfg);
+            if (r == .ok) {
+                c.lua_pushboolean(L, 1);
+                return 1;
+            }
+            c.lua_pushnil(L);
+            _ = c.lua_pushstring(L, @tagName(r));
+            return 2;
         }
 
         fn setBool(L: ?*c.lua_State, name: [*:0]const u8, v: bool) void {

@@ -7,6 +7,7 @@ const lua = @import("lua");
 const srv = @import("server.zig");
 const input = @import("input.zig");
 const ws = @import("workspace.zig");
+const output_mod = @import("output.zig");
 const Server = srv.Server;
 
 pub const Runtime = lua.Runtime(Server);
@@ -123,17 +124,94 @@ pub fn outputs(server: *Server, buf: []u32) usize {
     return n;
 }
 
+/// raywm.outputs({ all = true }): also outputs that are disabled.
+pub fn outputsAll(server: *Server, buf: []u32) usize {
+    var n: usize = 0;
+    var it = server.outputs.iterator(.forward);
+    while (it.next()) |o| {
+        if (n == buf.len) break;
+        buf[n] = o.id;
+        n += 1;
+    }
+    return n;
+}
+
 pub fn output(server: *Server, id: u32) ?lua.OutputInfo {
     const o = server.outputById(id) orelse return null;
-    if (!o.inLayout()) return null;
-    const b = o.box();
+    const w = o.wlr_output;
+    const in_layout = o.inLayout();
+    const b: wlr.Box = if (in_layout) o.box() else .{ .x = 0, .y = 0, .width = 0, .height = 0 };
     const u = o.usable;
     return .{
         .box = .{ .x = b.x, .y = b.y, .w = b.width, .h = b.height },
-        .usable = .{ .x = b.x + u.x, .y = b.y + u.y, .w = u.width, .h = u.height },
-        .name = o.wlr_output.name,
-        .workspace = if (o.active_ws) |w| w.id else 0,
+        .usable = if (in_layout) .{ .x = b.x + u.x, .y = b.y + u.y, .w = u.width, .h = u.height } else .{ .x = 0, .y = 0, .w = 0, .h = 0 },
+        .name = w.name,
+        .workspace = if (o.active_ws) |a| a.id else 0,
+        .description = w.description,
+        .make = w.make,
+        .model = w.model,
+        .serial = w.serial,
+        .enabled = in_layout,
+        .power = w.enabled,
+        .scale = w.scale,
+        .transform = transformName(w.transform),
+        .mode = .{ w.width, w.height, w.refresh },
+        .physical = .{ w.phys_width, w.phys_height },
+        .adaptive_sync = w.adaptive_sync_status == .enabled,
     };
+}
+
+fn transformName(t: @TypeOf(@as(wlr.Output, undefined).transform)) [*:0]const u8 {
+    return switch (@intFromEnum(t)) {
+        0 => "normal",
+        1 => "90",
+        2 => "180",
+        3 => "270",
+        4 => "flipped",
+        5 => "flipped-90",
+        6 => "flipped-180",
+        7 => "flipped-270",
+        else => "normal",
+    };
+}
+
+pub fn outputModes(server: *Server, id: u32, buf: []lua.ModeInfo) ?[]const lua.ModeInfo {
+    const o = server.outputById(id) orelse return null;
+    var n: usize = 0;
+    var it = o.wlr_output.modes.iterator(.forward);
+    while (it.next()) |m| {
+        if (n == buf.len) break;
+        buf[n] = .{ .w = m.width, .h = m.height, .refresh = m.refresh, .preferred = m.preferred, .current = o.wlr_output.current_mode == m };
+        n += 1;
+    }
+    return buf[0..n];
+}
+
+pub fn outputConfigure(server: *Server, target: lua.OutputTarget, cfg: lua.OutputConfig) lua.OutputResult {
+    const o = switch (target) {
+        .id => |id| server.outputById(id),
+        .name => |name| blk: {
+            var it = server.outputs.iterator(.forward);
+            while (it.next()) |x| if (std.mem.eql(u8, std.mem.span(x.wlr_output.name), name)) break :blk x;
+            break :blk null;
+        },
+    } orelse return .stale;
+    var c: output_mod.Config = .{ .enabled = cfg.enabled, .adaptive_sync = cfg.adaptive_sync };
+    if (cfg.mode) |m| c.mode = .{ .size = .{ .width = m[0], .height = m[1], .refresh = m[2] } };
+    if (cfg.scale) |sc| c.scale = @floatCast(sc);
+    if (cfg.transform) |t| c.transform = output_mod.parseTransform(t) orelse return .bad_transform;
+    if (cfg.position) |p| c.position = switch (p) {
+        .auto => .auto,
+        .at => |xy| .{ .at = xy },
+    };
+    output_mod.configure(server, &.{.{ .output = o, .config = c }}, false) catch |err| return switch (err) {
+        error.NoOutputLeft => .no_output_left,
+        error.BadMode => .bad_mode,
+        error.BadScale => .bad_scale,
+        error.Rejected => .rejected,
+        error.Failed, error.OutOfMemory => .failed,
+    };
+    return .ok;
 }
 
 // ---- workspaces (see workspace.zig) ---------------------------------------

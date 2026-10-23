@@ -13,6 +13,7 @@ const LayerSurface = layer_shell.LayerSurface;
 const workspace = @import("workspace.zig");
 const Workspace = workspace.Workspace;
 const lock = @import("lock.zig");
+const output_mod = @import("output.zig");
 
 pub const gpa = std.heap.c_allocator;
 const log = std.log.scoped(.server);
@@ -46,6 +47,8 @@ pub const Server = struct {
     cursor: *wlr.Cursor,
     cursor_mgr: *wlr.XcursorManager,
     session_lock: lock.SessionLock = undefined,
+    output_mgmt: output_mod.Management = undefined,
+    output_mgmt_ready: bool = false,
     idle_notifier: *wlr.IdleNotifierV1 = undefined,
     idle_inhibit: *wlr.IdleInhibitManagerV1 = undefined,
 
@@ -130,6 +133,8 @@ pub const Server = struct {
         server.keyboards.init();
         server.workspaces.init();
         try server.session_lock.init(server);
+        try server.output_mgmt.init(server);
+        server.output_mgmt_ready = true;
         server.idle_notifier = try wlr.IdleNotifierV1.create(wl_server);
         server.idle_inhibit = try wlr.IdleInhibitManagerV1.create(wl_server);
         server.idle_inhibit.events.new_inhibitor.add(&server.new_inhibitor);
@@ -168,6 +173,8 @@ pub const Server = struct {
         if (server.timer) |t| t.remove();
         server.timer = null;
         server.wl_server.destroyClients();
+        server.output_mgmt.deinit();
+        server.output_mgmt_ready = false;
         inline for (.{
             "new_output",        "layout_change",  "new_toplevel",      "new_popup",
             "new_input",         "request_cursor", "request_selection", "cursor_motion",
@@ -390,29 +397,12 @@ pub const Server = struct {
     }
 
     fn newOutput(listener: *wl.Listener(*wlr.Output), wlr_output: *wlr.Output) void {
-        const server: *Server = @fieldParentPtr("new_output", listener);
-        if (!wlr_output.initRender(server.allocator, server.renderer)) return;
+        output_mod.handleNew(@fieldParentPtr("new_output", listener), wlr_output);
+    }
 
-        var state = wlr.Output.State.init();
-        defer state.finish();
-        state.setEnabled(true);
-        const preferred = wlr_output.preferredMode();
-        if (preferred) |mode| state.setMode(mode);
-        if (requestedMode(wlr_output)) |mode| {
-            state.setMode(mode);
-            if (!wlr_output.testState(&state)) {
-                log.warn("output {s}: mode {d}x{d}@{d}mHz rejected, using the preferred mode", .{ wlr_output.name, mode.width, mode.height, mode.refresh });
-                if (preferred) |p| state.setMode(p);
-            }
-        }
-        if (!wlr_output.commitState(&state)) {
-            log.err("failed to enable output {s}", .{wlr_output.name});
-            return;
-        }
-        Output.create(server, wlr_output) catch {
-            log.err("failed to set up output {s}", .{wlr_output.name});
-            wlr_output.destroy();
-        };
+    /// Output-management clients (wlr-randr, kanshi) see the new state.
+    pub fn updateOutputManager(server: *Server) void {
+        if (server.output_mgmt_ready) server.output_mgmt.update();
     }
 
     /// Fires on output add/remove/mode change. Views left outside every
@@ -437,6 +427,9 @@ pub const Server = struct {
         }
         server.refitViews();
         server.emit(.layout, 0);
+        // Outputs that became usable or stopped being usable.
+        output_mod.announce(server);
+        server.updateOutputManager();
     }
 
     fn newPopup(_: *wl.Listener(*wlr.XdgPopup), xdg_popup: *wlr.XdgPopup) void {
@@ -449,160 +442,11 @@ pub const Server = struct {
     }
 };
 
-pub const Output = struct {
-    server: *Server,
-    wlr_output: *wlr.Output,
-    scene_output: *wlr.SceneOutput,
-    link: wl.list.Link = undefined,
-    id: u32,
-    /// Area left for windows, output-local (layer-shell exclusive zones removed).
-    usable: wlr.Box = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
-    /// The workspace shown here (see workspace.zig).
-    active_ws: ?*Workspace = null,
-    /// While the session is locked (see lock.zig): an opaque background,
-    /// the commit count when locking started, and whether a frame
-    /// committed since then was presented.
-    lock_bg: ?*wlr.SceneRect = null,
-    lock_seq: u32 = 0,
-    lock_presented: bool = false,
-    layers: wl.list.Head(LayerSurface, .link) = undefined,
-
-    frame: wl.Listener(*wlr.Output) = .init(handleFrame),
-    present: wl.Listener(*wlr.Output.event.Present) = .init(handlePresent),
-    request_state: wl.Listener(*wlr.Output.event.RequestState) = .init(handleRequestState),
-    destroy: wl.Listener(*wlr.Output) = .init(handleDestroy),
-
-    /// On error the caller destroys wlr_output, which cleans up the layout
-    /// and scene output entries.
-    fn create(server: *Server, wlr_output: *wlr.Output) !void {
-        const output = try gpa.create(Output);
-        errdefer gpa.destroy(output);
-        const scene_output = try server.scene.createSceneOutput(wlr_output);
-        output.* = .{ .server = server, .wlr_output = wlr_output, .scene_output = scene_output, .id = server.nextId() };
-        output.layers.init();
-        // Listed before joining the layout, so `layout` handlers already see it.
-        server.outputs.append(output);
-        errdefer output.link.remove();
-        const layout_output = try server.output_layout.addAuto(wlr_output);
-        server.scene_layout.addOutput(layout_output, scene_output);
-        wlr_output.events.frame.add(&output.frame);
-        wlr_output.events.present.add(&output.present);
-        wlr_output.events.request_state.add(&output.request_state);
-        wlr_output.events.destroy.add(&output.destroy);
-        // Appears blank while the session is locked.
-        server.session_lock.prepareOutput(output);
-        server.emit(.output_add, output.id);
-    }
-
-    pub fn inLayout(output: *Output) bool {
-        return output.server.output_layout.get(output.wlr_output) != null;
-    }
-
-    pub fn arrangeLayers(output: *Output) void {
-        layer_shell.arrange(output);
-    }
-
-    pub fn box(output: *Output) wlr.Box {
-        var b: wlr.Box = undefined;
-        output.server.output_layout.getBox(output.wlr_output, &b);
-        return b;
-    }
-
-    pub fn layoutLockBackground(output: *Output) void {
-        const r = output.lock_bg orelse return;
-        if (!output.inLayout()) return r.node.setEnabled(false);
-        const b = output.box();
-        r.node.setEnabled(true);
-        r.node.setPosition(b.x, b.y);
-        r.setSize(b.width, b.height);
-    }
-
-    /// The usable area in layout coordinates.
-    pub fn usableBox(output: *Output) wlr.Box {
-        const b = output.box();
-        return .{ .x = b.x + output.usable.x, .y = b.y + output.usable.y, .width = output.usable.width, .height = output.usable.height };
-    }
-
-    /// wlroots only emits frame when the output needs a repaint (damage or
-    /// an explicit schedule), so an idle desktop does no work here.
-    fn handleFrame(listener: *wl.Listener(*wlr.Output), _: *wlr.Output) void {
-        const output: *Output = @fieldParentPtr("frame", listener);
-        var now = timestamp();
-        _ = output.scene_output.commit(null);
-        output.scene_output.sendFrameDone(&now);
-    }
-
-    fn handlePresent(listener: *wl.Listener(*wlr.Output.event.Present), event: *wlr.Output.event.Present) void {
-        const output: *Output = @fieldParentPtr("present", listener);
-        if (event.presented) output.server.session_lock.presented(output, event.commit_seq);
-    }
-
-    fn handleRequestState(listener: *wl.Listener(*wlr.Output.event.RequestState), event: *wlr.Output.event.RequestState) void {
-        const output: *Output = @fieldParentPtr("request_state", listener);
-        _ = output.wlr_output.commitState(event.state);
-    }
-
-    fn handleDestroy(listener: *wl.Listener(*wlr.Output), _: *wlr.Output) void {
-        const output: *Output = @fieldParentPtr("destroy", listener);
-        layer_shell.closeAll(output);
-        workspace.outputGone(output.server, output);
-        if (output.lock_bg) |r| r.node.destroy();
-        output.frame.link.remove();
-        output.present.link.remove();
-        output.request_state.link.remove();
-        output.destroy.link.remove();
-        output.link.remove();
-        output.server.emit(.output_remove, output.id);
-        gpa.destroy(output);
-    }
-};
-
-/// A mode asked for with `RAYWM_OUTPUT_MODE=WIDTHxHEIGHT@HZ`.
-pub const ModeSpec = struct { width: i32, height: i32, refresh_mhz: i32 };
-
-/// Parses "1920x1080@240" or "2560x1440@59.95"; null if malformed.
-pub fn parseModeSpec(s: []const u8) ?ModeSpec {
-    const x = std.mem.indexOfScalar(u8, s, 'x') orelse return null;
-    const at = std.mem.indexOfScalarPos(u8, s, x + 1, '@') orelse return null;
-    const w = std.fmt.parseUnsigned(u16, s[0..x], 10) catch return null;
-    const h = std.fmt.parseUnsigned(u16, s[x + 1 .. at], 10) catch return null;
-    const hz = std.fmt.parseFloat(f64, s[at + 1 ..]) catch return null;
-    if (w == 0 or h == 0 or !(hz >= 1 and hz <= 1000)) return null;
-    return .{ .width = w, .height = h, .refresh_mhz = @intFromFloat(@round(hz * 1000)) };
-}
-
-/// How far a mode's refresh is from `spec`, in mHz; null if the size
-/// differs or the refresh is more than 1 Hz off (monitors report 240 Hz
-/// as e.g. 240001 mHz).
-pub fn modeDistance(spec: ModeSpec, width: i32, height: i32, refresh_mhz: i32) ?u32 {
-    if (width != spec.width or height != spec.height) return null;
-    const d = @abs(refresh_mhz - spec.refresh_mhz);
-    return if (d <= 1000) d else null;
-}
-
-/// The output's mode nearest to RAYWM_OUTPUT_MODE, or null (variable
-/// unset, malformed, or no such mode on this output).
-fn requestedMode(wlr_output: *wlr.Output) ?*wlr.Output.Mode {
-    const raw = std.c.getenv("RAYWM_OUTPUT_MODE") orelse return null;
-    const text = std.mem.span(raw);
-    if (text.len == 0) return null;
-    const spec = parseModeSpec(text) orelse {
-        log.warn("RAYWM_OUTPUT_MODE={s}: expected WIDTHxHEIGHT@HZ, e.g. 1920x1080@240", .{text});
-        return null;
-    };
-    var best: ?*wlr.Output.Mode = null;
-    var best_d: u32 = std.math.maxInt(u32);
-    var it = wlr_output.modes.iterator(.forward);
-    while (it.next()) |mode| {
-        const d = modeDistance(spec, mode.width, mode.height, mode.refresh) orelse continue;
-        if (d < best_d) {
-            best = mode;
-            best_d = d;
-        }
-    }
-    if (best == null) log.info("output {s} has no mode {s}, using the preferred mode", .{ wlr_output.name, text });
-    return best;
-}
+pub const Output = output_mod.Output;
+// For tests/core_test.zig.
+pub const ModeSpec = output_mod.ModeSpec;
+pub const parseModeSpec = output_mod.parseModeSpec;
+pub const modeDistance = output_mod.modeDistance;
 
 /// True when `serial` is at or past `want`, tolerant of u32 wrap-around.
 pub fn serialReached(serial: u32, want: u32) bool {

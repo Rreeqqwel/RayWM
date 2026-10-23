@@ -52,6 +52,30 @@ const Fake = struct {
             buf[1] = 1;
             return 2;
         }
+        pub fn outputsAll(f: *Fake, buf: []u32) usize {
+            return outputs(f, buf);
+        }
+        pub fn outputModes(_: *Fake, id: u32, buf: []lua.ModeInfo) ?[]const lua.ModeInfo {
+            if (id != 1) return null;
+            buf[0] = .{ .w = 1920, .h = 1080, .refresh = 60000, .preferred = true, .current = true };
+            buf[1] = .{ .w = 1280, .h = 720, .refresh = 60000, .preferred = false, .current = false };
+            return buf[0..2];
+        }
+        pub fn outputConfigure(f: *Fake, target: lua.OutputTarget, cfg: lua.OutputConfig) lua.OutputResult {
+            var buf: [128]u8 = undefined;
+            const name = switch (target) {
+                .id => |id| if (id == 1) "FAKE-1" else return .stale,
+                .name => |n| if (std.mem.eql(u8, n, "FAKE-1")) n else return .stale,
+            };
+            if (cfg.enabled == false) return .no_output_left;
+            const m = cfg.mode orelse [3]i32{ 0, 0, 0 };
+            const line = std.fmt.bufPrint(&buf, "configure:{s}:{d}x{d}@{d}:{d}:{s}:{s}", .{ name, m[0], m[1], m[2], cfg.scale orelse 0, cfg.transform orelse "-", if (cfg.position) |p| switch (p) {
+                .auto => "auto",
+                .at => "at",
+            } else "-" }) catch unreachable;
+            f.log.append(std.testing.allocator, std.testing.allocator.dupe(u8, line) catch unreachable) catch unreachable;
+            return .ok;
+        }
         pub fn output(_: *Fake, id: u32) ?lua.OutputInfo {
             if (id != 1) return null;
             const b: lua.Box = .{ .x = 0, .y = 0, .w = 1920, .h = 1080 };
@@ -613,6 +637,17 @@ test "v0.2.0 foundation: version, view metadata, event arguments, managed hook" 
     try t.expectEqual(@as(u32, 7), f.fs_outputs[0]);
     try t.expectEqual(@as(u32, 0), f.fs_outputs[1]); // 0: the window's output
     try t.expectEqual(.maximize, f.last_cmd.?);
+    // raywm.output_configure: mode strings with decimals, tables, positions.
+    try t.expectEqual(1, f.count("configure:FAKE-1:2560x1440@143970:1.5:90:at"));
+    try t.expectEqual(1, f.count("configure:FAKE-1:1920x1080@60000:0:-:auto"));
+    try t.expectEqual(1, f.count("configure:FAKE-1:1280x720@0:0:-:-"));
+    try t.expectEqual(1, f.count("outstale:nil:stale"));
+    try t.expectEqual(1, f.count("outlast:nil:no_output_left"));
+    try t.expectEqual(1, f.count("badmode:false"));
+    try t.expectEqual(1, f.count("badpos:false"));
+    try t.expectEqual(1, f.count("modes:2:1920x1080@60000:true"));
+    try t.expectEqual(1, f.count("modesstale:nil"));
+    try t.expectEqual(1, f.count("outputs:1::true"));
 
     // Extra handler arguments arrive after the id, in order.
     rt.emitArgs(.view_state, 1, &.{ .{ .int = 5 }, .{ .boolean = true }, .nil });
