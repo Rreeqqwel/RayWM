@@ -51,6 +51,7 @@ start() {
     env -i PATH="$PATH" HOME="$tmp" XDG_RUNTIME_DIR="$tmp" XDG_CONFIG_HOME="$tmp/config" \
         RAYWM_TEST_OUT="$tmp/probe.log" MALLOC_PERTURB_=165 \
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS="$outputs" WLR_RENDERER="${RENDERER:-pixman}" WLR_LIBINPUT_NO_DEVICES=1 \
+        WLR_XWAYLAND="${WLR_XWAYLAND:-Xwayland}" RAYWM_XWAYLAND="${RAYWM_XWAYLAND:-1}" \
         timeout 60 "$bin/raywm" ${FLAGS:-} -s "$cmd" >"$tmp/raywm.log" 2>&1 &
     pid=$!
     i=0
@@ -131,7 +132,12 @@ stop() {
     kill -TERM $pid 2>/dev/null || true
     status=0; wait $pid || status=$?
     [ "$status" -eq 0 ] || fail "raywm exited with $status"
-    if grep -E "panic|\[ERROR\]|error\(" "$tmp/raywm.log" >/dev/null; then fail "errors in compositor log"; fi
+    log_errors=$(grep -E "panic|\[ERROR\]|error\(" "$tmp/raywm.log" || true)
+    if [ -n "${EXPECTED_LOG_ERRORS:-}" ]; then
+        printf '%s\n' "$log_errors" | grep -E "$EXPECTED_LOG_ERRORS" | sed 's/^/known upstream diagnostic: /' || true
+        log_errors=$(printf '%s\n' "$log_errors" | grep -Ev "$EXPECTED_LOG_ERRORS" || true)
+    fi
+    if [ -n "$log_errors" ]; then fail "errors in compositor log"; fi
     if [ "$failures" -ne "$before" ]; then
         for f in "$tmp"/*.log; do echo "--- ${f##*/}"; tail -40 "$f"; done
     else echo "ok   [$name]"; fi

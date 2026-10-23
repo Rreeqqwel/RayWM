@@ -151,6 +151,10 @@ pub const Protocols = struct {
     /// Returns constants only: libwayland reads the result as a C bool (see
     /// src/cabi.zig on computed bools crossing into C with Zig 0.16).
     fn filter(client: *const wl.Client, global: *const wl.Global, p: *Protocols) bool {
+        if (std.mem.eql(u8, std.mem.span(global.getInterface().name), "xwayland_shell_v1")) {
+            if (p.server.xwayland.ownsClient(client)) return true;
+            return false;
+        }
         if (p.security.lookupClient(client) == null) return true;
         if (isPrivileged(std.mem.span(global.getInterface().name))) return false;
         return true;

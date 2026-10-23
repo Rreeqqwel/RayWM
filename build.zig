@@ -35,6 +35,9 @@ pub fn build(b: *std.Build) void {
     scanner.addSystemProtocol("unstable/pointer-constraints/pointer-constraints-unstable-v1.xml");
     scanner.addSystemProtocol("unstable/relative-pointer/relative-pointer-unstable-v1.xml");
     scanner.addSystemProtocol("unstable/keyboard-shortcuts-inhibit/keyboard-shortcuts-inhibit-unstable-v1.xml");
+    scanner.addSystemProtocol("unstable/text-input/text-input-unstable-v3.xml");
+    scanner.addCustomProtocol(b.path("protocol/input-method-unstable-v2.xml"));
+    scanner.addCustomProtocol(b.path("protocol/virtual-keyboard-unstable-v1.xml"));
     // wlr-protocols as shipped with wlroots 0.20.2 (its protocol/ directory).
     scanner.addCustomProtocol(b.path("protocol/wlr-layer-shell-unstable-v1.xml"));
     scanner.addCustomProtocol(b.path("protocol/wlr-output-management-unstable-v1.xml"));
@@ -46,10 +49,38 @@ pub fn build(b: *std.Build) void {
     // compositor side is wlroots'. The copy works around a scanner bug.
     scanner.addCustomProtocol(b.path("tests/protocol/presentation-time.xml"));
     if (test_input) {
+        const transfer = b.addExecutable(.{
+            .name = "raywm-test-data",
+            .root_module = b.createModule(.{ .target = target, .optimize = optimize, .link_libc = true }),
+            .use_llvm = use_llvm,
+            .use_lld = use_llvm,
+        });
+        for ([_]struct { []const u8, []const u8 }{
+            .{ "/usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml", "xdg-shell" },
+            .{ "/usr/share/wayland-protocols/unstable/text-input/text-input-unstable-v3.xml", "text-input" },
+            .{ "protocol/input-method-unstable-v2.xml", "input-method" },
+        }) |protocol| {
+            const header_cmd = b.addSystemCommand(&.{ "wayland-scanner", "client-header", protocol[0] });
+            const header = header_cmd.addOutputFileArg(b.fmt("{s}-client.h", .{protocol[1]}));
+            transfer.root_module.addIncludePath(header.dirname());
+            const code_cmd = b.addSystemCommand(&.{ "wayland-scanner", "private-code", protocol[0] });
+            const code = code_cmd.addOutputFileArg(b.fmt("{s}-protocol.c", .{protocol[1]}));
+            transfer.root_module.addCSourceFile(.{ .file = code, .flags = &.{} });
+        }
+        transfer.root_module.addCSourceFile(.{ .file = b.path("tests/data_client.c"), .flags = &.{ "-Wall", "-Wextra" } });
+        transfer.root_module.linkSystemLibrary("wayland-client", .{});
+        b.installArtifact(transfer);
+        const xclient = b.addExecutable(.{
+            .name = "raywm-test-x11",
+            .root_module = b.createModule(.{ .target = target, .optimize = optimize, .link_libc = true }),
+            .use_llvm = use_llvm,
+            .use_lld = use_llvm,
+        });
+        xclient.root_module.addCSourceFile(.{ .file = b.path("tests/x11_client.c"), .flags = &.{ "-Wall", "-Wextra" } });
+        xclient.root_module.linkSystemLibrary("xcb", .{});
+        b.installArtifact(xclient);
         scanner.addCustomProtocol(b.path("tests/protocol/wlr-virtual-pointer-unstable-v1.xml"));
-        scanner.addCustomProtocol(b.path("tests/protocol/virtual-keyboard-unstable-v1.xml"));
         scanner.generate("zwlr_virtual_pointer_manager_v1", 2);
-        scanner.generate("zwp_virtual_keyboard_manager_v1", 1);
         // Client side only (tests/screencopy_client.zig); the compositor
         // side is wlroots' own implementation.
         scanner.addCustomProtocol(b.path("tests/protocol/wlr-screencopy-unstable-v1.xml"));
@@ -94,6 +125,9 @@ pub fn build(b: *std.Build) void {
     scanner.generate("zwp_pointer_constraints_v1", 1);
     scanner.generate("zwp_relative_pointer_manager_v1", 1);
     scanner.generate("zwp_keyboard_shortcuts_inhibit_manager_v1", 1);
+    scanner.generate("zwp_text_input_manager_v3", 1);
+    scanner.generate("zwp_input_method_manager_v2", 1);
+    scanner.generate("zwp_virtual_keyboard_manager_v1", 1);
 
     const wayland = b.createModule(.{ .root_source_file = scanner.result });
     const xkbcommon = b.dependency("xkbcommon", .{}).module("xkbcommon");

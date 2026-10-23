@@ -26,6 +26,9 @@ watch() {
 }
 line() { grep "taskbar: wlr app=$2 " "$tmp/$1.log" | tail -1; }
 contains() { grep -qF "$2" "$tmp/$1.log" || fail "$1: missing '$2'"; }
+workspace_count() {
+    awk '/^taskbar: snapshot$/ {n=0; on=1; next} on && /^taskbar: ws name=/ {n++} END {print n+0}' "$tmp/$1.log"
+}
 
 t1() {
     name="wlr and ext list metadata, parent, focus, capabilities and stop"
@@ -98,7 +101,7 @@ t3() {
     line activated alpha | grep -q 'min=false active=true' || fail "hidden minimized window not restored/focused"
     tb unsupported unsupported 1 HEADLESS-1
     contains unsupported "ws name=1 output=HEADLESS-1 state=1 caps=1"
-    [ "$(grep '^taskbar: ws name=' "$tmp/unsupported.log" | sort -u | wc -l)" -eq 9 ] || fail "unsupported request changed workspaces"
+    [ "$(workspace_count unsupported)" -eq 9 ] || fail "unsupported request changed workspaces"
     stop
 }
 
@@ -145,7 +148,7 @@ t5() {
     tb gone snapshot
     if grep -q 'group output=HEADLESS-2' "$tmp/gone.log"; then fail "removed output group remains"; fi
     line gone alpha | grep -q 'outputs=1' || fail "removed output remains on window"
-    [ "$(grep '^taskbar: ws name=' "$tmp/gone.log" | tail -18 | wc -l)" -eq 18 ] || fail "workspace lost on unplug"
+    [ "$(workspace_count gone)" -eq 18 ] || fail "workspace lost on unplug"
     plug
     sleep 0.4
     tb added snapshot

@@ -40,6 +40,7 @@ pub const reveal_timeout_ms = 150;
 pub const View = struct {
     pub const Impl = union(enum) {
         xdg: *wlr.XdgToplevel,
+        xwayland: *wlr.XwaylandSurface,
     };
 
     pub const DecorationPref = enum { auto, server, client };
@@ -118,6 +119,11 @@ pub const View = struct {
     request_minimize: wl.Listener(void) = .init(handleRequestMinimize),
     deco_request_mode: wl.Listener(*wlr.XdgToplevelDecorationV1) = .init(handleDecorationRequest),
     deco_destroy: wl.Listener(*wlr.XdgToplevelDecorationV1) = .init(handleDecorationDestroy),
+    x_move: wl.Listener(void) = .init(handleXMove),
+    x_resize: wl.Listener(*wlr.XwaylandSurface.event.Resize) = .init(handleXResize),
+    x_configure: wl.Listener(*wlr.XwaylandSurface.event.Configure) = .init(handleXConfigure),
+    x_minimize: wl.Listener(*wlr.XwaylandSurface.event.Minimize) = .init(handleXMinimize),
+    x_activate: wl.Listener(void) = .init(handleXActivate),
 
     pub fn create(listener: *wl.Listener(*wlr.XdgToplevel), xdg: *wlr.XdgToplevel) void {
         const server: *Server = @fieldParentPtr("new_toplevel", listener);
@@ -161,10 +167,56 @@ pub const View = struct {
     /// The view of a toplevel's (or its subsurface's) wl_surface, if any.
     pub fn fromWlrSurface(wlr_surface: *wlr.Surface) ?*View {
         const root = wlr_surface.getRootSurface();
+        if (wlr.XwaylandSurface.tryFromWlrSurface(root)) |xs| return fromXwayland(xs);
         const xs = wlr.XdgSurface.tryFromWlrSurface(root) orelse return null;
         if (xs.role != .toplevel) return null;
         const tree = Popup.treeOf(xs) orelse return null;
         return fromNode(&tree.node);
+    }
+
+    pub fn fromXwayland(xs: *wlr.XwaylandSurface) ?*View {
+        return @ptrCast(@alignCast(xs.data));
+    }
+
+    pub fn dropXwayland(view: *View) void {
+        std.debug.assert(view.impl == .xwayland);
+        if (view.mapped) handleUnmap(&view.unmap);
+        handleDestroy(&view.destroy);
+    }
+
+    /// X11 role metadata outlives the associated wl_surface. This view owns
+    /// only one association; dissociate unmaps first, then destroys it.
+    pub fn createXwayland(server: *Server, xs: *wlr.XwaylandSurface) !void {
+        const surface_ = xs.surface orelse return;
+        const view = try gpa.create(View);
+        errdefer gpa.destroy(view);
+        const tree = try server.layer(.floating).createSceneTree();
+        errdefer tree.node.destroy();
+        const content = try tree.createSceneSubsurfaceTree(surface_);
+        view.* = .{ .server = server, .impl = .{ .xwayland = xs }, .tree = tree, .content = content, .id = server.nextId(), .opacity = xs.opacity };
+        try server.view_ids.put(gpa, view.id, view);
+        xs.data = view;
+        tree.node.data = &view.tag;
+        tree.node.setEnabled(false);
+        surface_.events.commit.add(&view.commit);
+        surface_.events.map.add(&view.map);
+        surface_.events.unmap.add(&view.unmap);
+        xs.events.dissociate.add(&view.destroy);
+        xs.events.request_move.add(&view.x_move);
+        xs.events.request_resize.add(&view.x_resize);
+        xs.events.request_configure.add(&view.x_configure);
+        xs.events.request_minimize.add(&view.x_minimize);
+        xs.events.request_activate.add(&view.x_activate);
+        xs.events.request_maximize.add(&view.request_maximize);
+        xs.events.request_fullscreen.add(&view.request_fullscreen);
+        xs.events.set_title.add(&view.set_title);
+        xs.events.set_class.add(&view.set_app_id);
+        xs.events.set_parent.add(&view.set_parent);
+        if (xs.fullscreen) {
+            if (server.activeOutput()) |o| view.fullscreen_output = o.id;
+        }
+        view.maximized = xs.maximized_horz and xs.maximized_vert;
+        if (surface_.mapped) handleMap(&view.map);
     }
 
     pub fn fromXdgToplevel(t: *wlr.XdgToplevel) ?*View {
@@ -187,6 +239,7 @@ pub const View = struct {
     pub fn surface(view: *View) *wlr.Surface {
         return switch (view.impl) {
             .xdg => |t| t.base.surface,
+            .xwayland => |xs| xs.surface.?,
         };
     }
 
@@ -195,18 +248,21 @@ pub const View = struct {
     fn windowBox(view: *View) wlr.Box {
         return switch (view.impl) {
             .xdg => |t| t.base.geometry,
+            .xwayland => |xs| .{ .x = 0, .y = 0, .width = xs.surface.?.current.width, .height = xs.surface.?.current.height },
         };
     }
 
     pub fn title(view: *View) ?[*:0]const u8 {
         return switch (view.impl) {
             .xdg => |t| t.title,
+            .xwayland => |xs| xs.title,
         };
     }
 
     pub fn appId(view: *View) ?[*:0]const u8 {
         return switch (view.impl) {
             .xdg => |t| t.app_id,
+            .xwayland => |xs| xs.class,
         };
     }
 
@@ -217,6 +273,10 @@ pub const View = struct {
                 .min = .{ t.current.min_width, t.current.min_height },
                 .max = .{ t.current.max_width, t.current.max_height },
             },
+            .xwayland => |xs| if (xs.size_hints) |h| .{
+                .min = if (h.flags & (1 << 4) != 0) .{ @max(0, h.min_width), @max(0, h.min_height) } else .{ 0, 0 },
+                .max = if (h.flags & (1 << 5) != 0) .{ @max(0, h.max_width), @max(0, h.max_height) } else .{ 0, 0 },
+            } else .{ .min = .{ 0, 0 }, .max = .{ 0, 0 } },
         };
     }
 
@@ -229,22 +289,30 @@ pub const View = struct {
                 const v = fromNode(&tree.node) orelse return null;
                 return if (v.mapped) v else null;
             },
+            .xwayland => |xs| {
+                const p = xs.parent orelse return null;
+                const v = fromXwayland(p) orelse return null;
+                return if (v.mapped) v else null;
+            },
         }
     }
 
     pub fn pid(view: *View) i32 {
+        if (view.impl == .xwayland) return view.impl.xwayland.pid;
         return view.surface().resource.getClient().getCredentials().pid;
     }
 
     pub fn setActivated(view: *View, on: bool) void {
         switch (view.impl) {
             .xdg => |t| _ = cabi.call(on, wlr.XdgToplevel.setActivated, .{t}),
+            .xwayland => |xs| cabi.call(on, wlr.XwaylandSurface.activate, .{xs}),
         }
     }
 
     pub fn close(view: *View) void {
         switch (view.impl) {
             .xdg => |t| t.sendClose(),
+            .xwayland => |xs| xs.close(),
         }
     }
 
@@ -252,6 +320,10 @@ pub const View = struct {
     fn configureSize(view: *View, w: i32, h: i32) u32 {
         return switch (view.impl) {
             .xdg => |t| t.setSize(w, h),
+            .xwayland => |xs| blk: {
+                xs.configure(@intCast(std.math.clamp(view.x, -32768, 32767)), @intCast(std.math.clamp(view.y, -32768, 32767)), @intCast(std.math.clamp(w, 1, 65535)), @intCast(std.math.clamp(h, 1, 65535)));
+                break :blk 0; // X11 has no xdg configure/ack serial
+            },
         };
     }
 
@@ -259,24 +331,28 @@ pub const View = struct {
     fn ackedSerial(view: *View) u32 {
         return switch (view.impl) {
             .xdg => |t| t.base.current.configure_serial,
+            .xwayland => 0,
         };
     }
 
     pub fn setResizing(view: *View, on: bool) u32 {
         return switch (view.impl) {
             .xdg => |t| cabi.call(on, wlr.XdgToplevel.setResizing, .{t}),
+            .xwayland => 0,
         };
     }
 
     fn setFullscreenState(view: *View, on: bool) void {
         switch (view.impl) {
             .xdg => |t| _ = cabi.call(on, wlr.XdgToplevel.setFullscreen, .{t}),
+            .xwayland => |xs| cabi.call(on, wlr.XwaylandSurface.setFullscreen, .{xs}),
         }
     }
 
     fn setMaximizedState(view: *View, on: bool) void {
         switch (view.impl) {
             .xdg => |t| _ = cabi.call(on, wlr.XdgToplevel.setMaximized, .{t}),
+            .xwayland => |xs| if (on) xs.setMaximized(true, true) else xs.setMaximized(false, false),
         }
     }
 
@@ -287,6 +363,7 @@ pub const View = struct {
             .xdg => |t| if (t.scheduled.suspended != on) {
                 _ = cabi.call(on, wlr.XdgToplevel.setSuspended, .{t});
             },
+            .xwayland => {},
         }
     }
 
@@ -297,6 +374,7 @@ pub const View = struct {
                 _ = t.setTiled(edges);
                 _ = t.setConstrained(edges);
             },
+            .xwayland => {},
         }
     }
 
@@ -307,6 +385,7 @@ pub const View = struct {
             .xdg => |t| if (t.base.initialized) {
                 _ = t.base.scheduleConfigure();
             },
+            .xwayland => {},
         }
     }
 
@@ -321,21 +400,25 @@ pub const View = struct {
     pub fn move(view: *View, x: i32, y: i32) void {
         view.pending = null;
         view.anchor = null;
-        view.x = x;
-        view.y = y;
+        view.x = if (view.impl == .xwayland) std.math.clamp(x, -32768, 32767) else x;
+        view.y = if (view.impl == .xwayland) std.math.clamp(y, -32768, 32767) else y;
         view.syncPosition();
     }
 
     /// Requests a new size; the position is applied together with the first
     /// commit that acknowledges this configure.
     pub fn place(view: *View, x: i32, y: i32, w: i32, h: i32) void {
+        const width = if (view.impl == .xwayland) std.math.clamp(w, 1, 65535) else @max(w, 1);
+        const height = if (view.impl == .xwayland) std.math.clamp(h, 1, 65535) else @max(h, 1);
+        const px = if (view.impl == .xwayland) std.math.clamp(x, -32768, 32767) else x;
+        const py = if (view.impl == .xwayland) std.math.clamp(y, -32768, 32767) else y;
         const g = view.windowBox();
         // With a resize still unacknowledged, the committed size says nothing
         // about what the client will end up with: always send the request.
-        if (view.pending == null and view.anchor == null and w == g.width and h == g.height) return view.move(x, y);
-        const serial = view.configureSize(@max(w, 1), @max(h, 1));
+        if (view.pending == null and view.anchor == null and width == g.width and height == g.height) return view.move(px, py);
+        const serial = view.configureSize(width, height);
         view.anchor = null;
-        view.pending = .{ .serial = serial, .x = x, .y = y, .w = @max(w, 1), .h = @max(h, 1) };
+        view.pending = .{ .serial = serial, .x = px, .y = py, .w = width, .h = height };
     }
 
     /// Where the window is going: the pending geometry, else the current.
@@ -379,7 +462,15 @@ pub const View = struct {
         const geo = view.windowBox();
         if (a.edges.left) view.x = a.box.x +| a.box.width -| geo.width;
         if (a.edges.top) view.y = a.box.y +| a.box.height -| geo.height;
-        if (view.server.grab.view != view and srv.serialReached(view.ackedSerial(), a.serial)) view.anchor = null;
+        if (view.server.grab.view != view and view.configureReached(a.serial)) view.anchor = null;
+    }
+
+    /// X11 has no configure/ack handshake. Wait for the actual buffer size.
+    fn configureReached(view: *View, serial: u32) bool {
+        return switch (view.impl) {
+            .xdg => srv.serialReached(view.ackedSerial(), serial),
+            .xwayland => |xs| xs.surface.?.current.width == xs.width and xs.surface.?.current.height == xs.height,
+        };
     }
 
     /// Ends an interactive resize; the anchor holds until the client acks.
@@ -394,6 +485,13 @@ pub const View = struct {
     fn syncPosition(view: *View) void {
         view.tree.node.setPosition(view.x, view.y);
         view.server.taskbar.schedule();
+        view.server.textinput.positionPopups();
+        if (view.impl == .xwayland) {
+            const xs = view.impl.xwayland;
+            const x: i16 = @intCast(std.math.clamp(view.x, -32768, 32767));
+            const y: i16 = @intCast(std.math.clamp(view.y, -32768, 32767));
+            if (xs.x != x or xs.y != y) xs.configure(x, y, xs.width, xs.height);
+        }
     }
 
     // ---- visibility, stacking and state ---------------------------------------
@@ -459,6 +557,7 @@ pub const View = struct {
     pub fn setMinimized(view: *View, on: bool) void {
         if (view.minimized == on) return;
         view.minimized = on;
+        if (view.impl == .xwayland) cabi.call(on, wlr.XwaylandSurface.setMinimized, .{view.impl.xwayland});
         view.updateVisibility();
         view.server.afterVisibilityChange();
         view.stateChanged();
@@ -558,6 +657,7 @@ pub const View = struct {
     /// reach below a fullscreen window).
     pub fn raise(view: *View) void {
         view.tree.node.raiseToTop();
+        if (view.impl == .xwayland) view.impl.xwayland.restack(null, .above);
         // Oldest focus first, so the most recently focused dialog ends on top.
         var it = view.server.views.iterator(.reverse);
         while (it.next()) |v| if (v != view and v.layer == view.layer and v.isDescendantOf(view)) v.tree.node.raiseToTop();
@@ -782,6 +882,11 @@ pub const View = struct {
                     s.sendFrameDone(ts);
                 }
             }.f, &now),
+            .xwayland => |xs| xs.surface.?.forEachSurface(*std.posix.timespec, struct {
+                fn f(s: *wlr.Surface, _: c_int, _: c_int, ts: *std.posix.timespec) void {
+                    s.sendFrameDone(ts);
+                }
+            }.f, &now),
         }
     }
 
@@ -864,10 +969,11 @@ pub const View = struct {
         const view: *View = @fieldParentPtr("commit", listener);
         switch (view.impl) {
             .xdg => |t| if (t.base.initial_commit) return view.initialConfigure(),
+            .xwayland => {},
         }
         if (!view.mapped) return;
         if (view.pending) |p| {
-            if (srv.serialReached(view.ackedSerial(), p.serial)) {
+            if (view.configureReached(p.serial)) {
                 view.pending = null;
                 view.x = p.x;
                 view.y = p.y;
@@ -916,6 +1022,7 @@ pub const View = struct {
                 };
                 _ = t.setSize(0, 0);
             },
+            .xwayland => {},
         }
     }
 
@@ -1001,6 +1108,7 @@ pub const View = struct {
                 var popups = t.base.popups.iterator(.forward);
                 while (popups.next()) |p| if (Popup.treeOf(p.base)) |tr| tr.node.setEnabled(false);
             },
+            .xwayland => {},
         }
         if (server.grab.view == view) input.endGrab(server);
         if (server.focused == view) {
@@ -1021,12 +1129,16 @@ pub const View = struct {
         view.tree.node.destroy();
         switch (view.impl) {
             .xdg => |t| t.base.data = null,
+            .xwayland => |xs| xs.data = null,
         }
         view.detachDecoration();
         inline for (.{
-            "commit",             "map",       "unmap",      "destroy",    "request_move",     "request_resize", "request_maximize",
-            "request_fullscreen", "set_title", "set_app_id", "set_parent", "request_minimize",
+            "commit", "map", "unmap", "destroy", "request_maximize", "request_fullscreen", "set_title", "set_app_id", "set_parent",
         }) |name| @field(view, name).link.remove();
+        switch (view.impl) {
+            .xdg => inline for (.{ "request_move", "request_resize", "request_minimize" }) |name| @field(view, name).link.remove(),
+            .xwayland => inline for (.{ "x_move", "x_resize", "x_configure", "x_minimize", "x_activate" }) |name| @field(view, name).link.remove(),
+        }
         gpa.destroy(view);
     }
 
@@ -1043,16 +1155,62 @@ pub const View = struct {
         input.beginResize(view.server, view, event.edges, true);
     }
 
+    fn xPointerGrab(view: *View) bool {
+        const seat = view.server.seat;
+        const focused = seat.pointer_state.focused_surface orelse return false;
+        return view.mapped and seat.pointer_state.button_count > 0 and focused.getRootSurface() == view.surface();
+    }
+
+    fn handleXMove(listener: *wl.Listener(void)) void {
+        const view: *View = @fieldParentPtr("x_move", listener);
+        if (view.xPointerGrab()) input.beginMove(view.server, view, true);
+    }
+
+    fn handleXResize(listener: *wl.Listener(*wlr.XwaylandSurface.event.Resize), event: *wlr.XwaylandSurface.event.Resize) void {
+        const view: *View = @fieldParentPtr("x_resize", listener);
+        if (view.xPointerGrab()) input.beginResize(view.server, view, @bitCast(event.edges & 15), true);
+    }
+
+    fn handleXConfigure(listener: *wl.Listener(*wlr.XwaylandSurface.event.Configure), event: *wlr.XwaylandSurface.event.Configure) void {
+        const view: *View = @fieldParentPtr("x_configure", listener);
+        const xs = view.impl.xwayland;
+        if (!view.mapped) return xs.configure(event.x, event.y, @max(1, event.width), @max(1, event.height));
+        const box = view.targetBox();
+        if (view.managed() or view.isFullscreen() or view.maximized) {
+            xs.configure(@intCast(std.math.clamp(box.x, -32768, 32767)), @intCast(std.math.clamp(box.y, -32768, 32767)), @intCast(std.math.clamp(box.width, 1, 65535)), @intCast(std.math.clamp(box.height, 1, 65535)));
+            return;
+        }
+        view.place(if (event.mask & 1 != 0) event.x else box.x, if (event.mask & 2 != 0) event.y else box.y, if (event.mask & 4 != 0) event.width else box.width, if (event.mask & 8 != 0) event.height else box.height);
+    }
+
+    fn handleXMinimize(listener: *wl.Listener(*wlr.XwaylandSurface.event.Minimize), event: *wlr.XwaylandSurface.event.Minimize) void {
+        const view: *View = @fieldParentPtr("x_minimize", listener);
+        if (!view.mapped) return;
+        const before = view.decisions;
+        if (event.minimize) view.server.emit(.view_request_minimize, view.id);
+        if (view.mapped and view.decisions == before) view.setMinimized(event.minimize);
+    }
+
+    fn handleXActivate(listener: *wl.Listener(void)) void {
+        const view: *View = @fieldParentPtr("x_activate", listener);
+        // EWMH activation carries no compositor-verified input serial.
+        view.requestActivate(false);
+    }
+
     /// The client asks for fullscreen on or off (and maybe an output).
     /// Plugins see view_request_fullscreen(id, on, output); if none
     /// decided (raywm.view_fullscreen), the request is granted.
     fn handleRequestFullscreen(listener: *wl.Listener(void)) void {
         const view: *View = @fieldParentPtr("request_fullscreen", listener);
-        const t = view.impl.xdg;
-        // Before the initial commit: answered by the initial configure.
-        if (!t.base.initialized) return;
-        const want = t.requested.fullscreen;
-        const out = if (t.requested.fullscreen_output) |o| view.server.outputByWlr(o) else null;
+        if (view.impl == .xdg and !view.impl.xdg.base.initialized) return;
+        const want = switch (view.impl) {
+            .xdg => |t| t.requested.fullscreen,
+            .xwayland => |xs| xs.fullscreen,
+        };
+        const out = switch (view.impl) {
+            .xdg => |t| if (t.requested.fullscreen_output) |o| view.server.outputByWlr(o) else null,
+            .xwayland => null,
+        };
         if (view.mapped) {
             const before = view.decisions;
             view.server.emitArgs(.view_request_fullscreen, view.id, &.{ .{ .boolean = want }, .{ .int = if (out) |o| o.id else 0 } });
@@ -1063,9 +1221,11 @@ pub const View = struct {
 
     fn handleRequestMaximize(listener: *wl.Listener(void)) void {
         const view: *View = @fieldParentPtr("request_maximize", listener);
-        const t = view.impl.xdg;
-        if (!t.base.initialized) return;
-        const want = t.requested.maximized;
+        if (view.impl == .xdg and !view.impl.xdg.base.initialized) return;
+        const want = switch (view.impl) {
+            .xdg => |t| t.requested.maximized,
+            .xwayland => |xs| xs.maximized_horz and xs.maximized_vert,
+        };
         if (view.mapped) {
             const before = view.decisions;
             view.server.emitArgs(.view_request_maximize, view.id, &.{.{ .boolean = want }});

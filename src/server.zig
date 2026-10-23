@@ -19,6 +19,8 @@ const protocols = @import("protocols.zig");
 const cabi = @import("cabi.zig");
 const Constraints = @import("constraints.zig").Constraints;
 const Taskbar = @import("taskbar.zig").Taskbar;
+const Data = @import("data.zig").Data;
+const TextInput = @import("textinput.zig").Relay;
 
 pub const gpa = std.heap.c_allocator;
 const log = std.log.scoped(.server);
@@ -26,7 +28,7 @@ const log = std.log.scoped(.server);
 pub var verbose = false;
 
 /// Stored in SceneNode.data of trees we own, to identify them on hit tests.
-pub const Tag = enum { view, layer };
+pub const Tag = enum { view, layer, visual };
 
 /// Scene layers, bottom to top. Windows a layout manages are `tiled`,
 /// others `floating`. `popups` holds popups of layer surfaces, so a dock's
@@ -41,6 +43,7 @@ pub const Server = struct {
     backend: *wlr.Backend,
     session: ?*wlr.Session,
     renderer: *wlr.Renderer,
+    compositor: *wlr.Compositor = undefined,
     allocator: *wlr.Allocator,
     scene: *wlr.Scene,
     layers: [std.meta.fields(Layer).len]*wlr.SceneTree,
@@ -55,8 +58,11 @@ pub const Server = struct {
     output_mgmt: output_mod.Management = undefined,
     output_mgmt_ready: bool = false,
     protocols: protocols.Protocols = undefined,
+    xwayland: @import("xwayland.zig").Manager = .{},
     constraints: Constraints = undefined,
     taskbar: Taskbar = .{},
+    data: Data = undefined,
+    textinput: TextInput = undefined,
     idle_notifier: *wlr.IdleNotifierV1 = undefined,
     idle_inhibit: *wlr.IdleInhibitManagerV1 = undefined,
 
@@ -135,7 +141,7 @@ pub const Server = struct {
         for (&server.layers) |*tree| tree.* = try scene.tree.createSceneTree();
 
         try protocols.initBuffers(server);
-        _ = try wlr.Compositor.create(wl_server, 6, renderer);
+        server.compositor = try wlr.Compositor.create(wl_server, 6, renderer);
         _ = try wlr.Subcompositor.create(wl_server);
         _ = try wlr.DataDeviceManager.create(wl_server);
         // Screen capture (grim, slurp's clients, ...): EVERY client of this
@@ -154,8 +160,11 @@ pub const Server = struct {
         try server.output_mgmt.init(server);
         server.output_mgmt_ready = true;
         try server.protocols.init(server);
+        try server.xwayland.init(server);
         try server.constraints.init(server);
         try server.taskbar.init(server);
+        server.data.init(server);
+        try server.textinput.init(server);
         server.idle_notifier = try wlr.IdleNotifierV1.create(wl_server);
         server.idle_inhibit = try wlr.IdleInhibitManagerV1.create(wl_server);
         server.idle_inhibit.events.new_inhibitor.add(&server.new_inhibitor);
@@ -193,7 +202,10 @@ pub const Server = struct {
         std.debug.assert(server.rt == null);
         if (server.timer) |t| t.remove();
         server.timer = null;
+        server.xwayland.deinit();
         server.wl_server.destroyClients();
+        server.data.deinit();
+        server.textinput.deinit();
         server.taskbar.deinit();
         server.output_mgmt.deinit();
         server.output_mgmt_ready = false;
@@ -367,7 +379,7 @@ pub const Server = struct {
         server.keyboardEnter(v.surface());
     }
 
-    fn keyboardEnter(server: *Server, surface: *wlr.Surface) void {
+    pub fn keyboardEnter(server: *Server, surface: *wlr.Surface) void {
         if (server.seat.getKeyboard()) |kb| {
             var buf: [32]u32 = undefined;
             server.seat.keyboardNotifyEnter(surface, input.heldKeys(server, kb, &buf), &kb.modifiers);
@@ -387,6 +399,7 @@ pub const Server = struct {
     /// After windows were hidden or shown: the keyboard leaves a window
     /// that is hidden now; the pointer follows what is under it.
     pub fn afterVisibilityChange(server: *Server) void {
+        server.xwayland.syncVisibility();
         if (server.focused) |f| if (!f.visible()) server.focus(server.focusFallback(f));
         input.refocusPointer(server);
         server.updateIdleInhibit();

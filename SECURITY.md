@@ -131,9 +131,15 @@ not a permission mechanism for screen, clipboard or session access.
 
 ## Other notes
 
-- **Test-only virtual input.** Builds made with `zig build -Dtest-input`
-  expose the virtual pointer and keyboard protocols. These let *any*
-  client inject input. Such builds are for the test suite only, log a
+- **Virtual keyboard and input methods.** Ordinary clients can register an
+  input method and inject keyboard events through virtual-keyboard-v1,
+  which IMEs use to return unhandled keys. Sandboxed security-context
+  clients cannot see either global. The first input method for the seat
+  is accepted; additional methods receive unavailable. Treat ordinary
+  clients of the Wayland socket as trusted desktop software.
+- **Test-only virtual pointer.** Builds made with `zig build -Dtest-input`
+  expose the virtual pointer protocol, allowing clients to inject pointer
+  events. Such builds are for the test suite only, log a
   `TEST BUILD` warning at startup, and are never distributed. Release
   packages are checked to contain no such code (`scripts/package.sh`).
 - **Screenshot files** are created with mode 0600 in the user's

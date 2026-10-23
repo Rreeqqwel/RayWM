@@ -90,8 +90,9 @@ with naive double quotes fails the injection checks).
 ### Virtual input (test builds only)
 
 `zig build -Dtest-input` links `tests/support/virtual_input.zig` into
-the compositor. It exposes the wlroots virtual pointer and virtual
-keyboard protocols. `tests/input_driver.zig` uses them to move the
+the compositor. It exposes the wlroots virtual pointer protocol; the
+virtual keyboard protocol is also used by production input methods.
+`tests/input_driver.zig` uses them to move the
 pointer, press buttons and type keys. The test compositor runs on its
 own socket in a private runtime directory, so this input reaches only
 the test clients. Such builds log `TEST BUILD` at startup, and release

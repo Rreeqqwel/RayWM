@@ -91,6 +91,7 @@ pub const SessionLock = struct {
         const server = sl.server;
         log.info("session locked", .{});
         sl.state = .locking;
+        server.data.cancel();
         input.endGrab(server);
         for (server.layers, 0..) |tree, i| {
             if (i != @intFromEnum(srv.Layer.lock)) tree.node.setEnabled(false);

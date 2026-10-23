@@ -80,6 +80,7 @@ const App = struct {
         return "none";
     }
     fn snapshots(app: *App) void {
+        say("snapshot", .{});
         for (app.tops[0..app.n_tops]) |*t| if (!t.closed) topSnapshot(t);
         for (app.ext_tops[0..app.n_ext_tops]) |*t| if (!t.closed) extSnapshot(t);
         for (app.groups[0..app.n_groups]) |g| if (!g.removed) say("group output={s} caps={d}", .{ app.outputName(g.output), g.caps });

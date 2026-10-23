@@ -53,6 +53,7 @@ pub fn view(server: *Server, id: u32) ?lua.ViewInfo {
             .none => null,
         } else null,
         .managed = v.managed(),
+        .xwayland = v.impl == .xwayland,
         .pid = v.pid(),
     };
 }

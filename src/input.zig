@@ -111,7 +111,7 @@ pub const Keyboard = struct {
     fn handleModifiers(listener: *wl.Listener(*wlr.Keyboard), wlr_kb: *wlr.Keyboard) void {
         const kb: *Keyboard = @fieldParentPtr("modifiers", listener);
         kb.server.seat.setKeyboard(wlr_kb);
-        kb.server.seat.keyboardNotifyModifiers(&wlr_kb.modifiers);
+        if (!kb.server.textinput.forwardModifiers(wlr_kb)) kb.server.seat.keyboardNotifyModifiers(&wlr_kb.modifiers);
         if (wlr_kb.modifiers.group != kb.group) {
             kb.group = wlr_kb.modifiers.group;
             kb.server.emitArgs(.keyboard_layout, 0, &.{.{ .int = kb.group + 1 }});
@@ -141,6 +141,7 @@ pub const Keyboard = struct {
         };
         if (!handled) {
             kb.server.seat.setKeyboard(wlr_kb);
+            if (kb.server.textinput.forwardKey(wlr_kb, event)) return;
             const seat = kb.server.seat;
             const before = kb.server.wl_server.getSerial();
             const surface = seat.keyboard_state.focused_surface;
@@ -353,10 +354,31 @@ pub fn motionAbsolute(listener: *wl.Listener(*wlr.Pointer.event.MotionAbsolute),
 
 const Hit = struct { surface: *wlr.Surface, node: *wlr.SceneNode, sx: f64, sy: f64, view: ?*View, layer: ?*LayerSurface };
 
+/// Like scene_node_at, preserving native buffer input-region transforms,
+/// but skipping explicitly visual trees. No scene mutation in hit tests.
+fn pick(node: *wlr.SceneNode, lx: f64, ly: f64, sx: *f64, sy: *f64) ?*wlr.SceneNode {
+    if (!node.enabled) return null;
+    if (node.data) |data| {
+        const tag: *const srv.Tag = @ptrCast(@alignCast(data));
+        if (tag.* == .visual) return null;
+    }
+    if (node.type != .tree) return node.at(lx, ly, sx, sy);
+    var children = wlr.SceneTree.fromNode(node).children.iterator(.reverse);
+    // node.at uses layout coordinates even when called on a subtree: it
+    // computes the complete ancestor origin itself (wlroots 0.20).
+    while (children.next()) |child| if (pick(child, lx, ly, sx, sy)) |hit| return hit;
+    return null;
+}
+
 fn surfaceAt(server: *Server, lx: f64, ly: f64) ?Hit {
     var sx: f64 = undefined;
     var sy: f64 = undefined;
-    const node = server.scene.tree.node.at(lx, ly, &sx, &sy) orelse return null;
+    var index = server.layers.len;
+    const node = while (index > 0) {
+        index -= 1;
+        if (index == @intFromEnum(srv.Layer.drag)) continue;
+        if (pick(&server.layers[index].node, lx, ly, &sx, &sy)) |found| break found;
+    } else return null;
     if (node.type != .buffer) return null;
     const scene_surface = wlr.SceneSurface.tryFromBuffer(wlr.SceneBuffer.fromNode(node)) orelse return null;
     return .{ .surface = scene_surface.surface, .node = node, .sx = sx, .sy = sy, .view = View.fromNode(node), .layer = LayerSurface.fromNode(node) };
@@ -396,7 +418,7 @@ fn focusHit(server: *Server, hit: ?Hit, time_msec: ?u32) void {
         server.cursor.setXcursor(server.cursor_mgr, "default");
         // The raw clear, as before 0.1.2: under a wlroots grab (xdg_popup)
         // the notify_ variant would make the seat forget held buttons.
-        server.seat.pointerClearFocus();
+        if (server.seat.drag != null) server.seat.pointerNotifyClearFocus() else server.seat.pointerClearFocus();
     }
 }
 
@@ -449,6 +471,7 @@ pub fn warpPointer(server: *Server, x: f64, y: f64) lua.WarpResult {
 }
 
 fn processMotion(server: *Server, time_msec: u32) void {
+    server.data.move();
     const g = &server.grab;
     const view = g.view orelse {
         if (implicitGrab(server)) {
@@ -545,7 +568,7 @@ pub fn button(listener: *wl.Listener(*wlr.Pointer.event.Button), event: *wlr.Poi
     // Only the first press of an interaction picks its target: focus,
     // click-to-focus and compositor bindings. Later presses, while a
     // client holds the implicit grab, belong to that client.
-    if (event.state == .pressed and !implicitGrab(server)) {
+    if (event.state == .pressed and server.seat.drag == null and !implicitGrab(server)) {
         const hit = surfaceAt(server, server.cursor.x, server.cursor.y);
         // Focus normally follows motion already; the scene may have changed
         // since the last motion, so the press goes to what is shown now.
