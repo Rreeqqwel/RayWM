@@ -28,7 +28,7 @@ jobs:
         run: |
           pacman -Syu --noconfirm --needed git wlroots0.20 wayland wayland-protocols \
             libxkbcommon pixman lua54 pkgconf curl xz file binutils \
-            grim slurp wl-clipboard python
+            grim slurp wl-clipboard python swaylock swayidle
           pacman -Q wlroots0.20 wayland lua54 libxkbcommon pixman grim slurp wl-clipboard | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/checkout@v4
@@ -85,6 +85,9 @@ jobs:
       - name: Window rule tests (pixman, virtual input)
         run: tests/rules.sh
 
+      - name: Session tests (lock, idle, autostart; swaylock, swayidle, grim)
+        run: tests/session.sh
+
       - name: Screenshot tests (pixman, real grim/slurp/wl-clipboard)
         run: tests/screenshot.sh
 
@@ -121,7 +124,7 @@ jobs:
 
       - name: System packages
         if: steps.drm.outputs.available == 'true'
-        run: pacman -Syu --noconfirm --needed git wlroots0.20 wayland wayland-protocols libxkbcommon pixman lua54 pkgconf curl xz mesa grim slurp wl-clipboard python
+        run: pacman -Syu --noconfirm --needed git wlroots0.20 wayland wayland-protocols libxkbcommon pixman lua54 pkgconf curl xz mesa grim slurp wl-clipboard python swaylock swayidle
 
       - uses: actions/checkout@v4
         if: steps.drm.outputs.available == 'true'
@@ -140,7 +143,7 @@ jobs:
           RENDERER: gles2
         run: |
           zig build && zig build -Dtest-input -p zig-out/test-input
-          tests/smoke.sh && tests/focus.sh && tests/input.sh && tests/pointer.sh && tests/navigation.sh && tests/screenshot.sh && tests/windows.sh && tests/workspaces.sh && tests/rules.sh
+          tests/smoke.sh && tests/focus.sh && tests/input.sh && tests/pointer.sh && tests/navigation.sh && tests/screenshot.sh && tests/windows.sh && tests/workspaces.sh && tests/rules.sh && tests/session.sh
 
   package:
     name: release package

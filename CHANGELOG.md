@@ -8,6 +8,31 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ### Added
 
+- **Screen locking** (ext-session-lock-v1; works with swaylock):
+  - while locked, only the locker's surfaces are drawn: every other
+    layer is hidden and each output has an opaque background below the
+    lock surfaces, so no window or panel shows, also on an output without
+    a lock surface and in screenshots;
+  - the locker is told it locked only after every output has presented a
+    frame in that state;
+  - keyboard and pointer reach only the locker; no key binding runs
+    (not even the core's fallback Super+Shift+E), except VT switching;
+    plugins cannot move focus (`raywm.pointer_warp` returns
+    `nil, "locked"`);
+  - if the locker crashes, the session stays locked (dark red) until a
+    new locker unlocks it; a second locker is refused while one holds
+    the lock;
+  - `raywm.locked()`, events `session_lock` and `session_unlock`.
+- **Idle**: ext-idle-notify-v1 (swayidle and others get idle and resume
+  notifications from real input) and idle-inhibit-unstable-v1 (a video
+  player keeps the session awake while its window is visible; a hidden
+  window's inhibitor does not count).
+- **Autostart**: `config/plugins/autostart.lua` (in the example
+  `init.lua`, with an empty list) starts programs once per RayWM start;
+  `raywm.spawn_once(cmd)` (a command is not started again by a reload; a
+  new one starts at the next reload) and `raywm.startup(fn)` (runs fn
+  after the first `init.lua` only, in order; errors are reported as
+  `startup`).
 - **Window rules** (`config/plugins/window-rules.lua`, loaded by the
   example `init.lua`; your rules go in `rules.lua` next to `init.lua`):
   match windows by app id, title (Lua patterns, or lists of them), being

@@ -8,6 +8,7 @@ const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const xdg = wayland.client.xdg;
 const zwlr = wayland.client.zwlr;
+const zwp = wayland.client.zwp;
 
 const Globals = struct {
     shm: ?*wl.Shm = null,
@@ -20,6 +21,7 @@ const Globals = struct {
     /// SeatUse exists: kept here and applied by SeatUse.listen().
     seat_caps: ?wl.Seat.Capability = null,
     seat_use: ?*SeatUse = null,
+    idle_inhibit: ?*zwp.IdleInhibitManagerV1 = null,
     /// wl_outputs in the order they were announced.
     outputs: [8]?*wl.Output = @splat(null),
     n_outputs: usize = 0,
@@ -175,6 +177,13 @@ pub fn main() !void {
                 step("subsurface mapped", .{});
             }
             use.listen(&globals);
+            // RAYWM_TEST_IDLE_INHIBIT: keeps the session from going idle
+            // while this window is visible.
+            if (std.c.getenv("RAYWM_TEST_IDLE_INHIBIT") != null) {
+                _ = try (globals.idle_inhibit orelse return error.NoIdleInhibit).createInhibitor(surface);
+                _ = display.flush();
+                step("idle inhibitor created", .{});
+            }
             // RAYWM_TEST_CHILD: a second toplevel, a dialog of this one.
             var child: Child = .{ .shm = shm };
             if (std.c.getenv("RAYWM_TEST_CHILD") != null) try child.open(display, compositor, wm_base, toplevel);
@@ -559,6 +568,8 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, g: *Global
                 g.seat = seat;
             } else if (std.mem.eql(u8, name, std.mem.span(zwlr.LayerShellV1.interface.name))) {
                 g.layer_shell = registry.bind(global.name, zwlr.LayerShellV1, 4) catch return;
+            } else if (std.mem.eql(u8, name, std.mem.span(zwp.IdleInhibitManagerV1.interface.name))) {
+                g.idle_inhibit = registry.bind(global.name, zwp.IdleInhibitManagerV1, 1) catch return;
             } else if (std.mem.eql(u8, name, std.mem.span(wl.Output.interface.name))) {
                 // Bound so that wl_surface.enter can name the output, and
                 // for fullscreen requests on a given output.
