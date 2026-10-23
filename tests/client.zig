@@ -9,6 +9,21 @@ const wl = wayland.client.wl;
 const xdg = wayland.client.xdg;
 const zwlr = wayland.client.zwlr;
 const zwp = wayland.client.zwp;
+const wp = wayland.client.wp;
+
+/// Optional protocols (bound when the compositor has them), used by the
+/// RAYWM_TEST_SINGLE_PIXEL, _FRACTIONAL, _PRESENTATION and _CURSOR_SHAPE
+/// modes.
+const Extras = struct {
+    viewporter: ?*wp.Viewporter = null,
+    single_pixel: ?*wp.SinglePixelBufferManagerV1 = null,
+    fractional: ?*wp.FractionalScaleManagerV1 = null,
+    presentation: ?*wp.Presentation = null,
+    cursor_shape: ?*wp.CursorShapeManagerV1 = null,
+    /// Viewport of the window's surface (single-pixel mode).
+    viewport: ?*wp.Viewport = null,
+};
+var extras: Extras = .{};
 
 const Globals = struct {
     shm: ?*wl.Shm = null,
@@ -111,6 +126,17 @@ pub fn main() !void {
     const surface = try compositor.createSurface();
     // wl_surface.enter arrives when the window is first shown on an output.
     surface.setListener(?*anyopaque, surfaceListener, null);
+    // RAYWM_TEST_SINGLE_PIXEL=RRGGBB: the window is a single-pixel buffer
+    // scaled to its size by a viewport.
+    if (std.c.getenv("RAYWM_TEST_SINGLE_PIXEL") != null) {
+        if (extras.viewporter == null or extras.single_pixel == null) return error.NoSinglePixel;
+        extras.viewport = try extras.viewporter.?.getViewport(surface);
+    }
+    // RAYWM_TEST_FRACTIONAL: log the preferred fractional scale.
+    if (std.c.getenv("RAYWM_TEST_FRACTIONAL") != null) {
+        const fs = try (extras.fractional orelse return error.NoFractionalScale).getFractionalScale(surface);
+        fs.setListener(?*anyopaque, fractionalListener, null);
+    }
     const xdg_surface = try wm_base.getXdgSurface(surface);
     // Two rounds on the same xdg_surface: destroying the toplevel role and
     // creating a new one must work (and must not leak compositor state).
@@ -150,6 +176,11 @@ pub fn main() !void {
 
         const frame = try surface.frame();
         frame.setListener(*State, frameListener, &state);
+        // RAYWM_TEST_PRESENTATION: feedback for the first content update.
+        if (round == 0 and std.c.getenv("RAYWM_TEST_PRESENTATION") != null) {
+            const fb = try (extras.presentation orelse return error.NoPresentation).feedback(surface);
+            fb.setListener(?*anyopaque, presentationListener, null);
+        }
         surface.attach(buffer, 0, 0);
         surface.damageBuffer(0, 0, std.math.maxInt(i32), std.math.maxInt(i32));
         surface.commit();
@@ -336,11 +367,18 @@ fn applyCaps(use: *SeatUse, caps: wl.Seat.Capability) void {
     }
 }
 
-fn pointerListener(_: *wl.Pointer, event: wl.Pointer.Event, use: *SeatUse) void {
+fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, use: *SeatUse) void {
     const log_ptr = std.c.getenv("RAYWM_TEST_PTR") != null;
     switch (event) {
         .enter => |e| {
             use.ptr_on = e.surface;
+            // RAYWM_TEST_CURSOR_SHAPE: a named cursor (wp_cursor_shape_v1).
+            if (std.c.getenv("RAYWM_TEST_CURSOR_SHAPE") != null) if (extras.cursor_shape) |m| {
+                if (m.getPointer(pointer)) |dev| {
+                    dev.setShape(e.serial, .grab);
+                    step("cursor shape set", .{});
+                } else |_| {}
+            };
             const on_popup = use.popup != null and e.surface == use.popup.?.surface;
             if (log_ptr) step("ptr enter {s} at {d},{d}", .{ use.kind(e.surface), e.surface_x.toInt(), e.surface_y.toInt() });
             if (on_popup and std.c.getenv("RAYWM_TEST_POPUP") != null and std.c.getenv("RAYWM_TEST_POPUP_KILL") == null) if (use.toplevel) |t| {
@@ -510,6 +548,17 @@ fn keyboardListener(_: *wl.Keyboard, event: wl.Keyboard.Event, use: *SeatUse) vo
 /// magenta margin around it, outside the window geometry, like client-side
 /// shadows (the window geometry is set to the content).
 fn windowBuffer(shm: *wl.Shm, xdg_surface: *xdg.Surface, w: i32, h: i32) !*wl.Buffer {
+    if (extras.viewport) |vp| {
+        const hex = std.mem.span(std.c.getenv("RAYWM_TEST_SINGLE_PIXEL").?);
+        const rgb = std.fmt.parseUnsigned(u32, hex, 16) catch 0xff0000;
+        const ch = struct {
+            fn f(v: u32) u32 {
+                return (v & 0xff) * 0x01010101;
+            }
+        }.f;
+        vp.setDestination(w, h);
+        return extras.single_pixel.?.createU32RgbaBuffer(ch(rgb >> 16), ch(rgb >> 8), ch(rgb), 0xffffffff);
+    }
     const m: i32 = if (std.c.getenv("RAYWM_TEST_SHADOW")) |v| std.fmt.parseInt(i32, std.mem.span(v), 10) catch 0 else 0;
     if (m > 0) xdg_surface.setWindowGeometry(m, m, w, h);
     return makeBufferMargin(shm, w, h, m);
@@ -570,6 +619,16 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, g: *Global
                 g.seat = seat;
             } else if (std.mem.eql(u8, name, std.mem.span(zwlr.LayerShellV1.interface.name))) {
                 g.layer_shell = registry.bind(global.name, zwlr.LayerShellV1, 4) catch return;
+            } else if (std.mem.eql(u8, name, std.mem.span(wp.Viewporter.interface.name))) {
+                extras.viewporter = registry.bind(global.name, wp.Viewporter, 1) catch return;
+            } else if (std.mem.eql(u8, name, std.mem.span(wp.SinglePixelBufferManagerV1.interface.name))) {
+                extras.single_pixel = registry.bind(global.name, wp.SinglePixelBufferManagerV1, 1) catch return;
+            } else if (std.mem.eql(u8, name, std.mem.span(wp.FractionalScaleManagerV1.interface.name))) {
+                extras.fractional = registry.bind(global.name, wp.FractionalScaleManagerV1, 1) catch return;
+            } else if (std.mem.eql(u8, name, std.mem.span(wp.Presentation.interface.name))) {
+                extras.presentation = registry.bind(global.name, wp.Presentation, 1) catch return;
+            } else if (std.mem.eql(u8, name, std.mem.span(wp.CursorShapeManagerV1.interface.name))) {
+                extras.cursor_shape = registry.bind(global.name, wp.CursorShapeManagerV1, 1) catch return;
             } else if (std.mem.eql(u8, name, std.mem.span(zwp.IdleInhibitManagerV1.interface.name))) {
                 g.idle_inhibit = registry.bind(global.name, zwp.IdleInhibitManagerV1, 1) catch return;
             } else if (std.mem.eql(u8, name, std.mem.span(wl.Output.interface.name))) {
@@ -681,6 +740,26 @@ const Child = struct {
         c.buffer = next;
     }
 };
+
+fn fractionalListener(_: *wp.FractionalScaleV1, event: wp.FractionalScaleV1.Event, _: ?*anyopaque) void {
+    switch (event) {
+        .preferred_scale => |p| step("fractional scale {d}", .{p.scale}),
+    }
+}
+
+fn presentationListener(fb: *wp.PresentationFeedback, event: wp.PresentationFeedback.Event, _: ?*anyopaque) void {
+    switch (event) {
+        .sync_output => {},
+        .presented => |p| {
+            step("presented refresh {d}", .{p.refresh});
+            fb.destroy();
+        },
+        .discarded => {
+            step("presentation discarded", .{});
+            fb.destroy();
+        },
+    }
+}
 
 fn outputListener(_: *wl.Output, event: wl.Output.Event, _: ?*anyopaque) void {
     switch (event) {

@@ -4,11 +4,17 @@
 //! like "failed"), 1 on an error, 2 when the global is missing.
 //!   power <output> on|off   wlr-output-power-management: set and confirm
 //!   gamma <output>          wlr-gamma-control: the gamma ramp size, or failed
+//!   sandbox                 security-context-v1: connects as a sandboxed
+//!                           client and prints the globals it sees, then
+//!                           those this (ordinary) client sees
 //! <output> is a wl_output name (wl_output v4), e.g. HEADLESS-1.
 const std = @import("std");
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const zwlr = wayland.client.zwlr;
+const wp = wayland.client.wp;
+
+extern "c" fn socket(domain: c_uint, sock_type: c_uint, protocol: c_uint) c_int;
 
 const max_outputs = 8;
 
@@ -19,6 +25,10 @@ const App = struct {
     n_outputs: usize = 0,
     power_mgr: ?*zwlr.OutputPowerManagerV1 = null,
     gamma_mgr: ?*zwlr.GammaControlManagerV1 = null,
+    security: ?*wp.SecurityContextManagerV1 = null,
+    /// Interface names of every global, for `sandbox`.
+    names: [64][64]u8 = undefined,
+    n_names: usize = 0,
     done: bool = false,
     last_mode: ?zwlr.OutputPowerV1.Mode = null,
 
@@ -66,9 +76,66 @@ pub fn main(init: std.process.Init) !u8 {
         gamma.setListener(*App, gammaListener, &app);
         while (!app.done) if (display.dispatch() != .SUCCESS) return 1;
         return 0;
+    } else if (std.mem.eql(u8, cmd, "sandbox")) {
+        const mgr = app.security orelse return missing("wp_security_context_manager_v1");
+        return sandbox(display, mgr, &app);
     }
     say("unknown command {s}", .{cmd});
     return 1;
+}
+
+fn sandbox(display: *wl.Display, mgr: *wp.SecurityContextManagerV1, app: *App) !u8 {
+    var path_buf: [256]u8 = undefined;
+    const dir = std.mem.span(std.c.getenv("XDG_RUNTIME_DIR") orelse return 1);
+    const path = try std.fmt.bufPrintZ(&path_buf, "{s}/raywm-test-sandbox", .{dir});
+    _ = std.c.unlink(path);
+    var addr: std.os.linux.sockaddr.un = .{ .path = @splat(0) };
+    @memcpy(addr.path[0..path.len], path);
+    const unix = std.os.linux.AF.UNIX;
+    const stream = std.os.linux.SOCK.STREAM | std.os.linux.SOCK.CLOEXEC;
+    const listen_fd = socket(unix, stream, 0);
+    if (listen_fd < 0) return 1;
+    if (std.c.bind(listen_fd, @ptrCast(&addr), @sizeOf(@TypeOf(addr))) != 0) return 1;
+    if (std.c.listen(listen_fd, 4) != 0) return 1;
+    var fds: [2]std.c.fd_t = undefined;
+    if (std.c.pipe(&fds) != 0) return 1;
+    // The compositor keeps listening until the write end is closed.
+    const ctx = try mgr.createListener(listen_fd, fds[0]);
+    ctx.setSandboxEngine("org.raywm.test");
+    ctx.setAppId("org.raywm.Sandboxed");
+    ctx.setInstanceId("1");
+    ctx.commit();
+    if (display.roundtrip() != .SUCCESS) return 1;
+
+    const fd = socket(unix, stream, 0);
+    if (fd < 0) return 1;
+    if (std.c.connect(fd, @ptrCast(&addr), @sizeOf(@TypeOf(addr))) != 0) return 1;
+    const sandboxed = try wl.Display.connectToFd(fd);
+    defer sandboxed.disconnect();
+    const reg = try sandboxed.getRegistry();
+    var seen: App = .{};
+    reg.setListener(*App, namesListener, &seen);
+    if (sandboxed.roundtrip() != .SUCCESS) return 1;
+    for (seen.names[0..seen.n_names]) |*n| say("sandboxed sees {s}", .{std.mem.sliceTo(n, 0)});
+    for (app.names[0..app.n_names]) |*n| say("normal sees {s}", .{std.mem.sliceTo(n, 0)});
+    _ = std.c.close(fds[1]);
+    _ = std.c.unlink(path);
+    return 0;
+}
+
+fn rememberName(app: *App, name: []const u8) void {
+    if (app.n_names == app.names.len) return;
+    const n = &app.names[app.n_names];
+    @memset(n, 0);
+    @memcpy(n[0..@min(name.len, n.len - 1)], name[0..@min(name.len, n.len - 1)]);
+    app.n_names += 1;
+}
+
+fn namesListener(_: *wl.Registry, event: wl.Registry.Event, app: *App) void {
+    switch (event) {
+        .global => |g| rememberName(app, std.mem.span(g.interface)),
+        .global_remove => {},
+    }
 }
 
 fn missing(global: []const u8) u8 {
@@ -118,7 +185,10 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, app: *App)
     switch (event) {
         .global => |g| {
             const name = std.mem.span(g.interface);
-            if (std.mem.eql(u8, name, std.mem.span(wl.Output.interface.name))) {
+            rememberName(app, name);
+            if (std.mem.eql(u8, name, std.mem.span(wp.SecurityContextManagerV1.interface.name))) {
+                app.security = registry.bind(g.name, wp.SecurityContextManagerV1, 1) catch return;
+            } else if (std.mem.eql(u8, name, std.mem.span(wl.Output.interface.name))) {
                 if (app.n_outputs == max_outputs or g.version < 4) return;
                 const o = registry.bind(g.name, wl.Output, 4) catch return;
                 app.outputs[app.n_outputs] = .{ .output = o };

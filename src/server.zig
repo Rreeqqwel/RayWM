@@ -15,6 +15,7 @@ const Workspace = workspace.Workspace;
 const lock = @import("lock.zig");
 const output_mod = @import("output.zig");
 const inputconfig = @import("inputconfig.zig");
+const protocols = @import("protocols.zig");
 
 pub const gpa = std.heap.c_allocator;
 const log = std.log.scoped(.server);
@@ -50,6 +51,7 @@ pub const Server = struct {
     session_lock: lock.SessionLock = undefined,
     output_mgmt: output_mod.Management = undefined,
     output_mgmt_ready: bool = false,
+    protocols: protocols.Protocols = undefined,
     idle_notifier: *wlr.IdleNotifierV1 = undefined,
     idle_inhibit: *wlr.IdleInhibitManagerV1 = undefined,
 
@@ -124,7 +126,7 @@ pub const Server = struct {
         };
         for (&server.layers) |*tree| tree.* = try scene.tree.createSceneTree();
 
-        try renderer.initServer(wl_server);
+        try protocols.initBuffers(server);
         _ = try wlr.Compositor.create(wl_server, 6, renderer);
         _ = try wlr.Subcompositor.create(wl_server);
         _ = try wlr.DataDeviceManager.create(wl_server);
@@ -143,6 +145,7 @@ pub const Server = struct {
         try server.session_lock.init(server);
         try server.output_mgmt.init(server);
         server.output_mgmt_ready = true;
+        try server.protocols.init(server);
         server.idle_notifier = try wlr.IdleNotifierV1.create(wl_server);
         server.idle_inhibit = try wlr.IdleInhibitManagerV1.create(wl_server);
         server.idle_inhibit.events.new_inhibitor.add(&server.new_inhibitor);
@@ -183,6 +186,7 @@ pub const Server = struct {
         server.wl_server.destroyClients();
         server.output_mgmt.deinit();
         server.output_mgmt_ready = false;
+        server.protocols.deinit();
         inline for (.{
             "new_output",        "layout_change",  "new_toplevel",      "new_popup",
             "new_input",         "request_cursor", "request_selection", "cursor_motion",

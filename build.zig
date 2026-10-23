@@ -18,11 +18,25 @@ pub fn build(b: *std.Build) void {
     scanner.addSystemProtocol("staging/ext-session-lock/ext-session-lock-v1.xml");
     scanner.addSystemProtocol("staging/ext-idle-notify/ext-idle-notify-v1.xml");
     scanner.addSystemProtocol("unstable/idle-inhibit/idle-inhibit-unstable-v1.xml");
+    scanner.addSystemProtocol("stable/viewporter/viewporter.xml");
+    scanner.addSystemProtocol("stable/linux-dmabuf/linux-dmabuf-v1.xml");
+    scanner.addSystemProtocol("staging/single-pixel-buffer/single-pixel-buffer-v1.xml");
+    scanner.addSystemProtocol("staging/fractional-scale/fractional-scale-v1.xml");
+    scanner.addSystemProtocol("staging/alpha-modifier/alpha-modifier-v1.xml");
+    scanner.addSystemProtocol("staging/cursor-shape/cursor-shape-v1.xml");
+    scanner.addSystemProtocol("staging/security-context/security-context-v1.xml");
+    scanner.addSystemProtocol("staging/ext-data-control/ext-data-control-v1.xml");
+    scanner.addSystemProtocol("unstable/primary-selection/primary-selection-unstable-v1.xml");
+    scanner.addSystemProtocol("unstable/xdg-foreign/xdg-foreign-unstable-v2.xml");
     scanner.addCustomProtocol(b.path("protocol/wlr-layer-shell-unstable-v1.xml"));
     // wlr-protocols as shipped with wlroots 0.20.2 (its protocol/ directory).
     scanner.addCustomProtocol(b.path("protocol/wlr-output-management-unstable-v1.xml"));
     scanner.addCustomProtocol(b.path("protocol/wlr-output-power-management-unstable-v1.xml"));
     scanner.addCustomProtocol(b.path("protocol/wlr-gamma-control-unstable-v1.xml"));
+    scanner.addCustomProtocol(b.path("protocol/wlr-data-control-unstable-v1.xml"));
+    // Client side for raywm-test-client only (presentation feedback); the
+    // compositor side is wlroots'. The copy works around a scanner bug.
+    scanner.addCustomProtocol(b.path("tests/protocol/presentation-time.xml"));
     if (test_input) {
         scanner.addCustomProtocol(b.path("tests/protocol/wlr-virtual-pointer-unstable-v1.xml"));
         scanner.addCustomProtocol(b.path("tests/protocol/virtual-keyboard-unstable-v1.xml"));
@@ -51,6 +65,19 @@ pub fn build(b: *std.Build) void {
     scanner.generate("zwlr_output_manager_v1", 4);
     scanner.generate("zwlr_output_power_manager_v1", 1);
     scanner.generate("zwlr_gamma_control_manager_v1", 1);
+    scanner.generate("wp_viewporter", 1);
+    scanner.generate("zwp_linux_dmabuf_v1", 5);
+    scanner.generate("wp_single_pixel_buffer_manager_v1", 1);
+    scanner.generate("wp_fractional_scale_manager_v1", 1);
+    scanner.generate("wp_alpha_modifier_v1", 1);
+    scanner.generate("wp_cursor_shape_manager_v1", 1);
+    scanner.generate("wp_security_context_manager_v1", 1);
+    scanner.generate("ext_data_control_manager_v1", 1);
+    scanner.generate("zwlr_data_control_manager_v1", 2);
+    scanner.generate("zwp_primary_selection_device_manager_v1", 1);
+    scanner.generate("zxdg_exporter_v2", 1);
+    scanner.generate("zxdg_importer_v2", 1);
+    scanner.generate("wp_presentation", 2);
 
     const wayland = b.createModule(.{ .root_source_file = scanner.result });
     const xkbcommon = b.dependency("xkbcommon", .{}).module("xkbcommon");

@@ -8,6 +8,21 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ### Added
 
+- **More Wayland protocols** (wlroots implements them; RayWM creates and
+  connects them), each checked with real requests in `tests/protocols.sh`:
+  - clipboard managers: wlr data control and ext-data-control (`wl-copy`
+    no longer maps a helper window, so tiles no longer jump; cliphist
+    works); primary selection (middle-click paste);
+  - fractional scale (clients get e.g. 1.5 as 180/120 when the output's
+    scale changes), viewporter, single-pixel buffers, alpha modifier,
+    presentation time (an update replaced before it was shown is
+    reported discarded), linux-dmabuf v5 with the GLES2 renderer (given
+    to the scene for per-surface feedback), xdg-foreign v2 (portal
+    dialogs), cursor shapes from the client that has the pointer;
+  - security-context-v1: clients started by a sandbox (Flatpak) do not
+    see privileged globals: screen capture, data control, output
+    management and power, gamma, layer shell, session lock, foreign
+    toplevel and workspace management, virtual input, input methods.
 - **Input configuration** (`config/plugins/input.lua`, in the example
   `init.lua` with every setting commented out):
   - `raywm.input_configure(match, settings)` for `"*"`, `"type:keyboard"`
