@@ -15,6 +15,8 @@ const Fake = struct {
     managed_changes: usize = 0,
     last_cmd: ?std.meta.Tag(lua.ViewCmd) = null,
     last_decoration: ?lua.Decoration = null,
+    opacities: [2]f32 = @splat(-1),
+    n_opacities: usize = 0,
     fs_outputs: [4]u32 = @splat(99),
     n_fs: usize = 0,
     /// A tiny workspace registry with the core's ownership rules.
@@ -41,6 +43,10 @@ const Fake = struct {
         pub fn viewCmd(f: *Fake, id: u32, cmd: lua.ViewCmd) bool {
             if (id != 1) return false;
             f.last_cmd = cmd;
+            if (cmd == .opacity and f.n_opacities < f.opacities.len) {
+                f.opacities[f.n_opacities] = cmd.opacity;
+                f.n_opacities += 1;
+            }
             if (cmd == .decoration) f.last_decoration = cmd.decoration;
             if (cmd == .fullscreen and f.n_fs < f.fs_outputs.len) {
                 f.fs_outputs[f.n_fs] = cmd.fullscreen.output;
@@ -636,6 +642,19 @@ test "a coroutine created before the budget ran out cannot swallow it either" {
     defer rt.destroy();
     rt.emit(.view_title, 1); // resumes the coroutine created in setup
     try std.testing.expectEqual(1, takeErrors());
+}
+
+test "non-finite Lua numbers are errors before native conversion or calls" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/numbers.lua", opts);
+    defer rt.destroy();
+    try std.testing.expectEqual(0, takeErrors());
+    try std.testing.expectEqual(1, f.count("numbers:ok"));
+    try std.testing.expectEqual(2, f.n_opacities);
+    try std.testing.expectEqual(@as(f32, 1), f.opacities[0]);
+    try std.testing.expectEqual(@as(f32, 0), f.opacities[1]);
+    try std.testing.expectEqual(1, f.count("configure:FAKE-1:800x600@0:0:-:-"));
 }
 
 test "v0.2.0 foundation: version, view metadata, event arguments, managed hook" {

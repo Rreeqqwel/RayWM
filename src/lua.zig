@@ -729,6 +729,14 @@ pub fn Runtime(comptime H: type) type {
             return @intCast(v);
         }
 
+        /// Reject NaN/infinity before float-to-int conversion, narrowing,
+        /// or wlroots setters: a plugin error must stay inside Lua.
+        fn number(L: ?*c.lua_State, i: c_int) f64 {
+            const value = c.luaL_checknumber(L, i);
+            if (!std.math.isFinite(value)) _ = c.luaL_argerror(L, i, "number must be finite");
+            return value;
+        }
+
         /// A string naming a field of enum `E`; raises an argument error
         /// listing the names otherwise.
         fn checkEnum(comptime E: type, L: ?*c.lua_State, i: c_int) E {
@@ -993,7 +1001,7 @@ pub fn Runtime(comptime H: type) type {
                         []const u8 => if (c.lua_type(L, -1) == c.LUA_TSTRING) std.mem.span(c.lua_tolstring(L, -1, null)) else return c.luaL_error(L, "%s must be a string", f.name.ptr),
                         bool => c.lua_toboolean(L, -1) != 0,
                         i32 => if (c.lua_isinteger(L, -1) != 0) @intCast(std.math.clamp(c.lua_tointegerx(L, -1, null), -1, 1 << 20)) else return c.luaL_error(L, "%s must be an integer", f.name.ptr),
-                        f64 => if (c.lua_type(L, -1) == c.LUA_TNUMBER) c.lua_tonumberx(L, -1, null) else return c.luaL_error(L, "%s must be a number", f.name.ptr),
+                        f64 => if (c.lua_type(L, -1) == c.LUA_TNUMBER) number(L, -1) else return c.luaL_error(L, "%s must be a number", f.name.ptr),
                         else => unreachable,
                     };
                 };
@@ -1099,15 +1107,16 @@ pub fn Runtime(comptime H: type) type {
                         v[i] = @intCast(std.math.clamp(c.lua_tointegerx(L, -1, null), 0, 16384));
                         c.lua_settop(L, -2);
                     }
-                    _ = c.lua_getfield(L, -1, "refresh"); // Hz
-                    v[2] = @intFromFloat(@round(std.math.clamp(c.lua_tonumberx(L, -1, null), 0, 1000) * 1000));
+                    const refresh_type = c.lua_getfield(L, -1, "refresh"); // Hz
+                    const refresh = if (refresh_type == c.LUA_TNIL) 0 else number(L, -1);
+                    v[2] = @intFromFloat(@round(std.math.clamp(refresh, 0, 1000) * 1000));
                     c.lua_settop(L, -2);
                     cfg.mode = v;
                 },
                 else => return c.luaL_error(L, "mode must be a string or { w, h, refresh }"),
             }
             c.lua_settop(L, -2);
-            if (c.lua_getfield(L, 2, "scale") != c.LUA_TNIL) cfg.scale = c.luaL_checknumber(L, -1);
+            if (c.lua_getfield(L, 2, "scale") != c.LUA_TNIL) cfg.scale = number(L, -1);
             c.lua_settop(L, -2);
             if (c.lua_getfield(L, 2, "transform") != c.LUA_TNIL) cfg.transform = std.mem.span(c.luaL_checklstring(L, -1, null));
             c.lua_settop(L, -2);
@@ -1289,7 +1298,7 @@ pub fn Runtime(comptime H: type) type {
                     const cmd: ViewCmd = switch (tag) {
                         .move => .{ .move = .{ int(L, 2), int(L, 3) } },
                         .place => .{ .place = .{ .x = int(L, 2), .y = int(L, 3), .w = int(L, 4), .h = int(L, 5) } },
-                        .opacity => .{ .opacity = @floatCast(c.luaL_checknumber(L, 2)) },
+                        .opacity => .{ .opacity = @floatCast(std.math.clamp(number(L, 2), 0, 1)) },
                         .show => .{ .show = c.lua_toboolean(L, 2) != 0 },
                         .floating => .{ .floating = c.lua_toboolean(L, 2) != 0 },
                         .fullscreen => .{ .fullscreen = .{
