@@ -418,29 +418,16 @@ fn processMotion(server: *Server, time_msec: u32) void {
             if (w == g.w and h == g.h) return;
             g.w = w;
             g.h = h;
-            // Position follows in onCommit, once the client picked its size.
-            view.anchor = .{ .serial = view.xdg.setSize(w, h), .edges = g.edges, .box = g.box };
+            // Position follows on commit, once the client picked its size.
+            view.resizeAnchored(w, h, g.edges, g.box);
         },
     }
 }
 
-/// During a resize from the left/top edge the opposite edge stays fixed,
-/// using the size the client actually committed (it may round, e.g. to
-/// terminal cells). This continues after the button is released, until the
-/// client has acked the last resize configure.
-pub fn onCommit(server: *Server, view: *View) void {
-    const a = view.anchor orelse return;
-    const geo = view.xdg.base.geometry;
-    if (a.edges.left) view.x = a.box.x +| a.box.width -| geo.width;
-    if (a.edges.top) view.y = a.box.y +| a.box.height -| geo.height;
-    if (server.grab.view != view and srv.serialReached(view.xdg.base.current.configure_serial, a.serial)) view.anchor = null;
-}
-
 /// A layout plugin (ctx.manage) owns the geometry of this window, so free
 /// interactive move/resize must not start, whoever asks for it.
-fn layoutManaged(server: *Server, view: *View) bool {
-    const rt = server.rt orelse return false;
-    return rt.managed(view.id);
+fn layoutManaged(_: *Server, view: *View) bool {
+    return view.managed();
 }
 
 pub fn beginMove(server: *Server, view: *View, from_client: bool) void {
@@ -456,7 +443,7 @@ pub fn beginResize(server: *Server, view: *View, edges: wlr.Edges, from_client: 
     view.pending = null;
     const box = view.geometry();
     server.grab = .{ .mode = .resize, .view = view, .cx = server.cursor.x, .cy = server.cursor.y, .box = box, .edges = edges, .forward_release = from_client, .button = server.seat.pointer_state.grab_button, .w = box.width, .h = box.height };
-    _ = view.xdg.setResizing(true);
+    _ = view.setResizing(true);
     startGrab(server, "se-resize");
 }
 
@@ -473,10 +460,7 @@ fn startGrab(server: *Server, cursor: [*:0]const u8) void {
 pub fn endGrab(server: *Server) void {
     const g = server.grab;
     server.grab = .{};
-    if (g.mode == .resize) if (g.view) |v| if (v.mapped) {
-        const serial = v.xdg.setResizing(false);
-        if (v.anchor) |*a| a.serial = serial;
-    };
+    if (g.mode == .resize) if (g.view) |v| if (v.mapped) v.endResize();
     refocusPointer(server);
 }
 

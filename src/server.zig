@@ -19,9 +19,10 @@ pub var verbose = false;
 /// Stored in SceneNode.data of trees we own, to identify them on hit tests.
 pub const Tag = enum { view, layer };
 
-/// Scene layers, bottom to top. `popups` holds popups of layer surfaces,
-/// so a dock's menu is never hidden behind windows.
-pub const Layer = enum { background, bottom, views, top, overlay, popups };
+/// Scene layers, bottom to top. Windows a layout manages are `tiled`,
+/// others `floating`. `popups` holds popups of layer surfaces, so a dock's
+/// menu is never hidden behind windows.
+pub const Layer = enum { background, bottom, tiled, floating, top, fullscreen, overlay, popups, unmanaged, drag, lock };
 
 pub const Server = struct {
     /// Host functions for the Lua runtime.
@@ -44,6 +45,8 @@ pub const Server = struct {
 
     /// Mapped views, most recently focused first.
     views: wl.list.Head(View, .link) = undefined,
+    /// Every view by id, mapped or not.
+    view_ids: std.AutoHashMapUnmanaged(u32, *View) = .empty,
     outputs: wl.list.Head(Output, .link) = undefined,
     keyboards: wl.list.Head(input.Keyboard, .link) = undefined,
     focused: ?*View = null,
@@ -155,6 +158,7 @@ pub const Server = struct {
             "new_layer_surface",
         }) |name| @field(server, name).link.remove();
         server.scene.tree.node.destroy();
+        server.view_ids.deinit(gpa);
         server.cursor_mgr.destroy();
         server.cursor.destroy();
         server.allocator.destroy();
@@ -172,15 +176,20 @@ pub const Server = struct {
         if (server.rt) |rt| rt.emit(ev, id);
     }
 
+    pub fn emitArgs(server: *Server, ev: lua.Event, id: u32, args: []const lua.Arg) void {
+        log.debug("event {s} id={d}", .{ @tagName(ev), id });
+        if (server.rt) |rt| rt.emitArgs(ev, id, args);
+    }
+
     pub fn nextId(server: *Server) u32 {
         defer server.next_id = if (server.next_id == std.math.maxInt(u32)) 1 else server.next_id + 1;
         return server.next_id;
     }
 
+    /// A mapped view by id.
     pub fn viewById(server: *Server, id: u32) ?*View {
-        var it = server.views.iterator(.forward);
-        while (it.next()) |v| if (v.id == id) return v;
-        return null;
+        const v = server.view_ids.get(id) orelse return null;
+        return if (v.mapped) v else null;
     }
 
     pub fn outputAt(server: *Server, x: i32, y: i32) ?*Output {
@@ -190,10 +199,28 @@ pub const Server = struct {
         return null;
     }
 
-    /// Most recently focused view that is not hidden by a plugin.
+    /// Most recently focused visible view.
     pub fn firstVisible(server: *Server) ?*View {
         var it = server.views.iterator(.forward);
-        while (it.next()) |v| if (v.tree.node.enabled) return v;
+        while (it.next()) |v| if (v.visible()) return v;
+        return null;
+    }
+
+    /// Where keyboard focus goes when `gone` loses it (closed, hidden): the
+    /// most recently focused visible view on the same output, else any.
+    pub fn focusFallback(server: *Server, gone: *View) ?*View {
+        const g = gone.geometry();
+        const out = server.outputAt(g.x +| @divTrunc(g.width, 2), g.y +| @divTrunc(g.height, 2));
+        if (out) |o| {
+            var it = server.views.iterator(.forward);
+            while (it.next()) |v| {
+                if (v == gone or !v.visible()) continue;
+                const vg = v.geometry();
+                if (server.outputAt(vg.x +| @divTrunc(vg.width, 2), vg.y +| @divTrunc(vg.height, 2)) == o) return v;
+            }
+        }
+        var it = server.views.iterator(.forward);
+        while (it.next()) |v| if (v != gone and v.visible()) return v;
         return null;
     }
 
@@ -218,9 +245,9 @@ pub const Server = struct {
             const ls = server.layer_focus orelse return;
             if (ls.wlr_layer.current.keyboard_interactive == .exclusive) return;
             server.layer_focus = null;
-            return server.keyboardEnter(view.?.xdg.base.surface);
+            return server.keyboardEnter(view.?.surface());
         }
-        if (server.focused) |old| _ = old.xdg.setActivated(false);
+        if (server.focused) |old| old.setActivated(false);
         server.focused = view;
         const v = view orelse {
             if (server.layer_focus == null) server.seat.keyboardNotifyClearFocus();
@@ -231,14 +258,14 @@ pub const Server = struct {
         v.link.remove();
         server.views.prepend(v);
         v.tree.node.raiseToTop();
-        _ = v.xdg.setActivated(true);
+        v.setActivated(true);
         // An exclusive layer surface (e.g. a launcher) keeps the keyboard;
         // an on-demand one gives it up when a window is chosen.
         if (server.layer_focus) |ls| {
             if (ls.wlr_layer.current.keyboard_interactive == .exclusive) return server.emit(.view_focus, v.id);
             server.layer_focus = null;
         }
-        server.keyboardEnter(v.xdg.base.surface);
+        server.keyboardEnter(v.surface());
         server.emit(.view_focus, v.id);
     }
 
@@ -246,7 +273,7 @@ pub const Server = struct {
     pub fn focusLayer(server: *Server, ls: ?*LayerSurface) void {
         server.layer_focus = ls;
         if (ls) |l| return server.keyboardEnter(l.wlr_layer.surface);
-        if (server.focused) |v| server.keyboardEnter(v.xdg.base.surface) else server.seat.keyboardNotifyClearFocus();
+        if (server.focused) |v| server.keyboardEnter(v.surface()) else server.seat.keyboardNotifyClearFocus();
     }
 
     fn keyboardEnter(server: *Server, surface: *wlr.Surface) void {
@@ -307,9 +334,9 @@ pub const Server = struct {
         if (server.activeOutputBox()) |box| {
             var it = server.views.iterator(.forward);
             while (it.next()) |v| {
-                const geo = v.xdg.base.geometry;
-                const cx: f64 = @floatFromInt(v.x +| @divTrunc(geo.width, 2));
-                const cy: f64 = @floatFromInt(v.y +| @divTrunc(geo.height, 2));
+                const geo = v.geometry();
+                const cx: f64 = @floatFromInt(geo.x +| @divTrunc(geo.width, 2));
+                const cy: f64 = @floatFromInt(geo.y +| @divTrunc(geo.height, 2));
                 if (server.output_layout.outputAt(cx, cy) == null) v.move(box.x, box.y);
             }
         }

@@ -11,6 +11,9 @@ const Fake = struct {
     /// Set by tests that need nested dispatch, like the real compositor:
     /// focusing a view emits view_focus while Lua is still running.
     rt: ?*RT = null,
+    /// Host hooks of v0.2.0: managed-state changes, last view command.
+    managed_changes: usize = 0,
+    last_cmd: ?std.meta.Tag(lua.ViewCmd) = null,
 
     pub const Api = struct {
         pub fn views(_: *Fake, buf: []u32) usize {
@@ -23,6 +26,7 @@ const Fake = struct {
         }
         pub fn viewCmd(f: *Fake, id: u32, cmd: lua.ViewCmd) bool {
             if (id != 1) return false;
+            f.last_cmd = cmd;
             if (cmd == .focus) if (f.rt) |rt| rt.emit(.view_focus, id);
             return true;
         }
@@ -52,6 +56,9 @@ const Fake = struct {
         }
         pub fn armTimer(f: *Fake, ms: ?u32) void {
             f.timer_ms = ms;
+        }
+        pub fn managedChanged(f: *Fake, _: u32) void {
+            f.managed_changes += 1;
         }
         pub fn pointer(_: *Fake) lua.PointerInfo {
             return .{ .x = 10, .y = 20, .busy = false };
@@ -522,4 +529,39 @@ test "a coroutine created before the budget ran out cannot swallow it either" {
     defer rt.destroy();
     rt.emit(.view_title, 1); // resumes the coroutine created in setup
     try std.testing.expectEqual(1, takeErrors());
+}
+
+test "v0.2.0 foundation: version, view metadata, event arguments, managed hook" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/v020.lua", opts);
+    defer rt.destroy();
+    const t = std.testing;
+    try t.expectEqual(0, takeErrors());
+    try t.expectEqual(1, f.count("version:" ++ lua.version));
+    try t.expectEqual(1, f.count("meta:false:false:0:0:false:false:0"));
+    try t.expectEqual(1, f.count("floating:true"));
+    try t.expectEqual(1, f.count("floatingstale:nil"));
+    try t.expectEqual(.floating, f.last_cmd.?);
+
+    // Extra handler arguments arrive after the id, in order.
+    rt.emitArgs(.view_state, 1, &.{ .{ .int = 5 }, .{ .boolean = true }, .nil });
+    try t.expectEqual(1, f.count("state:1:5:true:nil"));
+
+    // ctx.manage on and off tell the host at once...
+    const before = f.managed_changes;
+    rt.emit(.view_new, 1);
+    try t.expect(rt.managed(1));
+    try t.expectEqual(before + 1, f.managed_changes);
+    rt.emit(.view_app_id, 1);
+    try t.expect(!rt.managed(1));
+    try t.expect(f.managed_changes >= before + 2);
+    // ...and so does a managed view released by an unload (reload here).
+    rt.emit(.view_new, 1);
+    try t.expect(rt.managed(1));
+    const mid = f.managed_changes;
+    rt.requestReload();
+    try t.expect(f.managed_changes > mid);
+    try t.expect(!rt.managed(1));
+    try t.expectEqual(0, takeErrors());
 }

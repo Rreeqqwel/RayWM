@@ -15,15 +15,58 @@ const log = std.log.scoped(.lua);
 const gpa = std.heap.c_allocator;
 
 pub const api_version = 1;
-pub const Event = enum { view_map, view_unmap, view_focus, view_title, view_resized, output_add, output_remove, layout };
+/// RayWM release this host belongs to (raywm.version).
+pub const version = "0.2.0-dev";
+pub const Event = enum {
+    view_map,
+    view_unmap,
+    view_focus,
+    view_title,
+    view_resized,
+    output_add,
+    output_remove,
+    layout,
+    // v0.2.0
+    /// A window was mapped; fired before view_map, for window rules.
+    view_new,
+    /// floating, fullscreen, maximized or urgent changed (after view_map).
+    view_state,
+    view_app_id,
+};
+/// Extra handler arguments after the id (most events have none).
+pub const Arg = union(enum) { int: i64, boolean: bool, nil };
 pub const Box = struct { x: i32, y: i32, w: i32, h: i32 };
-pub const ViewInfo = struct { box: Box, title: ?[*:0]const u8, app_id: ?[*:0]const u8, focused: bool, output: u32, visible: bool = true };
+pub const ViewInfo = struct {
+    box: Box,
+    title: ?[*:0]const u8,
+    app_id: ?[*:0]const u8,
+    focused: bool,
+    output: u32,
+    visible: bool = true,
+    // v0.2.0. Sizes are 0 when the client sets no limit.
+    parent: u32 = 0,
+    min_w: i32 = 0,
+    min_h: i32 = 0,
+    max_w: i32 = 0,
+    max_h: i32 = 0,
+    floating: bool = false,
+    fullscreen: bool = false,
+    fullscreen_output: u32 = 0,
+    maximized: bool = false,
+    workspace: u32 = 0,
+    urgent: bool = false,
+    /// A live plugin manages its geometry (ctx.manage).
+    managed: bool = false,
+    xwayland: bool = false,
+    /// Process id of the client, 0 if unknown.
+    pid: i32 = 0,
+};
 pub const OutputInfo = struct { box: Box, usable: Box };
 /// Border drawn outside a window: width in pixels (0 removes it) and a
 /// premultiplied RGBA color.
 pub const Border = struct { width: i32, color: [4]f32 };
 pub const max_border = 64;
-pub const ViewCmd = union(enum) { move: [2]i32, place: Box, opacity: f32, raise, focus, close, show: bool, border: Border };
+pub const ViewCmd = union(enum) { move: [2]i32, place: Box, opacity: f32, raise, focus, close, show: bool, border: Border, floating: bool };
 /// `busy`: a pointer grab is active (compositor move/resize, a held button
 /// or a client's popup grab); warping is refused then.
 pub const PointerInfo = struct { x: i32, y: i32, busy: bool };
@@ -212,9 +255,11 @@ pub fn Runtime(comptime H: type) type {
             c.lua_pushnil(L);
             c.lua_rawseti(L, -2, 3);
             c.lua_settop(L, -3);
-            c.lua_createtable(L, 0, globals.len + 1);
+            c.lua_createtable(L, 0, globals.len + 2);
             c.lua_pushinteger(L, api_version);
             c.lua_setfield(L, -2, "api_version");
+            _ = c.lua_pushstring(L, version);
+            c.lua_setfield(L, -2, "version");
             inline for (globals) |g| {
                 c.lua_pushlightuserdata(L, self);
                 c.lua_pushcclosure(L, g[1], 1);
@@ -296,15 +341,19 @@ pub fn Runtime(comptime H: type) type {
                     self.depth -= 1;
                 }
                 var j: usize = 0;
+                var released_manage = false;
                 for (self.regs.items) |r| {
                     if (self.live(r)) {
                         self.regs.items[j] = r;
                         j += 1;
                     } else {
                         if (r.ref != no_ref) c.luaL_unref(self.L, c.LUA_REGISTRYINDEX, r.ref);
+                        if (r.kind == .manage) released_manage = true;
                     }
                 }
                 self.regs.shrinkRetainingCapacity(j);
+                // After compaction, so the host sees a consistent list.
+                if (released_manage) self.managedChanged(0);
             }
             self.armTimer();
         }
@@ -339,6 +388,11 @@ pub fn Runtime(comptime H: type) type {
         // ---- calls from the compositor -----------------------------------
 
         pub fn emit(self: *Self, ev: Event, id: u32) void {
+            self.emitArgs(ev, id, &.{});
+        }
+
+        /// Calls every handler of `ev` as fn(id, args...).
+        pub fn emitArgs(self: *Self, ev: Event, id: u32, args: []const Arg) void {
             // While init.lua runs, events are not delivered (same as on the
             // first start, before the runtime is attached to the compositor).
             if (!self.alive or self.in_config) return;
@@ -355,8 +409,19 @@ pub fn Runtime(comptime H: type) type {
                 if (!self.live(r) or r.kind != .event or r.kind.event != ev) continue;
                 _ = c.lua_rawgeti(self.L, c.LUA_REGISTRYINDEX, r.ref);
                 c.lua_pushinteger(self.L, id);
-                _ = self.pcall(r.plugin, 1, 0);
+                for (args) |a| switch (a) {
+                    .int => |v| c.lua_pushinteger(self.L, v),
+                    .boolean => |v| c.lua_pushboolean(self.L, @intFromBool(v)),
+                    .nil => c.lua_pushnil(self.L),
+                };
+                _ = self.pcall(r.plugin, @intCast(1 + args.len), 0);
             }
+        }
+
+        /// Tells the host that view `id` (0: any view) may have gained or
+        /// lost its last managing plugin. Never calls back into Lua.
+        fn managedChanged(self: *Self, id: u32) void {
+            if (@hasDecl(Api, "managedChanged")) Api.managedChanged(self.host, id);
         }
 
         pub fn key(self: *Self, mods: u32, sym: u32) bool {
@@ -508,6 +573,8 @@ pub fn Runtime(comptime H: type) type {
             .{ "pointer_warp", lPointerWarp },    .{ "spawn", lSpawn },
             .{ "quit", lQuit },                   .{ "reload", lReload },
             .{ "log", lLog },
+            // v0.2.0
+                                .{ "view_floating", viewCmd(.floating) },
         };
 
         const ctx_fns = .{
@@ -609,6 +676,11 @@ pub fn Runtime(comptime H: type) type {
             return 1;
         }
 
+        fn setBool(L: ?*c.lua_State, name: [*:0]const u8, v: bool) void {
+            c.lua_pushboolean(L, @intFromBool(v));
+            c.lua_setfield(L, -2, name);
+        }
+
         fn lView(L: ?*c.lua_State) callconv(.c) c_int {
             const vid = checkId(L, 1);
             const info = Api.view(get(L).host, vid) orelse return stale(L);
@@ -619,10 +691,23 @@ pub fn Runtime(comptime H: type) type {
             c.lua_setfield(L, -2, "title");
             _ = c.lua_pushstring(L, info.app_id orelse "");
             c.lua_setfield(L, -2, "app_id");
-            c.lua_pushboolean(L, @intFromBool(info.focused));
-            c.lua_setfield(L, -2, "focused");
-            c.lua_pushboolean(L, @intFromBool(info.visible));
-            c.lua_setfield(L, -2, "visible");
+            setBool(L, "focused", info.focused);
+            setBool(L, "visible", info.visible);
+            // v0.2.0
+            setInt(L, "parent", info.parent);
+            setInt(L, "min_w", info.min_w);
+            setInt(L, "min_h", info.min_h);
+            setInt(L, "max_w", info.max_w);
+            setInt(L, "max_h", info.max_h);
+            setBool(L, "floating", info.floating);
+            setBool(L, "fullscreen", info.fullscreen);
+            setInt(L, "fullscreen_output", info.fullscreen_output);
+            setBool(L, "maximized", info.maximized);
+            setInt(L, "workspace", info.workspace);
+            setBool(L, "urgent", info.urgent);
+            setBool(L, "managed", info.managed);
+            setBool(L, "xwayland", info.xwayland);
+            setInt(L, "pid", info.pid);
             return 1;
         }
 
@@ -673,6 +758,7 @@ pub fn Runtime(comptime H: type) type {
                         .place => .{ .place = .{ .x = int(L, 2), .y = int(L, 3), .w = int(L, 4), .h = int(L, 5) } },
                         .opacity => .{ .opacity = @floatCast(c.luaL_checknumber(L, 2)) },
                         .show => .{ .show = c.lua_toboolean(L, 2) != 0 },
+                        .floating => .{ .floating = c.lua_toboolean(L, 2) != 0 },
                         .border => .{ .border = border(L) },
                         inline else => |t| t,
                     };
@@ -799,12 +885,14 @@ pub fn Runtime(comptime H: type) type {
             for (self.regs.items) |*r| if (r.kind == .manage and r.kind.manage == vid and r.plugin == owner(L)) {
                 r.dead = !on;
                 if (!on) self.sweep_needed = true;
+                self.managedChanged(vid);
                 c.lua_pushboolean(L, 1);
                 return 1;
             };
             if (on) {
                 _ = register(L, 0, .{ .manage = vid });
                 c.lua_settop(L, -2);
+                self.managedChanged(vid);
             }
             c.lua_pushboolean(L, 1);
             return 1;

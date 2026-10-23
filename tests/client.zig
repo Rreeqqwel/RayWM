@@ -96,6 +96,8 @@ pub fn main() !void {
     wm_base.setListener(?*anyopaque, wmBaseListener, null);
 
     const surface = try compositor.createSurface();
+    // wl_surface.enter arrives when the window is first shown on an output.
+    surface.setListener(?*anyopaque, surfaceListener, null);
     const xdg_surface = try wm_base.getXdgSurface(surface);
     // Two rounds on the same xdg_surface: destroying the toplevel role and
     // creating a new one must work (and must not leak compositor state).
@@ -520,6 +522,9 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, g: *Global
                 g.seat = seat;
             } else if (std.mem.eql(u8, name, std.mem.span(zwlr.LayerShellV1.interface.name))) {
                 g.layer_shell = registry.bind(global.name, zwlr.LayerShellV1, 4) catch return;
+            } else if (std.mem.eql(u8, name, std.mem.span(wl.Output.interface.name))) {
+                // Bound so that wl_surface.enter can name the output.
+                _ = registry.bind(global.name, wl.Output, 1) catch return;
             }
         },
         .global_remove => {},
@@ -555,6 +560,13 @@ fn toplevelListener(_: *xdg.Toplevel, event: xdg.Toplevel.Event, state: *State) 
             step("close requested", .{});
             state.close_requested = true;
         },
+    }
+}
+
+fn surfaceListener(_: *wl.Surface, event: wl.Surface.Event, _: ?*anyopaque) void {
+    switch (event) {
+        .enter => step("surface enter", .{}),
+        .leave => step("surface leave", .{}),
     }
 }
 

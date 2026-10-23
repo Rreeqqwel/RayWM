@@ -24,13 +24,22 @@ pub fn view(server: *Server, id: u32) ?lua.ViewInfo {
     const v = server.viewById(id) orelse return null;
     const g = v.geometry();
     const out = server.outputAt(g.x +| @divTrunc(g.width, 2), g.y +| @divTrunc(g.height, 2));
+    const hints = v.sizeHints();
     return .{
         .box = .{ .x = g.x, .y = g.y, .w = g.width, .h = g.height },
-        .title = v.xdg.title,
-        .app_id = v.xdg.app_id,
+        .title = v.title(),
+        .app_id = v.appId(),
         .focused = server.focused == v,
         .output = if (out) |o| o.id else 0,
-        .visible = v.tree.node.enabled,
+        .visible = v.visible(),
+        .parent = if (v.parent()) |p| p.id else 0,
+        .min_w = hints.min[0],
+        .min_h = hints.min[1],
+        .max_w = hints.max[0],
+        .max_h = hints.max[1],
+        .floating = v.floating,
+        .managed = v.managed(),
+        .pid = v.pid(),
     };
 }
 
@@ -41,17 +50,29 @@ pub fn viewCmd(server: *Server, id: u32, cmd: lua.ViewCmd) bool {
         .place => |b| v.place(coord(b.x), coord(b.y), std.math.clamp(b.w, 1, max_coord), std.math.clamp(b.h, 1, max_coord)),
         .opacity => |a| v.setOpacity(a),
         .raise => v.tree.node.raiseToTop(),
-        .focus => if (v.tree.node.enabled) server.focus(v),
-        .close => v.xdg.sendClose(),
+        .focus => if (v.visible()) server.focus(v),
+        .close => v.close(),
         .show => |on| {
-            v.tree.node.setEnabled(on);
+            v.setHidden(!on);
             // Never leave keyboard focus on a window the user cannot see.
-            if (!on and server.focused == v) server.focus(server.firstVisible());
+            if (!on and server.focused == v) server.focus(server.focusFallback(v));
         },
         .border => |b| v.setBorder(b.width, &b.color) catch std.log.err("out of memory", .{}),
+        .floating => |on| v.setFloating(on),
     }
     input.refocusPointer(server);
     return true;
+}
+
+/// From the Lua runtime: view `id` (0: any) may have gained or lost the
+/// plugin that lays it out, which decides its stacking layer.
+pub fn managedChanged(server: *Server, id: u32) void {
+    if (id != 0) {
+        if (server.viewById(id)) |v| v.restack();
+        return;
+    }
+    var it = server.views.iterator(.forward);
+    while (it.next()) |v| v.restack();
 }
 
 pub fn pointer(server: *Server) lua.PointerInfo {
