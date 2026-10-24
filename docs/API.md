@@ -223,7 +223,7 @@ its old workspaces before creating new ones. See the shipped
 
 `outputs({all = true})` also lists disabled outputs. Output entries add
 `name`, `description`, `make`, `model`, `serial`, `workspace`, `enabled`,
-`power`, `scale`, `transform`, `adaptive_sync`, `mode = {w, h, refresh}`
+`power`, `scale`, `transform`, `adaptive_sync`, `allow_tearing` (0.2.1), `mode = {w, h, refresh}`
 (refresh in millihertz), and `physical = {w, h}` (millimetres).
 `output_modes(id)` returns `{w, h, refresh, preferred, current}` entries,
 or `nil, "stale"`.
@@ -232,7 +232,10 @@ or `nil, "stale"`.
 (`"1920x1080@60"`, `"1920x1080"`, or `{w=1920,h=1080,refresh=60}` with
 refresh in Hz), `scale`, `transform` (`"normal"`, `"90"`, `"180"`, `"270"`,
 `"flipped"`, `"flipped-90"`, `"flipped-180"`, `"flipped-270"`), `position`
-(`"auto"` or `{x,y}`), and `adaptive_sync`. Missing fields are unchanged.
+(`"auto"` or `{x,y}`), `adaptive_sync`, and (0.2.1) `allow_tearing`, which
+lets a visible fullscreen window that asks for async presentation use
+tearing page flips on that output (RayWM policy, default false; see
+GAMING.md). Missing fields are unchanged.
 The core tests the transaction before applying it and refuses to disable
 the last output. Results are `true` or `nil` plus `stale`, `no_output_left`,
 `bad_mode`, `bad_scale`, `bad_transform`, `rejected`, or `failed`.

@@ -4,6 +4,53 @@ All notable changes to RayWM. Versions follow [Semantic
 Versioning](https://semver.org/); before 1.0, minor versions may break
 the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
+## [v0.2.1] — Gaming Patch, candidate prepared 2026-10-24
+
+Prompted by the first external report (osu!, RTX 2050 laptop, about
+1000 FPS elsewhere and about 200 FPS on RayWM). That report could not be
+reproduced here (no NVIDIA hardware, game or measurement details); the
+changes below are defects found and measured independently. See
+`dist/RELEASE-REPORT-v0.2.1.md`.
+
+### Fixed
+
+- **Taskbar traffic on every client commit.** Each surface commit made
+  RayWM republish every window to foreign-toplevel clients, and wlroots
+  sends `title`/`app_id`/`done` for those unconditionally. An uncapped
+  client made a passive taskbar receive about 500,000 events in 3 s
+  (headless sample) and spend about half a CPU core on them. Taskbars are
+  now updated only when a window's geometry, title or state changes.
+- **X11 windows fullscreen or maximized before their first map** (SDL and
+  Wine games) were left at their initial size, centred on black, and
+  shrank to 1×1 when leaving that state. They are now configured to the
+  output or usable area with the state confirmed, and restore their own
+  size afterwards.
+
+### Added
+
+- Explicit synchronization (`linux-drm-syncobj-v1`), advertised only when
+  the renderer and backend both support DRM syncobj timelines; the scene
+  handles acquire/release fences (also for animation snapshots).
+  `RAYWM_EXPLICIT_SYNC=0` turns it off.
+- `tearing-control-v1` and opt-in tearing page flips: per output
+  `allow_tearing = true`, used only for a visible fullscreen window that
+  asks for async presentation, tested first with synchronized fallback,
+  never while locked.
+- `raywmctl perf` / IPC `perf`: renderer, render node, capability status,
+  per-output mode, presentation path (scanout or composited, as committed),
+  bounded frame/commit/present counters and timing percentiles. Local only,
+  no client data.
+- A log hint when a monitor runs below the highest refresh rate it offers at
+  that resolution.
+- `docs/GAMING.md`, `docs/GAMING-TESTING.md`; `tests/perf.sh`,
+  `raywm-test-perf`, `tests/gaming_bench.py`; two Xwayland scenarios.
+
+### Changed
+
+- Output frames use `wlr_scene_output_build_state` + `wlr_output_commit_state`
+  (the two halves of `wlr_scene_output_commit`) so the presentation path and
+  failures can be observed. Rendering decisions remain wlroots'.
+
 ## [v0.2.0] — candidate prepared 2026-10-23
 
 ### Added

@@ -10,13 +10,14 @@ correctness ahead of artificial code reduction.
 - Everything that is policy is a Lua plugin: tiling, key bindings and
   window rules.
 
-> **Status: v0.2.0 release candidate, experimental.** The continuation preserves
-> the v0.1.2 core and adds native window state, workspaces, configuration
-> and protocol support. Implementation and validation are recorded in
-> [the development ledger](docs/DEVELOPMENT.md) and
+> **Status: v0.2.1 (Gaming Patch) release candidate, experimental.** v0.2.1
+> fixes gaming-path defects found after the v0.2.0 candidate and adds
+> performance diagnostics; see [CHANGELOG.md](CHANGELOG.md) and
+> [docs/GAMING.md](docs/GAMING.md). Earlier implementation and validation
+> are recorded in [the development ledger](docs/DEVELOPMENT.md) and
 > [candidate acceptance](docs/RELEASE-STATUS.md). This checkout is not a
-> published v0.2.0 release. Headless tests do not establish physical
-> hardware compatibility.
+> published release. Headless tests do not establish physical hardware
+> compatibility.
 
 ## Features
 
@@ -59,6 +60,10 @@ correctness ahead of artificial code reduction.
   See [EFFECTS.md](docs/EFFECTS.md).
 - **External IPC v1:** bounded local JSON queries, events and focus/workspace
   actions, with `raywmctl`; see [IPC.md](docs/IPC.md).
+- **Gaming path** (0.2.1): direct scanout through wlroots when eligible,
+  explicit sync when the GPU stack supports it, opt-in tearing for
+  fullscreen games, and `raywmctl perf` diagnostics; see
+  [GAMING.md](docs/GAMING.md).
 - **Interactive move/resize** for floating windows (Super + drag, or the
   client's own title bar).
 - **Lua 5.4 plugin system (API v1).**

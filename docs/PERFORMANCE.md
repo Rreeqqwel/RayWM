@@ -1,3 +1,50 @@
+# v0.2.1 gaming-path samples
+
+Measured on 2026-10-24 on one host (Xeon E5-2680 v3, 24 threads; AMD RX 580
+render node `/dev/dri/renderD128`, Mesa; Linux 7.2.11-zen1), Zig 0.16.0
+ReleaseSafe **test** builds, wlroots 0.20.2, headless backend at 1280×720
+(60 Hz frame timer). Baseline: v0.2.0 `76d2d8c`; candidate: the v0.2.1
+working tree. Five sessions per scenario, run interleaved per renderer, one
+`raywm-test-perf` binary for both builds. Values are median (min–max).
+Commit rates are what an uncapped client achieved; they measure how quickly
+the compositor accepts and releases buffers, not FPS on a monitor.
+
+| Renderer | Scenario | Metric | v0.2.0 | v0.2.1 |
+|---|---|---|---:|---:|
+| pixman | idle, no windows / one window (3 s) | compositor CPU ms | 0 / 0 | 0 / 0 |
+| pixman | uncapped window | commits/s | 102,629 (87,989–107,685) | 110,130 (93,759–115,031) |
+| pixman | uncapped fullscreen | commits/s | 95,652 (91,398–97,572) | 108,928 (107,143–110,177) |
+| pixman | uncapped fullscreen + panel | commits/s | 102,597 (95,861–104,929) | 108,624 (102,220–111,236) |
+| pixman | uncapped fullscreen + 3 windows + taskbar | commits/s | 66,721 (64,955–67,120) | 108,827 (100,389–115,453) |
+| pixman | same | taskbar `title` events | 540,221 | 4 |
+| pixman | same | taskbar CPU ms / 3 s | 1,720 (1,630–1,900) | 0 |
+| pixman | frame-callback client | presented/s | 58.5 | 58.4 |
+| gles2 | uncapped fullscreen (shm upload bound) | commits/s | 1,289 (1,254–1,304) | 1,606 (1,592–1,618) |
+| gles2 | same + 3 windows + taskbar | taskbar `title` events | 7,001 | 4 |
+| gles2 | glxgears via Xwayland, fullscreen, uncapped | client FPS | 8,488 (8,218–9,430) | 9,475 (8,992–11,078) |
+| gles2 | same + 3 windows + taskbar | client FPS | 8,583 (8,411–8,699) | 9,700 (9,195–10,369) |
+| gles2 | same | taskbar `title` events (≈12 s) | 416,917 | 4 |
+| gles2 | same | taskbar CPU ms | 1,590 (1,570–1,680) | 0 |
+| gles2 | same | compositor CPU ms | 6,710 (6,630–6,730) | 5,620 (5,490–5,820) |
+
+Notes. CPU accounting has 10 ms resolution. Uncapped clients keep the
+compositor busy (~97 % of a core) in both versions: they commit as soon as a
+buffer is released. The v0.2.0 cost came from republishing every window to
+foreign-toplevel clients on every commit (also without any taskbar client
+connected, which is why window-only scenarios improved too). With GLES2,
+shm clients are limited by texture uploads of every 1280×720 buffer; real
+games submit GPU (dmabuf) buffers, which glxgears through Xwayland does.
+vkgears and es2gears_wayland could not run (they request a keyboard from a
+seat without one in the device-less session) and are SKIPPED. Headless runs
+have no scanout, vblank or physical display; nothing here is a monitor,
+NVIDIA or input-latency result.
+
+Raw data: [measurements/v0.2.1/](measurements/v0.2.1/) (`base-*`/`cand-*`
+final interleaved runs; `initial-baseline-*` were taken before any change,
+3 runs; the initial GLES2 taskbar runs overlapped with an accidental client
+start outside the test session and are kept only for the record).
+Reproduce: `GPU_CLIENTS=1 tests/gaming_bench.py BIN CONFIG PERF_CLIENT OUT.json gles2 5 3`.
+
 # v0.2 headless performance samples
 
 Measured on the same host on 2026-10-23 using Zig 0.16.0 ReleaseSafe

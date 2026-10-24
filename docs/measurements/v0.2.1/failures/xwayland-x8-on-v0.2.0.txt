@@ -1,0 +1,3 @@
+FAIL [Xwayland window maximized before its first map fills the usable area and restores (v0.2.1)] dump 1: expected 'view 2 0,0 1280x720 focused=true'
+FAIL [Xwayland window maximized before its first map fills the usable area and restores (v0.2.1)] dump 2: expected 'view 2 540,285 200x150 focused=true'
+xwayland: 2 failure(s) in 1 scenarios

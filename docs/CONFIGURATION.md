@@ -107,6 +107,12 @@ RAYWM_OUTPUT_MODE=1920x1080@240 raywm -s foot
   `wlr-randr`. The mode is chosen once, when the output appears; there
   is no runtime switching yet.
 
+`plugins/outputs.lua` sets modes per monitor (and can be reloaded); RayWM
+also logs when an output runs below the highest refresh rate its monitor
+offers at that resolution. For games, see [GAMING.md](GAMING.md):
+`adaptive_sync` and the opt-in `allow_tearing` are per-output settings
+there, and `raywmctl perf` shows the mode actually in use.
+
 ### Focus navigation (`plugins/focus.lua`)
 
 - **Super+H/J/K/L** focus the window to the left, below, above or to the
@@ -319,6 +325,14 @@ focus border shows it). If the key does not appear at all, RayWM never
 got it: in a nested session the outer compositor may keep it (many
 desktops bind Super+letter combinations). Try it from a TTY, or change
 the binding.
+
+## Upgrading to v0.2.1
+
+A patch release: no configuration change is required. New, optional:
+`allow_tearing` in `outputs.lua` entries, `raywmctl perf`, and
+`RAYWM_EXPLICIT_SYNC=0` to turn off explicit synchronization. The installer
+keeps your configuration; the shipped `outputs.lua` only gained a comment
+and the `allow_tearing` field name in its list.
 
 ## Upgrading to v0.2.0
 

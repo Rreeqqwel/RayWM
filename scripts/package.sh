@@ -1,10 +1,10 @@
 #!/bin/sh
 # Build a local, reproducible ReleaseSafe archive; never publish or tag.
-# Usage: [ZIG=/path/to/zig] scripts/package.sh v0.2.0
+# Usage: [ZIG=/path/to/zig] scripts/package.sh v0.2.1
 set -eu
 umask 022
 export LC_ALL=C
-version=${1:?usage: scripts/package.sh v0.2.0}
+version=${1:?usage: scripts/package.sh v0.2.1}
 zig=${ZIG:-zig}
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"

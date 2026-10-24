@@ -47,6 +47,7 @@ a new version. There is no unversioned fallback.
 | `workspace_activate` | `workspace`: workspace ID | Activate on its output and restore workspace focus. |
 | `window_workspace` | `window`, `workspace` | Move a mapped window; workspace 0 removes membership. |
 | `subscribe` | `events`: array of event names | Replace this connection's subscription; `[]` unsubscribes. |
+| `perf` | none | Performance diagnostics (v0.2.1, read-only, also while locked); see below. |
 
 IDs are native integer IDs, never pointers and never reused in a session.
 They become invalid after destruction and are meaningless across compositor
@@ -59,6 +60,20 @@ Window entries contain `id,x,y,w,h,title,app_id,workspace,output,focused,
 visible,floating,fullscreen,maximized,minimized,urgent,xwayland,pid`.
 Output entries contain `id,name,x,y,w,h,scale,transform,enabled,power,workspace`.
 Workspace entries contain `id,name,output,active,urgent`.
+
+`perf` (added in 0.2.1, additive to v1) returns `renderer` (`gles2`,
+`pixman` or `other`), `render_node` (path or null), `renderer_timeline`,
+`backend_timeline`, `explicit_sync`, `tearing_control`,
+`animations_running`, `session_locked`, `ring_samples` and `outputs`. Each
+output has `id,name,enabled,width,height,refresh_mhz,
+max_refresh_mhz_at_size,adaptive_sync,allow_tearing,scanout_possible,
+fullscreen_window,path` (`none`, `composited` or `scanout`: the last
+successful commit), counters since startup `frames,idle_frames,commits,
+scanout_commits,composited_commits,tearing_commits,tearing_rejected,failed,
+presented,discarded,zero_copy`, and `frame_work_us` / `present_interval_us`
+objects `{samples,p50,p99,max}` over the last `ring_samples` frames. It
+contains no titles, application IDs or other client data. `raywmctl perf`
+prints it.
 Strings are valid UTF-8 and truncated at 512 bytes on a character boundary;
 invalid native strings are replaced with `<invalid UTF-8>`.
 Coordinates are logical layout coordinates. Visibility does not imply

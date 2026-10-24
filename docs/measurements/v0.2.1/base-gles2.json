@@ -1,0 +1,1220 @@
+{
+  "method": "headless gles2 1280x720, ReleaseSafe, 5 runs x 3.0s per scenario; CPU from /proc (10 ms ticks); client counts from raywm-test-perf; not physical hardware",
+  "bin": "/home/reyz/.claude/jobs/c16a51bc/tmp/base-rs/bin",
+  "perf_client": "/home/reyz/.claude/jobs/c16a51bc/tmp/cand-rs/bin/raywm-test-perf",
+  "host": "GINZZU",
+  "kernel": "7.2.11-zen1-1-zen",
+  "scenarios": {
+    "A_idle_empty": {
+      "summary": {
+        "compositor_cpu_ms_median": 0.0
+      },
+      "samples": [
+        {
+          "client": {},
+          "compositor_cpu_ms": 0.0,
+          "wall_s": 3.0,
+          "compositor_rss_kib": 81204
+        },
+        {
+          "client": {},
+          "compositor_cpu_ms": 0.0,
+          "wall_s": 3.0,
+          "compositor_rss_kib": 80848
+        },
+        {
+          "client": {},
+          "compositor_cpu_ms": 0.0,
+          "wall_s": 3.0,
+          "compositor_rss_kib": 80720
+        },
+        {
+          "client": {},
+          "compositor_cpu_ms": 0.0,
+          "wall_s": 3.0,
+          "compositor_rss_kib": 81460
+        },
+        {
+          "client": {},
+          "compositor_cpu_ms": 0.0,
+          "wall_s": 3.0,
+          "compositor_rss_kib": 81340
+        }
+      ]
+    },
+    "B_idle_static_window": {
+      "summary": {
+        "compositor_cpu_ms_median": 0.0
+      },
+      "samples": [
+        {
+          "client": {},
+          "compositor_cpu_ms": 0.0,
+          "wall_s": 3.0,
+          "compositor_rss_kib": 86464
+        },
+        {
+          "client": {},
+          "compositor_cpu_ms": 0.0,
+          "wall_s": 3.0,
+          "compositor_rss_kib": 85700
+        },
+        {
+          "client": {},
+          "compositor_cpu_ms": 0.0,
+          "wall_s": 3.0,
+          "compositor_rss_kib": 85700
+        },
+        {
+          "client": {},
+          "compositor_cpu_ms": 0.0,
+          "wall_s": 3.0,
+          "compositor_rss_kib": 86172
+        },
+        {
+          "client": {},
+          "compositor_cpu_ms": 0.0,
+          "wall_s": 3.0,
+          "compositor_rss_kib": 86008
+        }
+      ]
+    },
+    "C_spin_window": {
+      "summary": {
+        "compositor_cpu_ms_median": 2950.0,
+        "commits_per_s_median": 1255.2,
+        "presented_per_s_median": 58.5,
+        "frames_per_s_median": 0.0,
+        "releases_per_s_median": 1255.2
+      },
+      "samples": [
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1264x704",
+            "elapsed_ms": 3000,
+            "commits": 3827,
+            "releases": 3827,
+            "frames": 0,
+            "presented": 175,
+            "discarded": 3651,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16793,
+            "present_p99_us": 19719
+          },
+          "compositor_cpu_ms": 2950.0,
+          "wall_s": 3.004,
+          "compositor_rss_kib": 87104
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1264x704",
+            "elapsed_ms": 3000,
+            "commits": 3790,
+            "releases": 3790,
+            "frames": 0,
+            "presented": 175,
+            "discarded": 3614,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16945,
+            "present_p99_us": 20692
+          },
+          "compositor_cpu_ms": 2950.0,
+          "wall_s": 3.004,
+          "compositor_rss_kib": 89756
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1264x704",
+            "elapsed_ms": 3000,
+            "commits": 3699,
+            "releases": 3699,
+            "frames": 0,
+            "presented": 176,
+            "discarded": 3523,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16939,
+            "present_p99_us": 20832
+          },
+          "compositor_cpu_ms": 2970.0,
+          "wall_s": 3.005,
+          "compositor_rss_kib": 89032
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1264x704",
+            "elapsed_ms": 3001,
+            "commits": 3772,
+            "releases": 3772,
+            "frames": 0,
+            "presented": 176,
+            "discarded": 3595,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16774,
+            "present_p99_us": 20419
+          },
+          "compositor_cpu_ms": 2960.0,
+          "wall_s": 3.005,
+          "compositor_rss_kib": 90948
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1264x704",
+            "elapsed_ms": 3003,
+            "commits": 3733,
+            "releases": 3733,
+            "frames": 0,
+            "presented": 176,
+            "discarded": 3556,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16857,
+            "present_p99_us": 19911
+          },
+          "compositor_cpu_ms": 2950.0,
+          "wall_s": 3.008,
+          "compositor_rss_kib": 89364
+        }
+      ]
+    },
+    "C2_vsync_window": {
+      "summary": {
+        "compositor_cpu_ms_median": 270.0,
+        "commits_per_s_median": 61.5,
+        "presented_per_s_median": 61.2,
+        "frames_per_s_median": 61.5,
+        "releases_per_s_median": 61.5
+      },
+      "samples": [
+        {
+          "client": {
+            "mode": "vsync",
+            "size": "1264x704",
+            "elapsed_ms": 3004,
+            "commits": 185,
+            "releases": 185,
+            "frames": 185,
+            "presented": 184,
+            "discarded": 1,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16269,
+            "present_p99_us": 16377
+          },
+          "compositor_cpu_ms": 270.0,
+          "wall_s": 3.008,
+          "compositor_rss_kib": 82096
+        },
+        {
+          "client": {
+            "mode": "vsync",
+            "size": "1264x704",
+            "elapsed_ms": 3002,
+            "commits": 185,
+            "releases": 185,
+            "frames": 185,
+            "presented": 184,
+            "discarded": 1,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16268,
+            "present_p99_us": 16535
+          },
+          "compositor_cpu_ms": 270.0,
+          "wall_s": 3.006,
+          "compositor_rss_kib": 82412
+        },
+        {
+          "client": {
+            "mode": "vsync",
+            "size": "1264x704",
+            "elapsed_ms": 3000,
+            "commits": 185,
+            "releases": 185,
+            "frames": 185,
+            "presented": 184,
+            "discarded": 1,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16270,
+            "present_p99_us": 16442
+          },
+          "compositor_cpu_ms": 270.0,
+          "wall_s": 3.004,
+          "compositor_rss_kib": 82740
+        },
+        {
+          "client": {
+            "mode": "vsync",
+            "size": "1264x704",
+            "elapsed_ms": 3001,
+            "commits": 185,
+            "releases": 185,
+            "frames": 185,
+            "presented": 184,
+            "discarded": 1,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16276,
+            "present_p99_us": 16399
+          },
+          "compositor_cpu_ms": 280.0,
+          "wall_s": 3.005,
+          "compositor_rss_kib": 82832
+        },
+        {
+          "client": {
+            "mode": "vsync",
+            "size": "1264x704",
+            "elapsed_ms": 3006,
+            "commits": 185,
+            "releases": 185,
+            "frames": 185,
+            "presented": 184,
+            "discarded": 1,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16284,
+            "present_p99_us": 16519
+          },
+          "compositor_cpu_ms": 280.0,
+          "wall_s": 3.01,
+          "compositor_rss_kib": 82800
+        }
+      ]
+    },
+    "D_spin_fullscreen": {
+      "summary": {
+        "compositor_cpu_ms_median": 2960.0,
+        "commits_per_s_median": 1289.3,
+        "presented_per_s_median": 58.5,
+        "frames_per_s_median": 0.0,
+        "releases_per_s_median": 1289.3
+      },
+      "samples": [
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3002,
+            "commits": 3769,
+            "releases": 3769,
+            "frames": 0,
+            "presented": 175,
+            "discarded": 3593,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16902,
+            "present_p99_us": 20732
+          },
+          "compositor_cpu_ms": 2960.0,
+          "wall_s": 3.006,
+          "compositor_rss_kib": 90972
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3002,
+            "commits": 3921,
+            "releases": 3921,
+            "frames": 0,
+            "presented": 176,
+            "discarded": 3744,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16996,
+            "present_p99_us": 20601
+          },
+          "compositor_cpu_ms": 2960.0,
+          "wall_s": 3.006,
+          "compositor_rss_kib": 93268
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3003,
+            "commits": 3919,
+            "releases": 3919,
+            "frames": 0,
+            "presented": 177,
+            "discarded": 3741,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16912,
+            "present_p99_us": 19393
+          },
+          "compositor_cpu_ms": 2960.0,
+          "wall_s": 3.006,
+          "compositor_rss_kib": 90004
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3003,
+            "commits": 3855,
+            "releases": 3855,
+            "frames": 0,
+            "presented": 176,
+            "discarded": 3678,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16987,
+            "present_p99_us": 20050
+          },
+          "compositor_cpu_ms": 2960.0,
+          "wall_s": 3.006,
+          "compositor_rss_kib": 90780
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3001,
+            "commits": 3877,
+            "releases": 3877,
+            "frames": 0,
+            "presented": 176,
+            "discarded": 3700,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16968,
+            "present_p99_us": 20384
+          },
+          "compositor_cpu_ms": 2940.0,
+          "wall_s": 3.007,
+          "compositor_rss_kib": 89560
+        }
+      ]
+    },
+    "D2_vsync_fullscreen": {
+      "summary": {
+        "compositor_cpu_ms_median": 260.0,
+        "commits_per_s_median": 61.5,
+        "presented_per_s_median": 61.5,
+        "frames_per_s_median": 61.5,
+        "releases_per_s_median": 61.5
+      },
+      "samples": [
+        {
+          "client": {
+            "mode": "vsync",
+            "size": "1280x720",
+            "elapsed_ms": 3007,
+            "commits": 185,
+            "releases": 185,
+            "frames": 185,
+            "presented": 185,
+            "discarded": 0,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16283,
+            "present_p99_us": 16415
+          },
+          "compositor_cpu_ms": 270.0,
+          "wall_s": 3.011,
+          "compositor_rss_kib": 82568
+        },
+        {
+          "client": {
+            "mode": "vsync",
+            "size": "1280x720",
+            "elapsed_ms": 3002,
+            "commits": 185,
+            "releases": 185,
+            "frames": 185,
+            "presented": 185,
+            "discarded": 0,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16255,
+            "present_p99_us": 16363
+          },
+          "compositor_cpu_ms": 230.0,
+          "wall_s": 3.006,
+          "compositor_rss_kib": 82784
+        },
+        {
+          "client": {
+            "mode": "vsync",
+            "size": "1280x720",
+            "elapsed_ms": 3006,
+            "commits": 185,
+            "releases": 185,
+            "frames": 185,
+            "presented": 185,
+            "discarded": 0,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16277,
+            "present_p99_us": 16366
+          },
+          "compositor_cpu_ms": 260.0,
+          "wall_s": 3.01,
+          "compositor_rss_kib": 82400
+        },
+        {
+          "client": {
+            "mode": "vsync",
+            "size": "1280x720",
+            "elapsed_ms": 3009,
+            "commits": 185,
+            "releases": 185,
+            "frames": 185,
+            "presented": 185,
+            "discarded": 0,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16278,
+            "present_p99_us": 16400
+          },
+          "compositor_cpu_ms": 260.0,
+          "wall_s": 3.013,
+          "compositor_rss_kib": 82704
+        },
+        {
+          "client": {
+            "mode": "vsync",
+            "size": "1280x720",
+            "elapsed_ms": 3006,
+            "commits": 185,
+            "releases": 185,
+            "frames": 185,
+            "presented": 185,
+            "discarded": 0,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16265,
+            "present_p99_us": 16428
+          },
+          "compositor_cpu_ms": 260.0,
+          "wall_s": 3.009,
+          "compositor_rss_kib": 82712
+        }
+      ]
+    },
+    "D3_spin_fullscreen_translucent": {
+      "summary": {
+        "compositor_cpu_ms_median": 2950.0,
+        "commits_per_s_median": 1292.5,
+        "presented_per_s_median": 58.5,
+        "frames_per_s_median": 0.0,
+        "releases_per_s_median": 1292.5
+      },
+      "samples": [
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3000,
+            "commits": 3884,
+            "releases": 3884,
+            "frames": 0,
+            "presented": 177,
+            "discarded": 3707,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16817,
+            "present_p99_us": 20485
+          },
+          "compositor_cpu_ms": 2940.0,
+          "wall_s": 3.005,
+          "compositor_rss_kib": 93152
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3002,
+            "commits": 3904,
+            "releases": 3904,
+            "frames": 0,
+            "presented": 177,
+            "discarded": 3726,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16850,
+            "present_p99_us": 20269
+          },
+          "compositor_cpu_ms": 2960.0,
+          "wall_s": 3.006,
+          "compositor_rss_kib": 90376
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3000,
+            "commits": 4046,
+            "releases": 4046,
+            "frames": 0,
+            "presented": 175,
+            "discarded": 3870,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 17103,
+            "present_p99_us": 20671
+          },
+          "compositor_cpu_ms": 2950.0,
+          "wall_s": 3.004,
+          "compositor_rss_kib": 89928
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3001,
+            "commits": 3809,
+            "releases": 3809,
+            "frames": 0,
+            "presented": 176,
+            "discarded": 3632,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 17044,
+            "present_p99_us": 19403
+          },
+          "compositor_cpu_ms": 2970.0,
+          "wall_s": 3.006,
+          "compositor_rss_kib": 89964
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3003,
+            "commits": 3884,
+            "releases": 3884,
+            "frames": 0,
+            "presented": 176,
+            "discarded": 3707,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16964,
+            "present_p99_us": 19233
+          },
+          "compositor_cpu_ms": 2940.0,
+          "wall_s": 3.007,
+          "compositor_rss_kib": 89688
+        }
+      ]
+    },
+    "F_spin_fullscreen_panel": {
+      "summary": {
+        "compositor_cpu_ms_median": 2950.0,
+        "commits_per_s_median": 1308.8,
+        "presented_per_s_median": 58.6,
+        "frames_per_s_median": 0.0,
+        "releases_per_s_median": 1308.8
+      },
+      "samples": [
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3000,
+            "commits": 3728,
+            "releases": 3728,
+            "frames": 0,
+            "presented": 176,
+            "discarded": 3551,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16972,
+            "present_p99_us": 21973
+          },
+          "compositor_cpu_ms": 2950.0,
+          "wall_s": 3.003,
+          "compositor_rss_kib": 89744
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3000,
+            "commits": 3933,
+            "releases": 3933,
+            "frames": 0,
+            "presented": 177,
+            "discarded": 3755,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16929,
+            "present_p99_us": 19542
+          },
+          "compositor_cpu_ms": 2950.0,
+          "wall_s": 3.005,
+          "compositor_rss_kib": 89724
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3000,
+            "commits": 4004,
+            "releases": 4004,
+            "frames": 0,
+            "presented": 177,
+            "discarded": 3826,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16945,
+            "present_p99_us": 19735
+          },
+          "compositor_cpu_ms": 2960.0,
+          "wall_s": 3.004,
+          "compositor_rss_kib": 90056
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3000,
+            "commits": 4001,
+            "releases": 4001,
+            "frames": 0,
+            "presented": 176,
+            "discarded": 3824,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 17005,
+            "present_p99_us": 19816
+          },
+          "compositor_cpu_ms": 2940.0,
+          "wall_s": 3.004,
+          "compositor_rss_kib": 91456
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3000,
+            "commits": 3899,
+            "releases": 3899,
+            "frames": 0,
+            "presented": 176,
+            "discarded": 3722,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16887,
+            "present_p99_us": 20277
+          },
+          "compositor_cpu_ms": 2940.0,
+          "wall_s": 3.004,
+          "compositor_rss_kib": 94232
+        }
+      ]
+    },
+    "T_spin_fullscreen_3windows_taskbar": {
+      "summary": {
+        "compositor_cpu_ms_median": 2960.0,
+        "watcher_cpu_ms_median": 40.0,
+        "commits_per_s_median": 1282.0,
+        "presented_per_s_median": 58.6,
+        "frames_per_s_median": 0.0,
+        "releases_per_s_median": 1282.0,
+        "watcher_title_median": 7001,
+        "watcher_app_id_median": 7001,
+        "watcher_done_median": 7001
+      },
+      "samples": [
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3000,
+            "commits": 3781,
+            "releases": 3781,
+            "frames": 0,
+            "presented": 176,
+            "discarded": 3604,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16872,
+            "present_p99_us": 19661
+          },
+          "compositor_cpu_ms": 2970.0,
+          "wall_s": 3.005,
+          "compositor_rss_kib": 94992,
+          "watcher_cpu_ms": 40.0,
+          "watcher": {
+            "mode": "watch",
+            "title": 6813,
+            "app_id": 6813,
+            "state": 7,
+            "output": 0,
+            "done": 6813,
+            "ext_done": 4
+          }
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3000,
+            "commits": 3857,
+            "releases": 3857,
+            "frames": 0,
+            "presented": 176,
+            "discarded": 3680,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16884,
+            "present_p99_us": 20285
+          },
+          "compositor_cpu_ms": 2950.0,
+          "wall_s": 3.006,
+          "compositor_rss_kib": 93588,
+          "watcher_cpu_ms": 50.0,
+          "watcher": {
+            "mode": "watch",
+            "title": 7001,
+            "app_id": 7001,
+            "state": 7,
+            "output": 0,
+            "done": 7001,
+            "ext_done": 4
+          }
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3000,
+            "commits": 3925,
+            "releases": 3925,
+            "frames": 0,
+            "presented": 176,
+            "discarded": 3748,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 17049,
+            "present_p99_us": 19666
+          },
+          "compositor_cpu_ms": 2950.0,
+          "wall_s": 3.005,
+          "compositor_rss_kib": 93396,
+          "watcher_cpu_ms": 40.0,
+          "watcher": {
+            "mode": "watch",
+            "title": 7193,
+            "app_id": 7193,
+            "state": 7,
+            "output": 0,
+            "done": 7193,
+            "ext_done": 4
+          }
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3000,
+            "commits": 3700,
+            "releases": 3700,
+            "frames": 0,
+            "presented": 176,
+            "discarded": 3524,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 17086,
+            "present_p99_us": 20402
+          },
+          "compositor_cpu_ms": 2960.0,
+          "wall_s": 3.007,
+          "compositor_rss_kib": 95540,
+          "watcher_cpu_ms": 40.0,
+          "watcher": {
+            "mode": "watch",
+            "title": 6697,
+            "app_id": 6697,
+            "state": 7,
+            "output": 0,
+            "done": 6697,
+            "ext_done": 4
+          }
+        },
+        {
+          "client": {
+            "mode": "spin",
+            "size": "1280x720",
+            "elapsed_ms": 3000,
+            "commits": 3851,
+            "releases": 3851,
+            "frames": 0,
+            "presented": 176,
+            "discarded": 3674,
+            "zero_copy": 0,
+            "vsync": 0,
+            "nonmonotonic": 0,
+            "future": 0,
+            "present_p50_us": 16922,
+            "present_p99_us": 20100
+          },
+          "compositor_cpu_ms": 2960.0,
+          "wall_s": 3.004,
+          "compositor_rss_kib": 93140,
+          "watcher_cpu_ms": 40.0,
+          "watcher": {
+            "mode": "watch",
+            "title": 7021,
+            "app_id": 7021,
+            "state": 7,
+            "output": 0,
+            "done": 7021,
+            "ext_done": 4
+          }
+        }
+      ]
+    },
+    "T2_idle_3windows_taskbar": {
+      "summary": {
+        "compositor_cpu_ms_median": 0.0,
+        "watcher_cpu_ms_median": 0.0,
+        "watcher_title_median": 3,
+        "watcher_app_id_median": 3,
+        "watcher_done_median": 3
+      },
+      "samples": [
+        {
+          "client": {},
+          "compositor_cpu_ms": 0.0,
+          "wall_s": 3.0,
+          "compositor_rss_kib": 87088,
+          "watcher_cpu_ms": 0.0,
+          "watcher": {
+            "mode": "watch",
+            "title": 3,
+            "app_id": 3,
+            "state": 3,
+            "output": 0,
+            "done": 3,
+            "ext_done": 3
+          }
+        },
+        {
+          "client": {},
+          "compositor_cpu_ms": 0.0,
+          "wall_s": 3.0,
+          "compositor_rss_kib": 86664,
+          "watcher_cpu_ms": 0.0,
+          "watcher": {
+            "mode": "watch",
+            "title": 3,
+            "app_id": 3,
+            "state": 3,
+            "output": 0,
+            "done": 3,
+            "ext_done": 3
+          }
+        },
+        {
+          "client": {},
+          "compositor_cpu_ms": 0.0,
+          "wall_s": 3.0,
+          "compositor_rss_kib": 86644,
+          "watcher_cpu_ms": 0.0,
+          "watcher": {
+            "mode": "watch",
+            "title": 3,
+            "app_id": 3,
+            "state": 3,
+            "output": 0,
+            "done": 3,
+            "ext_done": 3
+          }
+        },
+        {
+          "client": {},
+          "compositor_cpu_ms": 0.0,
+          "wall_s": 3.0,
+          "compositor_rss_kib": 86436,
+          "watcher_cpu_ms": 0.0,
+          "watcher": {
+            "mode": "watch",
+            "title": 3,
+            "app_id": 3,
+            "state": 3,
+            "output": 0,
+            "done": 3,
+            "ext_done": 3
+          }
+        },
+        {
+          "client": {},
+          "compositor_cpu_ms": 0.0,
+          "wall_s": 3.0,
+          "compositor_rss_kib": 86700,
+          "watcher_cpu_ms": 0.0,
+          "watcher": {
+            "mode": "watch",
+            "title": 3,
+            "app_id": 3,
+            "state": 3,
+            "output": 0,
+            "done": 3,
+            "ext_done": 3
+          }
+        }
+      ]
+    },
+    "G1_glxgears_xwayland_fullscreen": {
+      "summary": {
+        "compositor_cpu_ms_median": 5830.0,
+        "client_fps_median": 8487.9
+      },
+      "samples": [
+        {
+          "wall_s": 12.506,
+          "compositor_cpu_ms": 5830.0,
+          "client": {
+            "fps_lines": [
+              8609.24,
+              8560.722
+            ],
+            "fps": 8560.722
+          }
+        },
+        {
+          "wall_s": 12.507,
+          "compositor_cpu_ms": 5590.0,
+          "client": {
+            "fps_lines": [
+              8263.115,
+              8218.349
+            ],
+            "fps": 8218.349
+          }
+        },
+        {
+          "wall_s": 12.508,
+          "compositor_cpu_ms": 5590.0,
+          "client": {
+            "fps_lines": [
+              8393.447,
+              8309.335
+            ],
+            "fps": 8309.335
+          }
+        },
+        {
+          "wall_s": 12.508,
+          "compositor_cpu_ms": 5900.0,
+          "client": {
+            "fps_lines": [
+              8157.167,
+              8487.857
+            ],
+            "fps": 8487.857
+          }
+        },
+        {
+          "wall_s": 12.507,
+          "compositor_cpu_ms": 6140.0,
+          "client": {
+            "fps_lines": [
+              8516.884,
+              9430.188
+            ],
+            "fps": 9430.188
+          }
+        }
+      ]
+    },
+    "G2_glxgears_xwayland_fullscreen_taskbar": {
+      "summary": {
+        "compositor_cpu_ms_median": 6710.0,
+        "watcher_cpu_ms_median": 1590.0,
+        "client_fps_median": 8583.4,
+        "watcher_title_median": 416917,
+        "watcher_app_id_median": 416917,
+        "watcher_done_median": 416920
+      },
+      "samples": [
+        {
+          "wall_s": 12.507,
+          "compositor_cpu_ms": 6630.0,
+          "client": {
+            "fps_lines": [
+              8368.515,
+              8583.351
+            ],
+            "fps": 8583.351
+          },
+          "watcher_cpu_ms": 1590.0,
+          "watcher": {
+            "mode": "watch",
+            "title": 407629,
+            "app_id": 407629,
+            "state": 7,
+            "output": 0,
+            "done": 407632,
+            "ext_done": 4
+          }
+        },
+        {
+          "wall_s": 12.507,
+          "compositor_cpu_ms": 6720.0,
+          "client": {
+            "fps_lines": [
+              8524.635,
+              8553.351
+            ],
+            "fps": 8553.351
+          },
+          "watcher_cpu_ms": 1680.0,
+          "watcher": {
+            "mode": "watch",
+            "title": 416917,
+            "app_id": 416917,
+            "state": 7,
+            "output": 0,
+            "done": 416920,
+            "ext_done": 4
+          }
+        },
+        {
+          "wall_s": 12.507,
+          "compositor_cpu_ms": 6710.0,
+          "client": {
+            "fps_lines": [
+              8207.321,
+              8411.304
+            ],
+            "fps": 8411.304
+          },
+          "watcher_cpu_ms": 1570.0,
+          "watcher": {
+            "mode": "watch",
+            "title": 409185,
+            "app_id": 409185,
+            "state": 7,
+            "output": 0,
+            "done": 409188,
+            "ext_done": 4
+          }
+        },
+        {
+          "wall_s": 12.505,
+          "compositor_cpu_ms": 6730.0,
+          "client": {
+            "fps_lines": [
+              8639.427,
+              8699.351
+            ],
+            "fps": 8699.351
+          },
+          "watcher_cpu_ms": 1580.0,
+          "watcher": {
+            "mode": "watch",
+            "title": 426553,
+            "app_id": 426553,
+            "state": 7,
+            "output": 0,
+            "done": 426556,
+            "ext_done": 4
+          }
+        },
+        {
+          "wall_s": 12.507,
+          "compositor_cpu_ms": 6640.0,
+          "client": {
+            "fps_lines": [
+              8817.926,
+              8629.928
+            ],
+            "fps": 8629.928
+          },
+          "watcher_cpu_ms": 1650.0,
+          "watcher": {
+            "mode": "watch",
+            "title": 426937,
+            "app_id": 426937,
+            "state": 7,
+            "output": 0,
+            "done": 426940,
+            "ext_done": 4
+          }
+        }
+      ]
+    }
+  }
+}

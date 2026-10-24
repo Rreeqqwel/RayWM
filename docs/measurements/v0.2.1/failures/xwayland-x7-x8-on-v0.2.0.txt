@@ -1,0 +1,5 @@
+FAIL [Xwayland window fullscreen before its first map is sized and confirmed (v0.2.1)] dump 1: expected 'view 2 0,0 1280x720 focused=true'
+FAIL [Xwayland window fullscreen before its first map is sized and confirmed (v0.2.1)] X11 window was not configured to the output size
+FAIL [Xwayland window maximized before its first map fills the usable area and restores (v0.2.1)] dump 1: expected 'view 2 0,0 1280x720 focused=true'
+FAIL [Xwayland window maximized before its first map fills the usable area and restores (v0.2.1)] dump 2: expected 'view 2 540,285 200x150 focused=true'
+xwayland: 4 failure(s) in 2 scenarios

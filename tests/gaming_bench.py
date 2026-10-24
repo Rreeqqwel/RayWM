@@ -116,6 +116,11 @@ def workload(mode, args=(), watcher=False):
 def external(argv, x11=False, watcher=False, extra_env=None):
     """A real GPU client (mesa-utils demos), run only inside the test session.
     Its own FPS lines are the client-side rate; the first one is dropped."""
+    # vkgears and es2gears_wayland request a keyboard from a seat without
+    # one (no input devices headless) and are killed by a protocol error,
+    # so only glxgears (through Xwayland) is used. Its FPS line covers 5 s.
+    seconds = float(os.environ.get('GPU_SECONDS', 11))
+
     def action(process, env):
         cmd_env = dict(PATH=env['PATH'], HOME=env['HOME'], XDG_RUNTIME_DIR=env['XDG_RUNTIME_DIR'], vblank_mode='0')
         if x11:
@@ -169,11 +174,8 @@ scenarios = {
 }
 if os.environ.get('GPU_CLIENTS') and renderer == 'gles2':
     scenarios.update({
-        'G1_vkgears_mailbox_fullscreen': (0, False, external(['vkgears', '-present-mailbox', '-fullscreen'])),
-        'G2_vkgears_mailbox_fullscreen_taskbar': (3, True, external(['vkgears', '-present-mailbox', '-fullscreen'], watcher=True)),
-        'G3_es2gears_wayland_uncapped': (0, False, external(['es2gears_wayland'])),
-        'G4_glxgears_xwayland_fullscreen': (0, False, external(['glxgears', '-fullscreen'], x11=True)),
-        'G5_glxgears_xwayland_fullscreen_taskbar': (3, True, external(['glxgears', '-fullscreen'], x11=True, watcher=True)),
+        'G1_glxgears_xwayland_fullscreen': (0, False, external(['glxgears', '-fullscreen'], x11=True)),
+        'G2_glxgears_xwayland_fullscreen_taskbar': (3, True, external(['glxgears', '-fullscreen'], x11=True, watcher=True)),
     })
 only = os.environ.get('ONLY')
 results = dict(method=f'headless {renderer} 1280x720, ReleaseSafe, {runs} runs x {seconds}s per scenario; '

@@ -1,0 +1,116 @@
+FAIL [Xwayland mapping, buffer resize, fullscreen/maximize and native metadata] dump 3: expected 'state 2 floating=false fullscreen=true maximized=false visible=true managed=false ws=0 output=1'
+FAIL [Xwayland mapping, buffer resize, fullscreen/maximize and native metadata] dump 3: expected 'view 2 0,0 1280x720 focused=true'
+known upstream diagnostic: 00:00:03.688 [ERROR] [xwayland/xwm.c:1984] xcb error: op DeleteProperty (no minor), code Window (no extension), sequence 230, value 4194304
+--- driver.log
+driver: done
+driver: done
+driver: done
+driver: done
+driver: done
+--- probe.log
+dump 1
+view 2 540,285 200x150 focused=true
+backend 2 xwayland=true pid=3188000
+state 2 floating=false fullscreen=false maximized=false visible=true managed=false ws=0 output=1
+shell 2 minimized=false urgent=false decoration=nil
+output HEADLESS-1 0,0 1280x720 scale=1.0 transform=normal enabled=true power=true mode=1280x720 usable=0,0 1280x720
+dump 2
+view 2 300,200 350x220 focused=true
+backend 2 xwayland=true pid=3188000
+state 2 floating=false fullscreen=false maximized=false visible=true managed=false ws=0 output=1
+shell 2 minimized=false urgent=false decoration=nil
+output HEADLESS-1 0,0 1280x720 scale=1.0 transform=normal enabled=true power=true mode=1280x720 usable=0,0 1280x720
+dump 3
+view 2 300,200 350x220 focused=true
+backend 2 xwayland=true pid=3188000
+state 2 floating=false fullscreen=false maximized=false visible=true managed=false ws=0 output=1
+shell 2 minimized=false urgent=false decoration=nil
+output HEADLESS-1 0,0 1280x720 scale=1.0 transform=normal enabled=true power=true mode=1280x720 usable=0,0 1280x720
+dump 4
+view 2 0,0 1280x720 focused=true
+backend 2 xwayland=true pid=3188000
+state 2 floating=false fullscreen=false maximized=true visible=true managed=false ws=0 output=1
+shell 2 minimized=false urgent=false decoration=nil
+output HEADLESS-1 0,0 1280x720 scale=1.0 transform=normal enabled=true power=true mode=1280x720 usable=0,0 1280x720
+dump 5
+view 2 300,200 350x220 focused=true
+backend 2 xwayland=true pid=3188000
+state 2 floating=false fullscreen=false maximized=false visible=true managed=false ws=0 output=1
+shell 2 minimized=false urgent=false decoration=nil
+output HEADLESS-1 0,0 1280x720 scale=1.0 transform=normal enabled=true power=true mode=1280x720 usable=0,0 1280x720
+--- raywm.log
+>                   X11 cannot support keycodes above 255.
+> Warning:          Virtual modifier Hyper multiply defined
+>                   Using 0, ignoring 0
+> Warning:          Virtual modifier ScrollLock multiply defined
+>                   Using 0, ignoring 0
+Errors from xkbcomp are not fatal to the X server
+The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Unsupported maximum keycode 709, clipping.
+>                   X11 cannot support keycodes above 255.
+> Warning:          Virtual modifier Hyper multiply defined
+>                   Using 0, ignoring 0
+> Warning:          Virtual modifier ScrollLock multiply defined
+>                   Using 0, ignoring 0
+Errors from xkbcomp are not fatal to the X server
+The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Unsupported maximum keycode 709, clipping.
+>                   X11 cannot support keycodes above 255.
+> Warning:          Virtual modifier Hyper multiply defined
+>                   Using 0, ignoring 0
+> Warning:          Virtual modifier ScrollLock multiply defined
+>                   Using 0, ignoring 0
+Errors from xkbcomp are not fatal to the X server
+The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Unsupported maximum keycode 709, clipping.
+>                   X11 cannot support keycodes above 255.
+> Warning:          Virtual modifier Hyper multiply defined
+>                   Using 0, ignoring 0
+> Warning:          Virtual modifier ScrollLock multiply defined
+>                   Using 0, ignoring 0
+Errors from xkbcomp are not fatal to the X server
+The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Unsupported maximum keycode 709, clipping.
+>                   X11 cannot support keycodes above 255.
+> Warning:          Virtual modifier Hyper multiply defined
+>                   Using 0, ignoring 0
+> Warning:          Virtual modifier ScrollLock multiply defined
+>                   Using 0, ignoring 0
+Errors from xkbcomp are not fatal to the X server
+00:00:03.688 [ERROR] [xwayland/xwm.c:1984] xcb error: op DeleteProperty (no minor), code Window (no extension), sequence 230, value 4194304
+(EE) failed to read Wayland events: Broken pipe
+--- x.log
+x11: connected
+x11: mapped
+x11: geometry 100,100 200x150
+x11: geometry 540,285 200x150
+x11: geometry 540,285 200x150
+x11: focus out
+x11: focus in
+x11: geometry 540,285 350x220
+x11: geometry 300,200 350x220
+x11: geometry 300,200 350x220
+x11: key 133
+x11: geometry 300,200 1280x720
+x11: geometry 0,0 1280x720
+x11: geometry 0,0 1280x720
+x11: geometry 0,0 350x220
+x11: geometry 300,200 350x220
+x11: geometry 300,200 350x220
+known upstream diagnostic: 00:00:01.980 [ERROR] [xwayland/xwm.c:1984] xcb error: op DeleteProperty (no minor), code Window (no extension), sequence 213, value 4194304
+ok   [Xwayland focus, interactive move and resize, close]
+known upstream diagnostic: 00:00:03.688 [ERROR] [xwayland/xwm.c:1984] xcb error: op DeleteProperty (no minor), code Window (no extension), sequence 267, value 4194304
+ok   [Xwayland workspaces, minimize/restore and override-redirect visibility]
+wl_display_dispatch: Broken pipe
+known upstream diagnostic: 00:00:01.172 [ERROR] [xwayland/xwm.c:1457] Failed to get window property
+known upstream diagnostic: 00:00:01.731 [ERROR] [xwayland/xwm.c:1984] xcb error: op DeleteProperty (no minor), code Window (no extension), sequence 225, value 4194304
+ok   [X11 and Wayland clipboard bytes in both directions]
+known upstream diagnostic: 00:00:02.603 [ERROR] [xwayland/xwm.c:1984] xcb error: op DeleteProperty (no minor), code Window (no extension), sequence 209, value 4194304
+ok   [Xwayland early crash recovery preserves Wayland windows]
+known upstream diagnostic: 00:00:07.875 [ERROR] [xwayland/xwm.c:1984] xcb error: op DeleteProperty (no minor), code Window (no extension), sequence 209, value 4194304
+ok   [Xwayland fullscreen survives output hotplug and a long-running X server restarts]
+known upstream diagnostic: 00:00:02.235 [ERROR] [xwayland/xwm.c:1984] xcb error: op DeleteProperty (no minor), code Window (no extension), sequence 231, value 4194304
+ok   [Xwayland window fullscreen before its first map is sized and confirmed (v0.2.1)]
+known upstream diagnostic: 00:00:01.734 [ERROR] [xwayland/xwm.c:1984] xcb error: op DeleteProperty (no minor), code Window (no extension), sequence 220, value 4194304
+ok   [Xwayland window maximized before its first map fills the usable area and restores (v0.2.1)]
+xwayland: 2 failure(s) in 8 scenarios
