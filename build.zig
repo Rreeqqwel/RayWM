@@ -310,6 +310,20 @@ pub fn build(b: *std.Build) void {
     client.root_module.linkSystemLibrary("wayland-client", .{});
     b.installArtifact(client);
 
+    // Update manager (src/update.zig): std and libc only; uses curl,
+    // vercmp, pacman and makepkg as external programs.
+    const update_options = b.addOptions();
+    update_options.addOption([]const u8, "version", @import("build.zig.zon").version);
+    const update_mod = b.createModule(.{
+        .root_source_file = b.path("src/update.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    update_mod.addOptions("build_options", update_options);
+    const update = b.addExecutable(.{ .name = "raywm-update", .root_module = update_mod, .use_llvm = use_llvm, .use_lld = use_llvm });
+    b.installArtifact(update);
+
     const run = b.addRunArtifact(exe);
     if (b.args) |args| run.addArgs(args);
     b.step("run", "Run raywm").dependOn(&run.step);
@@ -332,6 +346,10 @@ pub fn build(b: *std.Build) void {
     const conf_run = b.addRunArtifact(conf_tests);
     conf_run.setCwd(b.path("."));
     test_step.dependOn(&conf_run.step);
+
+    // Update manager: tags, channels, release lists, metadata checks.
+    const update_tests = b.addTest(.{ .root_module = update_mod, .use_llvm = use_llvm, .use_lld = use_llvm });
+    test_step.dependOn(&b.addRunArtifact(update_tests).step);
 
     // Core unit tests: src/main.zig as a module (exposes srv, host).
     const core = b.createModule(.{

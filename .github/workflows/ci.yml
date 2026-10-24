@@ -131,6 +131,15 @@ jobs:
       - name: Release scripts (tag scheme, vercmp order, metadata)
         run: tests/release-meta.sh
 
+      - name: raywm.conf (raywm -t, layers, settings with real input, reload)
+        run: tests/conf.sh zig-out/test-input/bin
+
+      - name: raywm-update (local release fixtures; as a user, and as root)
+        run: |
+          tests/update.sh
+          useradd -m tester
+          su tester -c "cd '$GITHUB_WORKSPACE' && tests/update.sh"
+
       - name: Screenshot tests (pixman, real grim/slurp/wl-clipboard)
         run: tests/screenshot.sh
 

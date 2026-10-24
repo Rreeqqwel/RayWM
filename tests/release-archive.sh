@@ -24,8 +24,8 @@ tar -xzf "$archive" -C "$tmp"
 [ "$(ls "$tmp")" = "$name" ] && ok || fail "top-level directory is not $name/"
 d="$tmp/$name"
 for f in build.zig build.zig.zon LICENSE README.md CHANGELOG.md SECURITY.md SOURCE-INFO \
-    src/main.zig src/server.zig protocol tests/client.zig tests/core_test.zig tests/lua_test.zig \
-    config/init.lua config/rules.lua config/plugins/dwindle.lua config/plugins/binds.lua \
+    src/main.zig src/server.zig src/conf.zig src/update.zig protocol tests/client.zig tests/core_test.zig tests/lua_test.zig \
+    config/raywm.conf config/init.lua config/rules.lua config/plugins/dwindle.lua config/plugins/binds.lua \
     config/plugins/outputs.lua scripts/raywmctl scripts/install.sh scripts/arch-package.sh \
     scripts/source-archive.sh scripts/release-meta.py packaging/arch/PKGBUILD.in \
     packaging/arch/raywm.desktop packaging/arch/raywm.install docs/INSTALL.md docs/GAMING.md \
@@ -48,6 +48,8 @@ if [ "$build" = --build ]; then
     if unshare -rn true 2>/dev/null; then isolate="unshare -rn"; fi
     (cd "$d" && ZIG_GLOBAL_CACHE_DIR="$tmp/gcache" $isolate "$zig" build -Doptimize=ReleaseSafe -Dcpu=baseline -p "$tmp/out") && ok || fail "build from archive"
     "$tmp/out/bin/raywm" -h >/dev/null 2>&1 && ok || fail "built raywm -h"
+    "$tmp/out/bin/raywm-update" --help >/dev/null 2>&1 && ok || fail "built raywm-update --help"
+    (cd "$d" && RAYWM_SYSTEM_CONF= "$tmp/out/bin/raywm" -t -c config/init.lua >/dev/null 2>&1) && ok || fail "shipped raywm.conf rejected by raywm -t"
     (cd "$d" && ZIG_GLOBAL_CACHE_DIR="$tmp/gcache" $isolate "$zig" build test >/dev/null 2>&1) && ok || fail "unit tests from archive"
     echo "release-archive: built from the archive${isolate:+ without network}"
 fi

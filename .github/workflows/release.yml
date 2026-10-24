@@ -127,7 +127,7 @@ jobs:
       - name: System packages
         run: |
           pacman -Syu --noconfirm --needed git wlroots0.20 wayland wayland-protocols libxkbcommon pixman \
-            lua54 libinput pkgconf curl xz file binutils python libarchive
+            lua54 libinput pkgconf curl xz file binutils python libarchive tar
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -143,17 +143,18 @@ jobs:
           scripts/source-archive.sh "$TAG" out HEAD
           tests/release-archive.sh "out/raywm-$TAG.tar.gz" "$TAG" --build
           tar -tzf "out/raywm-$TAG.tar.gz" | sed -n '1,400p' >"out/source-files.txt"
-      - name: Arch Linux package (makepkg)
-        if: needs.plan.outputs.channel == 'stable'
+      # Stable: this package is the release asset. Beta: the same build
+      # raywm-update runs on users' machines from the source archive, so a
+      # Beta is published only if its archive yields a valid package; the
+      # package itself is not published.
+      - name: Arch Linux package (makepkg) and pacman install cycle
         run: |
           useradd -m builder
           chown -R builder "$GITHUB_WORKSPACE"
           su builder -c "cd '$GITHUB_WORKSPACE' && SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) scripts/arch-package.sh '$TAG' 'out/raywm-$TAG.tar.gz' pkg"
           tests/release-package.sh "pkg/raywm-$PKGVER-1-x86_64.pkg.tar.zst" "$TAG"
-          pacman -U --noconfirm "pkg/raywm-$PKGVER-1-x86_64.pkg.tar.zst"
-          pacman -Qi raywm | tee -a "$GITHUB_STEP_SUMMARY"
-          raywm -h >/dev/null
-          pacman -R --noconfirm raywm
+          tests/release-install.sh "pkg/raywm-$PKGVER-1-x86_64.pkg.tar.zst" "$TAG"
+          pacman -Qip "pkg/raywm-$PKGVER-1-x86_64.pkg.tar.zst" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Assets and metadata
         run: |
           set -eu

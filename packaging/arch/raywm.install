@@ -1,10 +1,52 @@
+# pacman scriptlet of the raywm package (Beta-built and Stable packages alike).
+#
+# The update channel of raywm-update is a user setting kept in
+# /etc/raywm/update.conf. It is deliberately not a file of this package:
+# pacman would replace an unmodified packaged copy on every upgrade, and a
+# Beta package and a Stable package would ship different defaults. So the
+# scriptlet creates it once, when it is missing (first install, or the first
+# upgrade from v0.2.1 or older), from the channel of the version being
+# installed, and never touches an existing file: upgrades in either
+# direction (Beta -> Stable -> Beta) keep the subscription.
+# RAYWM_UPDATE_CONF is for tests/update.sh only.
+
+_raywm_channel_init() {
+  conf=${RAYWM_UPDATE_CONF:-/etc/raywm/update.conf}
+  if [ -e "$conf" ] || [ -L "$conf" ]; then
+    return 0
+  fi
+  case "$1" in
+    *beta*) channel=beta ;;
+    *) channel=stable ;;
+  esac
+  dir=$(dirname "$conf")
+  mkdir -p "$dir" || return 0
+  tmp="$dir/.update.conf.$$"
+  if printf '# RayWM update channel (raywm-update --set-channel beta|stable).\n# Kept across package upgrades; not part of raywm.conf.\nchannel=%s\n' "$channel" >"$tmp" &&
+    chmod 644 "$tmp" && mv -f "$tmp" "$conf"; then
+    echo "==> RayWM: update channel set to '$channel' ($conf)."
+    echo "==> Change it with:  sudo raywm-update --set-channel beta|stable"
+  else
+    rm -f "$tmp"
+    echo "==> RayWM: could not create $conf; raywm-update will assume '$channel'."
+  fi
+}
+
 post_install() {
+  _raywm_channel_init "$1"
   echo '==> RayWM: the default configuration is in /usr/share/raywm/config.'
   echo '==> Start from it with:  cp -r /usr/share/raywm/config ~/.config/raywm'
   echo '==> (an existing ~/.config/raywm is never changed by the package).'
+  echo '==> Settings: ~/.config/raywm/raywm.conf; check it with  raywm -t'
 }
 
 post_upgrade() {
+  _raywm_channel_init "$1"
   echo '==> RayWM: compare your ~/.config/raywm with /usr/share/raywm/config'
   echo '==> after upgrades; see /usr/share/doc/raywm/CHANGELOG.md.'
+}
+
+post_remove() {
+  echo '==> RayWM: kept /etc/raywm/update.conf (your update channel) and ~/.config/raywm.'
+  echo '==> Remove them by hand if you do not reinstall RayWM.'
 }

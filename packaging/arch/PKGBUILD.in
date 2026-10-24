@@ -12,7 +12,8 @@ pkgdesc='Lightweight, minimal Wayland compositor (wlroots) extended with Lua plu
 arch=('x86_64')
 url='https://github.com/Rreeqqwel/RayWM'
 license=('GPL-3.0-only')
-depends=('wlroots0.20' 'wayland' 'libxkbcommon' 'pixman' 'lua54' 'libinput' 'glibc' 'python')
+# curl, tar and pacman's vercmp: raywm-update. python: raywmctl.
+depends=('wlroots0.20' 'wayland' 'libxkbcommon' 'pixman' 'lua54' 'libinput' 'glibc' 'python' 'curl' 'tar')
 makedepends=('wayland-protocols' 'pkgconf')
 optdepends=(
   'xorg-xwayland: X11 applications and games'
@@ -21,6 +22,9 @@ optdepends=(
   'wl-clipboard: copy screenshots to the clipboard'
   'swaylock: screen locking'
   'swayidle: idle management'
+  'sudo: raywm-update installs updates and sets the channel with it'
+  'base-devel: raywm-update builds Beta releases (with wayland-protocols, pkgconf)'
+  'wayland-protocols: building Beta releases with raywm-update'
 )
 install=raywm.install
 # Zig builds its own binary; makepkg's LTO/debug-package settings do not apply.
@@ -50,14 +54,20 @@ check() {
   ! strings "${bin}" | grep -q 'TEST BUILD: virtual pointer'
   ! strings "${bin}" | grep -q raywm-test-unplug
   for f in config/init.lua config/plugins/*.lua; do luac5.4 -p "$f"; done
+  # The shipped raywm.conf is valid on its own (no system file involved).
+  RAYWM_SYSTEM_CONF= "${bin}" -t -c config/init.lua >/dev/null
+  "${srcdir}/out/bin/raywm-update" --help >/dev/null
 }
 
 package() {
   cd "raywm-${_tag}"
   install -Dm755 "${srcdir}/out/bin/raywm" "${pkgdir}/usr/bin/raywm"
   install -Dm755 scripts/raywmctl "${pkgdir}/usr/bin/raywmctl"
-  # Default configuration and Lua plugins; copied to ~/.config/raywm by the
-  # user (see raywm.install), never overwritten by the package.
+  install -Dm755 "${srcdir}/out/bin/raywm-update" "${pkgdir}/usr/bin/raywm-update"
+  # Default configuration (raywm.conf, read as the system layer) and Lua
+  # plugins; copied to ~/.config/raywm by the user (see raywm.install), never
+  # overwritten by the package. /etc/raywm/update.conf is not packaged: the
+  # scriptlet creates it once, so upgrades never reset the update channel.
   install -dm755 "${pkgdir}/usr/share/raywm/config"
   cp -r --no-preserve=ownership config/. "${pkgdir}/usr/share/raywm/config/"
   find "${pkgdir}/usr/share/raywm/config" -type f -exec chmod 644 {} +
