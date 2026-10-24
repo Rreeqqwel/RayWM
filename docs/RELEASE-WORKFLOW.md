@@ -202,3 +202,21 @@ published, not yet hardware-validated candidate), initial `release` =
 | tag v0.1.1 | 09d1ffdd… → f428c053480a9a3f126bc2ae9ce3c4b8214dd53b |
 | tag v0.2.0 | 6e63ee48… → 76d2d8c5dac5e9c99a8e8d08f6dce17cf2d0040f |
 | tag v0.2.1 | 92364593… → 9552af71b119306acb2416952fa3b2c8010e458d |
+
+Outcome of the migration:
+
+- `master` = default branch. `main` and the merged branches
+  `feature/core`, `feature/output-mode`, `feature/v0.1.2-input-focus`,
+  `feature/v0.2.0-complete`, `feature/v0.2.1-gaming` and `release/v0.1.1`
+  were deleted after checking that each is an ancestor of `master`
+  (`release/v0.1.1` also blocked the name `release`: Git cannot have both
+  `refs/heads/release` and `refs/heads/release/…`). All four historical tags
+  and releases are unchanged.
+- `release` stays at `76d2d8c` (v0.2.0) until the first `-stable` release.
+- `v0.2.1-beta` (on `4c74e80`) has no release: the first workflow version
+  misread the pushed tag as lightweight. Tags are immutable, so the fix
+  shipped as the next candidate, `v0.2.1-beta.2` (`618c25c`), the first
+  published Beta. `beta` points to it.
+- Rulesets: `master` (no deletion or force push), `beta`/`release`
+  (no deletion or force push, linear history, required check
+  `build + tests (pixman)`), tags `v*` (no update or deletion).
