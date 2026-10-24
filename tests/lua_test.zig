@@ -399,6 +399,22 @@ test "precompiled chunks are refused by every loader; text still loads" {
     _ = takeErrors(); // the refused plugin is reported
 }
 
+test "a plugin running away while loading fails alone; init.lua goes on" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/loadbudget.lua", .{ .instructions = 1_000_000, .report = report, .warn = warn });
+    defer rt.destroy();
+    try std.testing.expect(rt.configured());
+    try std.testing.expectEqual(1, f.count("after:nil:nil"));
+    try std.testing.expectEqual(1, f.count("setup:probe"));
+    rt.emit(.view_map, 7);
+    try std.testing.expectEqual(1, f.count("map:7"));
+    try std.testing.expect(hasError("loadspin"));
+    try std.testing.expect(hasError("setupspin"));
+    try std.testing.expect(!hasError("init.lua"));
+    _ = takeErrors();
+}
+
 test "reload tears everything down and runs the config again" {
     var f: Fake = .{};
     defer f.deinit();

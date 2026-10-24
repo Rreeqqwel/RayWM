@@ -978,6 +978,15 @@ pub fn Runtime(comptime H: type) type {
             const path = std.fmt.bufPrintZ(&buf, "{s}/plugins/{s}.lua", .{ dir, name }) catch
                 return c.luaL_error(L, "plugin path too long");
             if (c.luaL_loadfilex(L, path.ptr, "t") != c.LUA_OK) return fail(L, name);
+            // Loading a plugin (its chunk and setup) gets a budget of its own,
+            // like a top-level callback: a plugin that runs away while loading
+            // fails alone, and init.lua goes on with what it had left.
+            // Before, the exhausted budget kept failing every instruction after
+            // the plugin's error, so the rest of init.lua was lost (found by
+            // tests/stress lua failure-modes, load_spin).
+            const saved_budget = self.budget;
+            self.budget = self.limits.instructions;
+            defer self.endPluginBudget(saved_budget);
             if (c.lua_pcallk(L, 0, 1, 0, 0, null) != c.LUA_OK) return fail(L, name);
             if (c.lua_type(L, -1) != c.LUA_TTABLE) return failMsg(L, name, "must return a table");
             _ = c.lua_getfield(L, -1, "api");
@@ -1017,6 +1026,16 @@ pub fn Runtime(comptime H: type) type {
             log.info("loaded plugin {s} ({d} key bindings)", .{ name, binds });
             c.lua_pushboolean(L, 1);
             return 1;
+        }
+
+        /// After a plugin load: clear an exhausted budget and give init.lua
+        /// back what it had left.
+        fn endPluginBudget(self: *Self, saved: u64) void {
+            if (self.exhausted) {
+                self.exhausted = false;
+                c.lua_sethook(self.L, hook, c.LUA_MASKCOUNT, hook_step);
+            }
+            self.budget = saved;
         }
 
         fn fail(L: ?*c.lua_State, name: []const u8) c_int {
