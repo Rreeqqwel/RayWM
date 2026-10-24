@@ -787,7 +787,15 @@ pub const View = struct {
             return view.place(n.x, n.y, n.width, n.height);
         }
         // Unknown (fullscreen or maximized before it mapped): the client
-        // picks its size, and the window is centred once it has.
+        // picks its size, and the window is centred once it has. X11 has
+        // no such request (0x0 would become 1x1): use its size at map.
+        if (view.impl == .xwayland and view.natural[0] > 0 and view.natural[1] > 0) {
+            const o = view.output() orelse view.server.activeOutput() orelse return;
+            const u = o.usableBox();
+            const w = view.natural[0];
+            const h = view.natural[1];
+            return view.place(u.x +| @divTrunc(u.width -| w, 2), u.y +| @divTrunc(u.height -| h, 2), w, h);
+        }
         const serial = view.configureSize(0, 0);
         view.anchor = null;
         view.pending = .{ .serial = serial, .x = view.x, .y = view.y, .w = 0, .h = 0, .center = true };
@@ -1064,13 +1072,27 @@ pub const View = struct {
         const server = view.server;
         const g = view.windowBox();
         view.natural = .{ g.width, g.height };
+        // X11 windows (SDL and Wine games) may be fullscreen or maximized
+        // before their first map. xdg toplevels got that size in their
+        // initial configure; X11 has none, so confirm the state and size
+        // the window here (it is revealed once it has drawn that size).
+        const x11 = view.impl == .xwayland;
         if (view.isFullscreen()) {
+            if (x11) if (server.outputById(view.fullscreen_output)) |o| {
+                const b = o.box();
+                view.setFullscreenState(true);
+                view.place(b.x, b.y, b.width, b.height);
+            };
             view.fitFullscreen();
         } else if (view.maximized) {
             if (server.activeOutput()) |o| {
                 const u = o.usableBox();
                 view.x = u.x;
                 view.y = u.y;
+                if (x11) {
+                    view.setMaximizedState(true);
+                    view.place(u.x, u.y, u.width, u.height);
+                }
             }
         } else if (server.activeOutputBox()) |box| {
             view.x = box.x +| @divTrunc(box.width -| g.width, 2);

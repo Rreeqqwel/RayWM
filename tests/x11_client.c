@@ -68,6 +68,14 @@ int main(int argc,char **argv) {
     xcb_atom_t protocols[]={atom("WM_DELETE_WINDOW")};
     xcb_change_property(c,XCB_PROP_MODE_REPLACE,win,atom("WM_PROTOCOLS"),XCB_ATOM_ATOM,32,1,protocols);
     clipboard=atom("CLIPBOARD");utf8=atom("UTF8_STRING");targets=atom("TARGETS");property=atom("RAYWM_TEST_SELECTION");
+    if(getenv("RAYWM_TEST_X11_FULLSCREEN")) {
+        /* Like SDL and Wine games: the state is set before the first map. */
+        xcb_atom_t fs=atom("_NET_WM_STATE_FULLSCREEN");
+        xcb_change_property(c,XCB_PROP_MODE_REPLACE,win,atom("_NET_WM_STATE"),XCB_ATOM_ATOM,32,1,&fs);
+    } else if(getenv("RAYWM_TEST_X11_MAXIMIZED")) {
+        xcb_atom_t max[]={atom("_NET_WM_STATE_MAXIMIZED_HORZ"),atom("_NET_WM_STATE_MAXIMIZED_VERT")};
+        xcb_change_property(c,XCB_PROP_MODE_REPLACE,win,atom("_NET_WM_STATE"),XCB_ATOM_ATOM,32,2,max);
+    }
     xcb_map_window(c,win);xcb_flush(c);
     puts("x11: connected");
     while(!xcb_connection_has_error(c)) {

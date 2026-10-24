@@ -13,7 +13,8 @@ super_key() { drive key super down key "$1" down key "$1" up key super up sleep 
 xlaunch() {
     display=$(sed -n 's/.*lazy Xwayland display \(:[0-9]*\).*/\1/p' "$tmp/raywm.log" | tail -1)
     [ -n "$display" ] || { fail "no private X display"; return; }
-    env -i PATH="$PATH" DISPLAY="$display" XDG_RUNTIME_DIR="$tmp" "$bin/raywm-test-x11" "$tmp/command" >"$tmp/x.log" 2>&1 &
+    # shellcheck disable=SC2086 # XENV is a list of VAR=value words
+    env -i PATH="$PATH" DISPLAY="$display" XDG_RUNTIME_DIR="$tmp" ${XENV:-} "$bin/raywm-test-x11" "$tmp/command" >"$tmp/x.log" 2>&1 &
     echo $! >"$tmp/x.pid"
     wait_log x "x11: mapped"
     sleep 0.3
@@ -127,4 +128,36 @@ x6() {
     xhas "x11: mapped"
     xstop
 }
-run_scenarios xwayland x1 x2 x3 x4 x5 x6
+x7() {
+    name="Xwayland window fullscreen before its first map is sized and confirmed (v0.2.1)"
+    start "$cfg" 0
+    XENV="RAYWM_TEST_X11_FULLSCREEN=1" xlaunch
+    dump
+    expect 1 "state 2 floating=false fullscreen=true maximized=false visible=true managed=false ws=0 output=1"
+    expect 1 "view 2 0,0 1280x720 focused=true"
+    # The X client itself must be configured to the output, not just centred.
+    grep -qF "x11: geometry 0,0 1280x720" "$tmp/x.log" || fail "X11 window was not configured to the output size"
+    command fullscreen 0
+    dump
+    expect 2 "state 2 floating=false fullscreen=false maximized=false visible=true managed=false ws=0 output=1"
+    if grep -qF "view 2 0,0 1280x720" "$tmp/probe.log" && awk '/^dump 2/{on=1;next} on' "$tmp/probe.log" | grep -qF "view 2 0,0 1280x720"; then
+        fail "leaving fullscreen kept the output size"
+    fi
+    command fullscreen 1
+    dump
+    expect 3 "view 2 0,0 1280x720 focused=true"
+    xstop
+}
+x8() {
+    name="Xwayland window maximized before its first map fills the usable area and restores (v0.2.1)"
+    start "$cfg" 0
+    XENV="RAYWM_TEST_X11_MAXIMIZED=1" xlaunch
+    dump
+    expect 1 "state 2 floating=false fullscreen=false maximized=true visible=true managed=false ws=0 output=1"
+    expect 1 "view 2 0,0 1280x720 focused=true"
+    command maximize 0
+    dump
+    expect 2 "view 2 540,285 200x150 focused=true"
+    xstop
+}
+run_scenarios xwayland x1 x2 x3 x4 x5 x6 x7 x8
