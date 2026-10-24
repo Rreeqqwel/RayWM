@@ -27,7 +27,9 @@ pub fn Int(comptime lo: i32, comptime hi: i32) type {
 /// A string setting without control characters, at most `cap` bytes.
 pub fn Text(comptime cap: usize) type {
     return struct {
-        buf: [cap]u8 = undefined,
+        /// Bytes past `len` are always zero, so two equal strings are equal
+        /// structs (std.meta.eql) whatever was stored before.
+        buf: [cap]u8 = @splat(0),
         len: u16 = 0,
         pub const capacity = cap;
         pub fn slice(t: *const @This()) []const u8 {
@@ -296,6 +298,7 @@ fn parseValue(comptime T: type, dst: *T, value: []const u8) ValueError!void {
         if (s.len > T.capacity) return error.TooLong;
         if (hasControl(s)) return error.BadText;
         @memcpy(dst.buf[0..s.len], s);
+        @memset(dst.buf[s.len..], 0);
         dst.len = @intCast(s.len);
     } else if (comptime hasDecl(T, "optional")) {
         if (T.optional and std.ascii.eqlIgnoreCase(value, "none")) {
@@ -533,6 +536,13 @@ test "string length limit" {
     var text: [400]u8 = undefined;
     const t = try std.fmt.bufPrint(&text, "[general]\nterminal = {s}\n", .{long});
     try testing.expect(parse(t, .{}, &d) == null);
+}
+
+test "a shorter string replacing a longer one compares equal to it set alone (fuzz regression)" {
+    var d: Diag = .{};
+    const a = parse("[general]\nterminal=500\nterminal = 0\n", .{}, &d).?;
+    const b = parse("[general]\nterminal = 0\n", .{}, &d).?;
+    try testing.expect(std.meta.eql(a, b));
 }
 
 test "duplicate keys warn and the last value wins" {
