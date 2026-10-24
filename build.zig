@@ -147,6 +147,14 @@ pub fn build(b: *std.Build) void {
     wlroots.resolved_target = target;
     wlroots.linkSystemLibrary("wlroots-0.20", .{});
 
+    // raywm.conf parser: std and libc only, unit-testable on its own.
+    const conf = b.createModule(.{
+        .root_source_file = b.path("src/conf.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+
     // Lua host: depends only on liblua, so it is unit-testable without wlroots.
     const lua = b.createModule(.{
         .root_source_file = b.path("src/lua.zig"),
@@ -155,6 +163,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     lua.linkSystemLibrary("lua5.4", .{});
+    lua.addImport("conf", conf);
 
     const exe = b.addExecutable(.{
         .name = "raywm",
@@ -171,6 +180,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("xkbcommon", xkbcommon);
     exe.root_module.addImport("wlroots", wlroots);
     exe.root_module.addImport("lua", lua);
+    exe.root_module.addImport("conf", conf);
     const options = b.addOptions();
     options.addOption(bool, "test_input", test_input);
     exe.root_module.addOptions("build_options", options);
@@ -317,6 +327,12 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests (core, Lua host and the shipped plugins)");
     test_step.dependOn(&unit_run.step);
 
+    // raywm.conf parser; reads the shipped config/raywm.conf.
+    const conf_tests = b.addTest(.{ .root_module = conf, .use_llvm = use_llvm, .use_lld = use_llvm });
+    const conf_run = b.addRunArtifact(conf_tests);
+    conf_run.setCwd(b.path("."));
+    test_step.dependOn(&conf_run.step);
+
     // Core unit tests: src/main.zig as a module (exposes srv, host).
     const core = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -328,6 +344,7 @@ pub fn build(b: *std.Build) void {
     core.addImport("xkbcommon", xkbcommon);
     core.addImport("wlroots", wlroots);
     core.addImport("lua", lua);
+    core.addImport("conf", conf);
     core.addOptions("build_options", options);
     if (test_input) core.addImport("test_input", exe.root_module.import_table.get("test_input").?);
     const core_tests_mod = b.createModule(.{

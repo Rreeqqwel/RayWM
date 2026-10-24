@@ -25,6 +25,10 @@
 -- left to right (then top to bottom), and on each output the windows in
 -- the order they were opened. It wraps around.
 
+-- Border defaults come from raywm.conf [appearance] (RayWM 0.2.2); values
+-- written here instead override raywm.conf for this plugin.
+local conf = raywm.settings and raywm.settings.appearance or {}
+
 local options = {
   -- Key bindings per action; an empty list disables the action.
   keys = {
@@ -44,8 +48,13 @@ local options = {
   -- dragged, and while a launcher or lock screen holds the keyboard.
   warp = false,
   -- Border around the focused window. width = 0 disables it. color is
-  -- "#rrggbb" or "#rrggbbaa".
-  border = { width = 2, color = "#5294e2" },
+  -- "#rrggbb" or "#rrggbbaa". inactive: border of the other windows, or
+  -- nil for none.
+  border = {
+    width = conf.border_width or 2,
+    color = conf.border_active or "#5294e2",
+    inactive = conf.border_inactive ~= "none" and conf.border_inactive or nil,
+  },
 }
 
 -- Directions: p = primary axis (position, size), q = cross axis.
@@ -211,12 +220,26 @@ end
 -- ---- focus border -----------------------------------------------------------
 
 local bordered -- window that has the border
+local dimmed = {} -- id -> true: windows with the inactive border
+
+-- The inactive border, or none. Stale ids are fine: view_border refuses them.
+local function dim(id)
+  local b = options.border
+  if b.inactive and b.width > 0 then
+    if raywm.view_border(id, b.width, b.inactive) then dimmed[id] = true end
+  else
+    raywm.view_border(id, 0)
+  end
+end
 
 local function mark(id)
-  if bordered and bordered ~= id then raywm.view_border(bordered, 0) end -- may be stale: fine
+  if bordered and bordered ~= id then dim(bordered) end
   bordered = nil
   local b = options.border
-  if id ~= 0 and b.width > 0 and raywm.view_border(id, b.width, b.color) then bordered = id end
+  if id ~= 0 and b.width > 0 and raywm.view_border(id, b.width, b.color) then
+    bordered = id
+    dimmed[id] = nil
+  end
 end
 
 return {
@@ -238,12 +261,25 @@ return {
     end
     if raywm.view_border then
       ctx.on("view_focus", mark)
+      if options.border.inactive then
+        -- view_map comes before the new window's view_focus.
+        ctx.on("view_map", function(id)
+          if id ~= bordered then dim(id) end
+        end)
+        ctx.on("view_unmap", function(id) dimmed[id] = nil end)
+        local focused = raywm.focused()
+        for _, id in ipairs(raywm.views()) do
+          if id ~= focused then dim(id) end
+        end
+      end
       mark(raywm.focused() or 0)
     end
   end,
   teardown = function()
     if bordered then raywm.view_border(bordered, 0) end
     bordered = nil
+    for id in pairs(dimmed) do raywm.view_border(id, 0) end
+    dimmed = {}
   end,
   -- For tests/focus_test.lua only.
   pick = pick,

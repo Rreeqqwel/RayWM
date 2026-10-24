@@ -17,10 +17,14 @@
 -- place. Across raywm.reload() the tree shape is kept in a small file in
 -- $XDG_RUNTIME_DIR (Lua state does not survive a reload).
 
+-- Defaults come from raywm.conf [appearance] (RayWM 0.2.2); a number
+-- written here instead overrides raywm.conf for this plugin.
+local conf = raywm.settings and raywm.settings.appearance or {}
+
 local options = {
   -- Pixels between windows, and around the edge of the usable area.
-  gaps_in = 8,
-  gaps_out = 8,
+  gaps_in = conf.inner_gaps or 8,
+  gaps_out = conf.outer_gaps or 8,
   -- How far Super+Ctrl+H/J/K/L move a split, in pixels.
   resize_step = 40,
   -- Key bindings per action; an empty list disables the action.

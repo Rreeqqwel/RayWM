@@ -9,6 +9,8 @@ const input = @import("input.zig");
 const ws = @import("workspace.zig");
 const output_mod = @import("output.zig");
 const inputconfig = @import("inputconfig.zig");
+const conf = @import("conf");
+const settings_mod = @import("settings.zig");
 const Server = srv.Server;
 
 pub const Runtime = lua.Runtime(Server);
@@ -360,6 +362,31 @@ fn eqlAny(s: []const u8, names: []const []const u8) bool {
 
 pub fn spawn(_: *Server, cmd: [*:0]const u8) void {
     srv.spawn(cmd);
+}
+
+// ---- raywm.conf (see conf.zig, settings.zig) -----------------------------------
+
+pub fn settings(server: *Server) *const conf.Settings {
+    return &server.settings;
+}
+
+/// Before every reload: re-reads raywm.conf. Applied only when every file
+/// is valid; otherwise the previous settings stay, unchanged as a whole.
+pub fn reloadSettings(server: *Server, config_path: []const u8) void {
+    const loaded = settings_mod.load(settings_mod.configDir(config_path));
+    if (!loaded.ok) {
+        std.log.scoped(.conf).err("raywm.conf has errors: keeping the previous settings", .{});
+        return;
+    }
+    var names: [8][]const u8 = undefined;
+    for (conf.restartOnlyChanged(&server.settings, &loaded.settings, &names)) |name|
+        std.log.scoped(.conf).warn("{s} changed: takes effect after restarting RayWM", .{name});
+    // Restart-only values stay as they are, so what is reported matches
+    // what runs.
+    var next = loaded.settings;
+    next.general.xwayland = server.settings.general.xwayland;
+    server.settings = next;
+    server.hover_view = 0;
 }
 
 // ---- input devices (see inputconfig.zig) ---------------------------------------

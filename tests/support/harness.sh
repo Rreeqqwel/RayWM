@@ -13,6 +13,10 @@
 #   DRIVER_ENV="VAR=v"  extra environment of the input driver
 #   FLAGS="-d"          extra raywm command-line flags
 #   RULES=file          copied to rules.lua (window-rules.lua reads it)
+#   CONF=file           copied to raywm.conf (next to init.lua)
+#   COMPOSITOR_ENV="VAR=v ..."  extra environment of the compositor. The
+#                       system raywm.conf is never read unless this sets
+#                       RAYWM_SYSTEM_CONF (sessions stay hermetic).
 failures=0
 scenarios=0
 default_win="RAYWM_TEST_HOLD=1 RAYWM_TEST_CSD_MOVE=1 RAYWM_TEST_KBD=1 RAYWM_TEST_PTR=1 RAYWM_TEST_ROUNDS=1"
@@ -29,6 +33,7 @@ start() {
     for d in ${PLUGINS:-}; do cp "$d/"*.lua "$tmp/config/raywm/plugins/"; done
     cp "$1" "$tmp/config/raywm/init.lua"
     if [ -n "${RULES:-}" ]; then cp "$RULES" "$tmp/config/raywm/rules.lua"; fi
+    if [ -n "${CONF:-}" ]; then cp "$CONF" "$tmp/config/raywm/raywm.conf"; fi
     client="'$bin/raywm-test-client'"
     win="${WIN:-$default_win} $client"
     wait_for() { echo "until grep -q '$2' '$tmp/$1'; do sleep 0.05; done"; }
@@ -52,6 +57,7 @@ start() {
         RAYWM_TEST_OUT="$tmp/probe.log" MALLOC_PERTURB_=165 \
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS="$outputs" WLR_RENDERER="${RENDERER:-pixman}" WLR_LIBINPUT_NO_DEVICES=1 \
         WLR_XWAYLAND="${WLR_XWAYLAND:-Xwayland}" RAYWM_XWAYLAND="${RAYWM_XWAYLAND:-1}" \
+        RAYWM_SYSTEM_CONF= ${COMPOSITOR_ENV:-} \
         timeout 60 "$bin/raywm" ${FLAGS:-} -s "$cmd" >"$tmp/raywm.log" 2>&1 &
     pid=$!
     i=0

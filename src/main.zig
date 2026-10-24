@@ -8,12 +8,16 @@ pub const inputconfig = @import("inputconfig.zig");
 pub const cabi = @import("cabi.zig");
 pub const animation = @import("animation.zig");
 pub const ipc = @import("ipc.zig");
+pub const conf = @import("conf");
+const settings = @import("settings.zig");
 
 const usage =
-    \\Usage: raywm [-c config.lua] [-s startup-command] [-d]
-    \\  -c  config file (default: $XDG_CONFIG_HOME/raywm/init.lua)
+    \\Usage: raywm [-c config.lua] [-s startup-command] [-d] [-t]
+    \\  -c  config file (default: $XDG_CONFIG_HOME/raywm/init.lua);
+    \\      raywm.conf is read from the same directory
     \\  -s  command run via /bin/sh once the compositor is ready
     \\  -d  verbose logging (wlroots, and key presses with Super/Ctrl/Alt)
+    \\  -t  check raywm.conf, print the effective settings and exit
     \\
 ;
 
@@ -23,12 +27,15 @@ pub fn main(init: std.process.Init) !void {
     var config: ?[*:0]const u8 = null;
     var startup: ?[*:0]const u8 = null;
     var debug = false;
+    var check = false;
     const argv = init.minimal.args.vector;
     var i: usize = 1;
     while (i < argv.len) : (i += 1) {
         const arg = std.mem.span(argv[i]);
         if (std.mem.eql(u8, arg, "-d")) {
             debug = true;
+        } else if (std.mem.eql(u8, arg, "-t")) {
+            check = true;
         } else if ((std.mem.eql(u8, arg, "-c") or std.mem.eql(u8, arg, "-s")) and i + 1 < argv.len) {
             i += 1;
             if (arg[1] == 'c') config = argv[i] else startup = argv[i];
@@ -37,11 +44,17 @@ pub fn main(init: std.process.Init) !void {
             return if (std.mem.eql(u8, arg, "-h")) {} else error.InvalidArgument;
         }
     }
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const path = if (config) |p| std.mem.span(p) else defaultConfig(&path_buf) orelse "init.lua";
+    if (check) std.process.exit(if (settings.check(settings.configDir(path))) 0 else 1);
+
     wlr.log.init(if (debug) .debug else .info, null);
     srv.verbose = debug;
 
+    // Before the server: some settings (xwayland) are read during setup.
+    const loaded = settings.load(settings.configDir(path));
     var server: srv.Server = undefined;
-    try server.init();
+    try server.init(loaded.settings);
     defer server.deinit();
 
     const loop = server.wl_server.getEventLoop();
@@ -57,8 +70,6 @@ pub fn main(init: std.process.Init) !void {
     try server.backend.start();
 
     // Started after the backend so plugins see the initial outputs in setup.
-    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const path = if (config) |p| std.mem.span(p) else defaultConfig(&path_buf) orelse "init.lua";
     server.rt = try host.Runtime.create(&server, path, .{});
     defer {
         const rt = server.rt.?;

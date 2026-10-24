@@ -279,13 +279,31 @@ fn handleBinding(server: *Server, mods: u32, sym: u32) bool {
     const logo: u32 = @bitCast(wlr.Keyboard.ModifierMask{ .logo = true });
     const logo_shift: u32 = @bitCast(wlr.Keyboard.ModifierMask{ .logo = true, .shift = true });
     if (mods == logo and sym == xkb.Keysym.Return) {
-        srv.spawn("${TERMINAL:-foot}");
+        spawnTerminal(server);
     } else if (mods == logo_shift and sym == xkb.Keysym.e) {
         server.wl_server.terminate();
     } else if (mods == logo_shift and sym == xkb.Keysym.r) {
         if (server.rt) |rt| rt.requestReload() else return false;
     } else return false;
     return true;
+}
+
+/// general.terminal from raywm.conf, else $TERMINAL, else foot.
+fn spawnTerminal(server: *Server) void {
+    const t = server.settings.general.terminal.slice();
+    if (t.len == 0) return srv.spawn("${TERMINAL:-foot}");
+    var buf: [@TypeOf(server.settings.general.terminal).capacity + 1]u8 = undefined;
+    srv.spawn(std.fmt.bufPrintZ(&buf, "{s}", .{t}) catch return);
+}
+
+/// True if input.mouse_modifier (raywm.conf) is held.
+fn dragModifierHeld(server: *Server, mods: wlr.Keyboard.ModifierMask) bool {
+    return switch (server.settings.input.mouse_modifier) {
+        .super => mods.logo,
+        .alt => mods.alt,
+        .ctrl => mods.ctrl,
+        .shift => mods.shift,
+    };
 }
 
 pub fn newInput(listener: *wl.Listener(*wlr.InputDevice), device: *wlr.InputDevice) void {
@@ -481,7 +499,9 @@ fn processMotion(server: *Server, time_msec: u32) void {
             server.seat.pointerNotifyMotion(time_msec, server.cursor.x - origin[0], server.cursor.y - origin[1]);
             return;
         }
-        focusHit(server, surfaceAt(server, server.cursor.x, server.cursor.y), time_msec);
+        const hit = surfaceAt(server, server.cursor.x, server.cursor.y);
+        focusHit(server, hit, time_msec);
+        if (server.settings.input.focus_follows_mouse) followPointer(server, hit);
         return;
     };
     // Became managed mid-grab (ctx.manage, reload): stop changing geometry,
@@ -506,6 +526,26 @@ fn processMotion(server: *Server, time_msec: u32) void {
             view.resizeAnchored(w, h, g.edges, g.box);
         },
     }
+}
+
+/// focus_follows_mouse: moving the pointer into another window focuses it,
+/// once per entry, so keyboard focus moved elsewhere (keys, plugins) is not
+/// taken back while the pointer rests or moves inside the same window. Only
+/// real pointer motion does this, never a scene change under a still cursor.
+/// server.focus() refuses it while locked or covered by a fullscreen window;
+/// a launcher or lock-like layer surface keeps the keyboard.
+fn followPointer(server: *Server, hit: ?Hit) void {
+    const h = hit orelse return;
+    if (h.layer != null) return;
+    const view = h.view orelse {
+        server.hover_view = 0;
+        return;
+    };
+    if (view.id == server.hover_view) return;
+    server.hover_view = view.id;
+    if (server.seat.drag != null or server.focused == view or !view.visible()) return;
+    if (server.layer_focus) |ls| if (ls.wlr_layer.current.keyboard_interactive == .exclusive) return;
+    server.focus(view);
 }
 
 /// A layout plugin (ctx.manage) owns the geometry of this window, so free
@@ -580,7 +620,7 @@ pub fn button(listener: *wl.Listener(*wlr.Pointer.event.Button), event: *wlr.Poi
             server.focus(view);
             const kb = server.seat.getKeyboard();
             // On a managed window Super+click is an ordinary click.
-            if (kb != null and kb.?.getModifiers().logo and (event.button == BTN_LEFT or event.button == BTN_RIGHT) and !layoutManaged(server, view) and !fixedGeometry(view)) {
+            if (kb != null and dragModifierHeld(server, kb.?.getModifiers()) and (event.button == BTN_LEFT or event.button == BTN_RIGHT) and !layoutManaged(server, view) and !fixedGeometry(view)) {
                 if (event.button == BTN_LEFT) {
                     beginMove(server, view, false);
                     server.grab.button = event.button;

@@ -5,6 +5,7 @@
 //! Lua never sees native pointers: windows, outputs and timers are integer
 //! ids, and the host validates every id on use.
 const std = @import("std");
+const conf = @import("conf");
 pub const c = @cImport({
     @cInclude("lua.h");
     @cInclude("lualib.h");
@@ -289,6 +290,33 @@ pub fn parseColor(spec: []const u8) ?[4]f32 {
     return .{ v[0] * v[3], v[1] * v[3], v[2] * v[3], v[3] };
 }
 
+/// raywm.settings: { general = {...}, appearance = {...}, input = {...} }.
+fn pushSettings(L: ?*c.lua_State, s: *const conf.Settings) void {
+    c.lua_createtable(L, 0, 4);
+    const Push = struct {
+        fn field(l: ?*c.lua_State, section: []const u8, key: []const u8, v: conf.Value) void {
+            var sec: [32]u8 = undefined;
+            var k: [64]u8 = undefined;
+            const sec_z = std.fmt.bufPrintZ(&sec, "{s}", .{section}) catch unreachable;
+            const key_z = std.fmt.bufPrintZ(&k, "{s}", .{key}) catch unreachable;
+            if (c.lua_getfield(l, -1, sec_z.ptr) != c.LUA_TTABLE) {
+                c.lua_settop(l, -2);
+                c.lua_createtable(l, 0, 8);
+                c.lua_pushvalue(l, -1);
+                c.lua_setfield(l, -3, sec_z.ptr);
+            }
+            switch (v) {
+                .boolean => |b| c.lua_pushboolean(l, @intFromBool(b)),
+                .integer => |i| c.lua_pushinteger(l, i),
+                .string => |str_v| _ = c.lua_pushlstring(l, str_v.ptr, str_v.len),
+            }
+            c.lua_setfield(l, -2, key_z.ptr);
+            c.lua_settop(l, -2);
+        }
+    };
+    conf.each(s, L, Push.field);
+}
+
 /// `H.Api` must provide the host functions called below (see host.zig).
 pub fn Runtime(comptime H: type) type {
     return struct {
@@ -465,6 +493,12 @@ pub fn Runtime(comptime H: type) type {
             const dir = std.fs.path.dirname(self.config_path) orelse ".";
             _ = c.lua_pushlstring(L, dir.ptr, dir.len);
             c.lua_setfield(L, -2, "config_dir");
+            // raywm.conf, read-only by convention: a fresh copy per Lua state,
+            // so a reload always sees the settings that reload validated.
+            if (@hasDecl(Api, "settings")) {
+                pushSettings(L, Api.settings(self.host));
+                c.lua_setfield(L, -2, "settings");
+            }
             inline for (globals) |g| {
                 c.lua_pushlightuserdata(L, self);
                 c.lua_pushcclosure(L, g[1], 1);
@@ -514,6 +548,9 @@ pub fn Runtime(comptime H: type) type {
             if (self.reload_requested) {
                 self.reload_requested = false;
                 log.info("reloading {s}", .{self.config_path});
+                // raywm.conf first: plugins set up again with the new values
+                // (or the previous ones, if the file has errors).
+                if (@hasDecl(Api, "reloadSettings")) Api.reloadSettings(self.host, self.config_path);
                 self.stop();
                 self.start() catch {
                     self.limits.report("raywm", "reload failed: out of memory; Lua is disabled until the next reload");

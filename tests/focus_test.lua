@@ -305,6 +305,38 @@ test("border: the bordered window closing is harmless", function()
   eq(borders[2], "#5294e2")
 end)
 
+test("raywm.settings (raywm.conf) sets the borders, inactive ones too", function()
+  reset(); dwindle(3)
+  raywm.settings = { appearance = { border_width = 3, border_active = "#ff0000ff", border_inactive = "#20202080" } }
+  load_plugin()
+  raywm.settings = nil
+  eq(plugin.options.border.width, 3)
+  eq(borders[4], "#ff0000ff", "focused window")
+  eq(borders[2], "#20202080"); eq(borders[3], "#20202080")
+  press("Super+h")
+  local now = focused
+  eq(borders[now], "#ff0000ff"); eq(borders[4], "#20202080", "previous one dimmed")
+  add(5, 0, 0, 10, 10); emit("view_map", 5)
+  eq(borders[5], "#20202080", "new window dimmed before it is focused")
+  focus(5)
+  eq(borders[5], "#ff0000ff"); eq(borders[now], "#20202080")
+  emit("view_unmap", 2); views[2] = nil; borders[2] = nil
+  plugin.teardown()
+  eq(next(borders), nil, "teardown removes every border")
+end)
+
+test("raywm.settings: inactive none and width 0", function()
+  reset(); dwindle(2)
+  raywm.settings = { appearance = { border_width = 2, border_active = "#5294e2ff", border_inactive = "none" } }
+  load_plugin()
+  eq(plugin.options.border.inactive, nil)
+  eq(borders[3], "#5294e2ff"); eq(borders[2], nil)
+  raywm.settings = { appearance = { border_width = 0, border_active = "#5294e2ff", border_inactive = "#000000ff" } }
+  reset(); dwindle(2); load_plugin()
+  raywm.settings = nil
+  eq(next(borders), nil, "width 0: no borders at all")
+end)
+
 test("reload: setup again registers the same bindings once", function()
   reset(); dwindle(2); load_plugin()
   plugin.teardown()

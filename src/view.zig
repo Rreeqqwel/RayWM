@@ -1120,7 +1120,11 @@ pub const View = struct {
         if (!view.mapped) return;
         // New windows take focus, unless a plugin chose focus itself
         // (even re-focusing the previous window) while handling view_map.
-        if (server.focus_requests == requests and view.visible()) server.focus(view);
+        // With focus_new_windows = false only a dialog of the focused window,
+        // or a window appearing while none has focus, takes it.
+        const takes_focus = server.settings.general.focus_new_windows or server.focused == null or
+            (view.parent() != null and view.parent() == server.focused);
+        if (takes_focus and server.focus_requests == requests and view.visible()) server.focus(view);
         view.revealWhenReady();
         input.refocusPointer(server);
     }

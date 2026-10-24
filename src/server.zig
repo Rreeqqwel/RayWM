@@ -15,6 +15,7 @@ const Workspace = workspace.Workspace;
 const lock = @import("lock.zig");
 const output_mod = @import("output.zig");
 const inputconfig = @import("inputconfig.zig");
+const conf = @import("conf");
 const protocols = @import("protocols.zig");
 const cabi = @import("cabi.zig");
 const Constraints = @import("constraints.zig").Constraints;
@@ -92,6 +93,10 @@ pub const Server = struct {
     /// Scene node of the pointer-focused surface (see input.zig).
     pointer_node: input.PointerNode = .{},
     next_id: u32 = 1,
+    /// raywm.conf (src/conf.zig); replaced as a whole on a valid reload.
+    settings: conf.Settings = .{},
+    /// focus_follows_mouse: the view the pointer last moved into (0: none).
+    hover_view: u32 = 0,
     /// Set once the Lua host is running; null during startup and teardown.
     rt: ?*host.Runtime = null,
     /// Single event-loop timer backing all Lua timers.
@@ -114,7 +119,7 @@ pub const Server = struct {
     cursor_axis: wl.Listener(*wlr.Pointer.event.Axis) = .init(input.axis),
     cursor_frame: wl.Listener(*wlr.Cursor) = .init(input.frame),
 
-    pub fn init(server: *Server) !void {
+    pub fn init(server: *Server, settings: conf.Settings) !void {
         const wl_server = try wl.Server.create();
         errdefer wl_server.destroy();
         var session: ?*wlr.Session = null;
@@ -123,6 +128,7 @@ pub const Server = struct {
         const scene = try wlr.Scene.create();
         const output_layout = try wlr.OutputLayout.create(wl_server);
         server.* = .{
+            .settings = settings,
             .wl_server = wl_server,
             .backend = backend,
             .session = session,
