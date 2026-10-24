@@ -4,6 +4,81 @@ All notable changes to RayWM. Versions follow [Semantic
 Versioning](https://semver.org/); before 1.0, minor versions may break
 the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
+## [v0.2.2] — Configuration & Update System, candidate prepared 2026-10-24
+
+### Added
+
+- **`raywm.conf`**, the central settings file (`config/raywm.conf`,
+  docs/CONFIGURATION.md): a minimal INI-like format parsed and validated by
+  the core (`src/conf.zig`; nothing is executed, nothing is allocated).
+  Layers: built-in defaults, `/usr/share/raywm/config/raywm.conf`, then
+  `raywm.conf` next to `init.lua`. Settings: `general.focus_new_windows`,
+  `general.terminal`, `general.xwayland`, `appearance.inner_gaps`,
+  `outer_gaps`, `border_width`, `border_active`, `border_inactive`,
+  `input.mouse_modifier`, `input.focus_follows_mouse`. Defaults equal the
+  v0.2.1 behaviour.
+  - Errors carry file and line; a file with any error is ignored as a whole;
+    unknown keys only warn. `raywm -t` checks the files and prints the
+    effective settings.
+  - Reload (Ctrl+Alt+R) re-reads it first and keeps the previous settings
+    when it is broken. Everything but `xwayland` applies on reload.
+  - Lua keeps plugin loading and plugin options: `raywm.settings` (api 1)
+    exposes the file to plugins, and the shipped `dwindle.lua`,
+    `focus.lua` and `binds.lua` take their defaults from it. Older plugin
+    copies keep their own values.
+  - New: `focus_follows_mouse` (sloppy focus, once per entry, never during
+    grabs, drags, locks or exclusive launchers), a configurable drag
+    modifier, inactive window borders in `focus.lua`.
+- **`raywm-update`** (`src/update.zig`, docs/INSTALL.md): `--check`,
+  `--install`, `--channel`, `--set-channel beta|stable`, `--version`,
+  `--help`, with `--yes`, `--dry-run`, `--verbose`. It lists all pages of
+  GitHub Releases, ignores historical, draft and inconsistent releases,
+  compares pacman versions with `vercmp`, cross-checks
+  `raywm-release.json` with the tag and GitHub's asset list, verifies size
+  and SHA256, builds a Beta into a pacman package as the user (never as
+  root) with the archive's own `scripts/arch-package.sh`, checks the
+  package's name, version, architecture and file paths, and installs only
+  with `sudo pacman -U`. Any failure before that leaves the installation
+  as it was; the working directory is always removed. No daemon.
+- **Persistent update channel** in `/etc/raywm/update.conf`, separate from
+  the installed version and from `raywm.conf`. The package does not own
+  it; its scriptlet creates it once from the package's channel, so
+  upgrades between Beta and Stable packages never reset it. Beta
+  subscribers receive Beta and Stable releases, Stable subscribers only
+  Stable releases.
+- Packages install `/usr/bin/raywm-update` and
+  `/usr/share/raywm/config/raywm.conf`; new dependencies `curl` and `tar`.
+- Tests: `tests/conf.sh` (13 scenarios, real input), `tests/update.sh`
+  (27 scenarios with local release fixtures and the real vercmp/curl/tar),
+  `tests/release-install.sh` (real pacman install/reinstall/remove cycle in
+  CI), 25 new unit tests.
+
+### Changed
+
+- The Release workflow now builds the pacman package from every Beta's
+  source archive too (as `raywm-update` does) and runs the package and
+  install-cycle checks before publishing; only Stable packages are
+  published.
+
+### Fixed
+
+- **`tests/focus.sh` "dwindle insert and focus" flaked in CI** ("A not
+  shrunk to the left half"). Not a compositor bug: window A acks configures
+  in its own process, and when B closed before A dispatched the 628×704
+  configure, A acked only the latest one (1264×704), as xdg-shell allows.
+  Reproduced with the old script on one contended CPU (2 of 40 runs). B now
+  stays mapped until the compositor's event log shows A's half-size commit,
+  the compositor stops only after A was restored and re-activated, the
+  "restored" check requires the full size *after* the half size, and
+  failing checks no longer abort the script before the logs are printed.
+
+### Not verified here
+
+- Hardware-dependent behaviour (GPU, DRM/KMS, VRR, tearing, real input
+  devices) and the osu! frame-rate report from v0.2.1 were not re-tested;
+  this release does not change those paths. See
+  docs/HARDWARE-TESTING.md and docs/GAMING-TESTING.md.
+
 ## [v0.2.1] — Gaming Patch, candidate prepared 2026-10-24
 
 Prompted by the first external report (osu!, RTX 2050 laptop, about

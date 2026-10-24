@@ -6,9 +6,10 @@ install next to your current desktop:
 - nothing writes to an existing configuration;
 - no root is needed for the release archive.
 
-- [1. Runtime requirements](#1-runtime-requirements)
 - [Install a Stable release (pacman)](#install-a-stable-release-pacman)
-- [Install a Beta source archive](#install-a-beta-source-archive)
+- [Install a Beta release (source, built into a pacman package)](#install-a-beta-release-source-built-into-a-pacman-package)
+- [Updates: raywm-update](#updates-raywm-update)
+- [1. Runtime requirements](#1-runtime-requirements)
 - [2. Install the release archive (Arch Linux, releases up to v0.2.1)](#2-install-the-release-archive-arch-linux-releases-up-to-v021)
 - [3. Build from source](#3-build-from-source)
 - [4. First start](#4-first-start)
@@ -28,33 +29,149 @@ sudo pacman -U raywm-X.Y.Z-1-x86_64.pkg.tar.zst
 cp -r /usr/share/raywm/config ~/.config/raywm   # first install only
 ```
 
-The package installs `/usr/bin/raywm`, `/usr/bin/raywmctl`, the default
-configuration and plugins in `/usr/share/raywm/config`, a session entry for
-display managers (`/usr/share/wayland-sessions/raywm.desktop`) and the
-documentation; it never changes `~/.config/raywm`. Remove it with
-`sudo pacman -R raywm`.
+The package installs `/usr/bin/raywm`, `/usr/bin/raywmctl`,
+`/usr/bin/raywm-update`, the default configuration (`raywm.conf`, `init.lua`)
+and plugins in `/usr/share/raywm/config`, a session entry for display
+managers (`/usr/share/wayland-sessions/raywm.desktop`) and the
+documentation; it never changes `~/.config/raywm`. On the first install it
+creates `/etc/raywm/update.conf` with `channel=stable` (see
+[Updates](#updates-raywm-update)). Remove it with `sudo pacman -R raywm`.
 
-## Install a Beta source archive
+## Install a Beta release (source, built into a pacman package)
 
 Beta releases (`vX.Y.Z-beta[.N]`, GitHub Pre-releases) carry
-`raywm-vX.Y.Z-beta.tar.gz`: the sources, configuration, plugins and the
-pinned Zig dependencies (`zig-pkg/`), so no network is needed to build.
-With Zig 0.16.0 and the build dependencies of section 3:
+`raywm-vX.Y.Z-beta[.N].tar.gz`: the sources, configuration, plugins,
+packaging and the pinned Zig dependencies (`zig-pkg/`). On Arch Linux,
+build a pacman package from it as your normal user (never as root; needs
+`base-devel`, `wayland-protocols` and `pkgconf`; the build downloads the
+checksum-pinned Zig 0.16.0 from ziglang.org) and install that:
 
 ```sh
-sha256sum -c raywm-vX.Y.Z-beta.tar.gz.sha256
-tar -xzf raywm-vX.Y.Z-beta.tar.gz && cd raywm-vX.Y.Z-beta
+sha256sum -c raywm-v0.2.2-beta.tar.gz.sha256
+tar -xzf raywm-v0.2.2-beta.tar.gz
+raywm-v0.2.2-beta/scripts/arch-package.sh v0.2.2-beta raywm-v0.2.2-beta.tar.gz pkg
+sudo pacman -U pkg/raywm-0.2.2beta-1-x86_64.pkg.tar.zst
+[ -e ~/.config/raywm ] || cp -r /usr/share/raywm/config ~/.config/raywm
+```
+
+This is exactly what `raywm-update --install` does for a Beta. The first
+install creates `/etc/raywm/update.conf` with `channel=beta`. Later Betas
+and Stables then come through `raywm-update`.
+
+Without pacman (other distributions), build it like any checkout, with Zig
+0.16.0 and the build dependencies of section 3; `raywm-update` is for
+pacman-based systems only:
+
+```sh
+cd raywm-v0.2.2-beta
 zig build -Doptimize=ReleaseSafe -p out
 install -Dm755 out/bin/raywm ~/.local/bin/raywm
 install -Dm755 scripts/raywmctl ~/.local/bin/raywmctl
 [ -e ~/.config/raywm ] || cp -r config ~/.config/raywm
 ```
 
-On Arch Linux you can build a pacman package from it instead:
-`scripts/arch-package.sh vX.Y.Z-beta ../raywm-vX.Y.Z-beta.tar.gz out` (as a
-normal user), then `sudo pacman -U out/raywm-*.pkg.tar.zst`.
-
 Releases up to v0.2.1 use the binary archive described in section 2.
+
+## Updates: raywm-update
+
+`raywm-update` (installed with the package, since v0.2.2) checks GitHub
+Releases and installs updates through pacman. It runs only when you call
+it: there is no daemon and no timer.
+
+| Command | What it does |
+|---|---|
+| `raywm-update --check` | lists releases, keeps those offered to your channel and newer than the installed package, shows the newest. Installs nothing. Exit status 0: an update is available; 2: up to date; 1: error. |
+| `raywm-update --install` | the same selection, then shows version, channel, type and SHA256, asks, downloads, verifies and installs (see below). |
+| `raywm-update --channel` | shows the subscribed channel and where it comes from. |
+| `sudo raywm-update --set-channel beta` / `stable` | changes the subscription. Installs nothing; run `--check` afterwards. Without sudo it asks for it. |
+| `raywm-update --version` | the version of raywm-update and of the installed package. |
+| `raywm-update --help` | usage. |
+
+Options: `--yes` (or `--noconfirm`) installs without asking, for scripts;
+without it, `--install` refuses to run without a terminal. `--dry-run`
+selects, downloads and verifies, prints the commands it would run, and
+installs nothing (with `--set-channel`: prints what it would write).
+`--verbose` also lists the releases it ignored and why.
+
+Examples:
+
+```sh
+raywm-update --check                    # anything new for my channel?
+raywm-update --install                  # install it (asks before pacman runs)
+raywm-update --install --dry-run        # download and verify only
+raywm-update --channel                  # beta or stable?
+sudo raywm-update --set-channel stable  # only Stable releases from now on
+sudo raywm-update --set-channel beta    # Beta and Stable releases
+```
+
+### Channel and installed version are different things
+
+The channel is a setting of the installation, stored in
+`/etc/raywm/update.conf` (`channel=beta` or `channel=stable`), separately from
+`raywm.conf` and from the installed version:
+
+- **beta** receives Beta *and* Stable releases. Installing
+  `v0.2.2-stable` from the beta channel keeps you on beta, so `v0.2.3-beta`
+  is offered next: `v0.2.1-beta.2 → v0.2.1-stable → v0.2.2-beta → v0.2.2-stable`.
+- **stable** receives Stable releases only, never a Beta. A Stable
+  subscriber who runs a Beta build gets the next Stable once it is newer.
+
+Versions are compared with pacman's `vercmp` on the package versions
+(`0.2.1beta < 0.2.1beta.2 < 0.2.1 < 0.2.2beta < 0.2.2`), never as strings, and
+only newer versions are offered: raywm-update never downgrades.
+
+The package does not own `/etc/raywm/update.conf`. Its install scriptlet
+creates it once, when it is missing (the first install, or the first
+upgrade from v0.2.1 or older), from the channel of the version being
+installed, and never touches an existing file. Upgrades between Beta and
+Stable packages in any order, reinstalls and `pacman -R` therefore keep
+the subscription (remove the file by hand after uninstalling if you
+want). If the file is missing, raywm-update assumes the channel of the
+installed version and says so; if it is malformed or unreadable,
+raywm-update stops and tells you to run `--set-channel` rather than
+guessing.
+
+### What --install does
+
+1. Lists the releases (all pages of the GitHub API; `/releases/latest` is
+   not used, because Betas are Pre-releases and historical releases still
+   exist). Releases whose tag is not `vX.Y.Z-beta[.N]` / `vX.Y.Z-stable`
+   (v0.1.0 … v0.2.1), drafts, releases whose Pre-release flag contradicts
+   the tag, and releases without the expected asset or
+   `raywm-release.json` are ignored.
+2. Picks the newest eligible release and checks its `raywm-release.json`:
+   schema 1, tag, channel(s), version, `pkgver`, `pacman_version` and the
+   asset's name, kind and size must agree with the tag and with GitHub's
+   listing; otherwise it tries the next older one.
+3. Downloads the asset (HTTPS only, size-limited) into a private directory
+   under `~/.cache/raywm-update/` and checks size and SHA256.
+4. **Stable:** that file is the package. **Beta:** checks that every
+   archive member lies inside `raywm-<tag>/`, extracts it and runs the
+   archive's `scripts/arch-package.sh` (makepkg) as you; it refuses to
+   build as root.
+5. Checks the package with `pacman -Qip`/`-Qlp`: name `raywm`, the expected
+   version, x86_64, and only files under RayWM's own paths in `/usr`.
+6. Runs `sudo pacman -U <package>` (pacman asks again unless `--yes`). This
+   is the only privileged step; pacman replaces the old package atomically.
+7. Removes the working directory, also after any failure. A failed
+   download, checksum, build or check never reaches step 6, so the
+   installed RayWM stays as it was. `~/.config/raywm` is never touched.
+
+Requirements: `curl` and `tar` (package dependencies), pacman's `vercmp`,
+`sudo`; for Beta builds `base-devel`, `wayland-protocols`, `pkgconf`, and
+network access to ziglang.org. GitHub allows 60 unauthenticated API
+requests per hour; raywm-update reports when that limit is hit.
+
+### What SHA256 verification guarantees
+
+The checksum proves the downloaded file is the one the release's
+`raywm-release.json` describes: it detects corrupted, truncated or swapped
+downloads and mirrors serving different files. It does **not** prove who
+made the release: the metadata comes from the same GitHub release as the
+asset, over HTTPS, so the trust anchor is GitHub's TLS certificate and the
+security of the RayWM GitHub repository and its release workflow. Releases
+are not signed. A Beta build additionally runs the archive's build scripts
+(build.zig, PKGBUILD) as your user, as any source build does.
 
 ## 1. Runtime requirements
 

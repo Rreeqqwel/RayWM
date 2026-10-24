@@ -13,15 +13,15 @@ correctness ahead of artificial code reduction.
   input, outputs, rendering and resource lifetimes.
 - Everything that is policy is a Lua plugin: tiling, key bindings and
   window rules.
+- Basic settings (focus, gaps, borders, drag modifier) live in one small,
+  validated file, `raywm.conf`.
 
-> **Status: v0.2.1 (Gaming Patch) release candidate, experimental.** v0.2.1
-> fixes gaming-path defects found after the v0.2.0 candidate and adds
-> performance diagnostics; see [CHANGELOG.md](CHANGELOG.md) and
-> [docs/GAMING.md](docs/GAMING.md). Earlier implementation and validation
-> are recorded in [the development ledger](docs/DEVELOPMENT.md) and
-> [candidate acceptance](docs/RELEASE-STATUS.md). This checkout is not a
-> published release. Headless tests do not establish physical hardware
-> compatibility.
+> **Status: v0.2.2 (Configuration & Update System), Beta, experimental.**
+> v0.2.2 adds the central `raywm.conf` and the `raywm-update` manager with
+> persistent Beta/Stable channels; see [CHANGELOG.md](CHANGELOG.md).
+> Earlier implementation and validation are recorded in [the development
+> ledger](docs/DEVELOPMENT.md) and [candidate acceptance](docs/RELEASE-STATUS.md).
+> Headless tests do not establish physical hardware compatibility.
 
 ## Features
 
@@ -69,7 +69,14 @@ correctness ahead of artificial code reduction.
   fullscreen games, and `raywmctl perf` diagnostics; see
   [GAMING.md](docs/GAMING.md).
 - **Interactive move/resize** for floating windows (Super + drag, or the
-  client's own title bar).
+  client's own title bar; the modifier is configurable).
+- **`raywm.conf`** (v0.2.2): one validated INI-like file for the basic
+  settings, layered (defaults, system, user), with line-numbered errors,
+  `raywm -t`, and reload that never applies a broken file. Optional
+  focus-follows-mouse and inactive borders.
+- **`raywm-update`** (v0.2.2): checks GitHub Releases for your persistent
+  Beta or Stable subscription, verifies SHA256, builds Betas into a pacman
+  package as your user and installs through `pacman -U`.
 - **Lua 5.4 plugin system (API v1).**
   - One clear loading contract.
   - Per-plugin ownership of handlers, bindings, timers and visual resources.
@@ -85,8 +92,8 @@ correctness ahead of artificial code reduction.
     `ctx.manage`.
 - **Keyboard focus navigation** (`config/plugins/focus.lua`, Lua):
   directional focus (Super+H/J/K/L) by window geometry across outputs,
-  a focus cycle (Super+Tab), an optional pointer warp, and a border
-  around the focused window.
+  a focus cycle (Super+Tab), an optional pointer warp, and borders
+  around the focused (and optionally the other) windows.
 - **Screenshots** (`config/plugins/screenshot.lua`, a plain Lua plugin):
   full screen, interactive region, clipboard copy, PNG files with unique
   names, notifications. The capturing is done by grim, slurp and
@@ -131,8 +138,31 @@ Releases come in two channels ([docs/RELEASE-WORKFLOW.md](docs/RELEASE-WORKFLOW.
   sudo pacman -U raywm-X.Y.Z-1-x86_64.pkg.tar.zst
   cp -r /usr/share/raywm/config ~/.config/raywm   # only if you have no configuration yet
   ```
-- **Beta** (`vX.Y.Z-beta[.N]`, GitHub Pre-release): a source archive that
-  builds offline; see [docs/INSTALL.md](docs/INSTALL.md#install-a-beta-source-archive).
+- **Beta** (`vX.Y.Z-beta[.N]`, GitHub Pre-release): a source archive,
+  built into a pacman package as your user (needs `base-devel`,
+  `wayland-protocols`, `pkgconf`):
+  ```sh
+  sha256sum -c raywm-v0.2.2-beta.tar.gz.sha256
+  tar -xzf raywm-v0.2.2-beta.tar.gz
+  raywm-v0.2.2-beta/scripts/arch-package.sh v0.2.2-beta raywm-v0.2.2-beta.tar.gz pkg
+  sudo pacman -U pkg/raywm-0.2.2beta-1-x86_64.pkg.tar.zst
+  ```
+  Other distributions: [docs/INSTALL.md](docs/INSTALL.md#install-a-beta-release-source-built-into-a-pacman-package).
+
+The first install subscribes you to the channel you installed. After
+that, updates come through **`raywm-update`**:
+
+```sh
+raywm-update --check                    # newest update for your channel (installs nothing)
+raywm-update --install                  # download, verify (SHA256), build if Beta, pacman -U
+raywm-update --channel                  # show the subscription
+sudo raywm-update --set-channel stable  # Stable releases only (beta: Beta and Stable)
+```
+
+The channel is your setting, not a property of the installed version:
+installing a Stable release from the beta channel keeps you on beta, and
+package upgrades never reset it. Details, guarantees and limits of the
+checksum verification: [docs/INSTALL.md](docs/INSTALL.md#updates-raywm-update).
 
 Releases up to v0.2.1 (before the channels) ship a binary archive with
 `install.sh`:
@@ -261,6 +291,34 @@ Clients labeled through a security-context listener are denied those
 privileged globals. The launcher must also isolate the unrestricted
 socket. See [SECURITY.md](SECURITY.md).
 
+## Configuration
+
+`~/.config/raywm/raywm.conf` holds the basic settings; every key is
+optional (defaults: [config/raywm.conf](config/raywm.conf)):
+
+```ini
+[general]
+focus_new_windows = true
+terminal = kitty
+
+[appearance]
+inner_gaps = 4
+outer_gaps = 12
+border_width = 2
+border_active = #88c0d0
+border_inactive = #3b4252
+
+[input]
+mouse_modifier = alt
+focus_follows_mouse = false
+```
+
+`raywm -t` checks it and prints the effective settings; a file with an
+error is ignored as a whole (the log names the line) and a reload keeps
+the previous settings. Ctrl+Alt+R applies changes. Everything else
+(which plugins run, key bindings, rules, monitors, input devices) stays
+in Lua. Reference: [docs/CONFIGURATION.md](docs/CONFIGURATION.md#raywmconf).
+
 ## Lua plugins
 
 ```lua
@@ -316,13 +374,15 @@ All tests are headless and isolated from your session. The input tests
 use test-only virtual input inside a private compositor.
 
 ```sh
-zig build test                      # Zig unit tests (core + Lua host), dwindle, focus and screenshot plugin tests
+zig build test                      # Zig unit tests (core, Lua host, raywm.conf, raywm-update), Lua plugin tests
 tests/smoke.sh && tests/focus.sh && tests/docs.sh
+tests/update.sh                     # raywm-update and the channel scriptlet against local release fixtures
 zig build -Dtest-input -p zig-out/test-input
 tests/input.sh && tests/stress.sh   # real pointer/keyboard events, stress
 tests/pointer.sh                    # implicit pointer grab: exact wl_pointer event streams
 tests/navigation.sh                 # focus keys, layouts (us/ru), two outputs, warp, border
 tests/screenshot.sh                 # real grim/slurp/wl-clipboard, PNGs checked pixel by pixel
+tests/conf.sh                       # raywm.conf: layers, every setting, reload
 ```
 
 See [docs/TESTING.md](docs/TESTING.md) for every suite, CI, and the
@@ -339,11 +399,13 @@ src/            Zig core
   input.zig       keyboard, bindings, pointer focus and grabs, move/resize
   layer.zig       wlr-layer-shell
   lua.zig         Lua 5.4 host: plugins, isolation, limits
+  conf.zig        raywm.conf parser (settings.zig loads the layers)
+  update.zig      raywm-update: release selection, verification, pacman
   host.zig        compositor functions exposed to Lua (id-based)
 config/         example ~/.config/raywm (layout, state, workspaces, rules, devices, autostart)
 docs/           INSTALL, CONFIGURATION, API, ARCHITECTURE, TESTING, screenshots/
 tests/          unit, integration, input, pointer, navigation, screenshot and stress tests
-scripts/        package.sh (release archive), install.sh, gallery.sh
+scripts/        source-archive.sh, arch-package.sh, release-meta.py, raywmctl, install.sh
 ```
 
 ## Branches and releases

@@ -149,7 +149,8 @@ outputs).
 | `raywm.pointer_warp(x, y)` | `true` or `nil, reason` | since v0.1.2; see [below](#pointer-and-border-v012) |
 | `raywm.spawn(cmd)` | — | runs `cmd` with `/bin/sh -c` in a new session. The child is detached (it is never a zombie of RayWM) and has `WAYLAND_DISPLAY` set |
 | `raywm.quit()` | — | stops the compositor |
-| `raywm.reload()` | — | see [Lifecycle](#lifecycle-and-errors) |
+| `raywm.reload()` | — | see [Lifecycle](#lifecycle-and-errors); re-reads raywm.conf first |
+| `raywm.settings` | table | since v0.2.2: raywm.conf, see [below](#raywmsettings) |
 | `raywm.log(msg)` | — | writes `msg` (converted with `tostring` rules) to the log |
 
 **Coordinates** are clamped to ±2²⁴. Sizes passed to `view_place` are
@@ -266,6 +267,40 @@ that attempt.
 
 Numeric API arguments must be finite. Opacity is clamped to 0..1 before
 native conversion; NaN/infinity raise a Lua argument error.
+
+## `raywm.settings`
+
+Since v0.2.2 (`api = 1` unchanged): the settings of
+[raywm.conf](CONFIGURATION.md#raywmconf) after all layers were applied,
+as a table of sections. Every key is always present:
+
+| Field | Type | Example |
+|---|---|---|
+| `general.focus_new_windows` | boolean | `true` |
+| `general.terminal` | string | `""` (empty: `$TERMINAL` or foot) |
+| `general.xwayland` | boolean | `true` (what runs; changes need a restart) |
+| `appearance.inner_gaps`, `appearance.outer_gaps` | integer | `8` |
+| `appearance.border_width` | integer | `2` |
+| `appearance.border_active` | string | `"#5294e2ff"` (always `#rrggbbaa`) |
+| `appearance.border_inactive` | string | `"none"` or `"#rrggbbaa"` |
+| `input.mouse_modifier` | string | `"super"`, `"alt"`, `"ctrl"` or `"shift"` |
+| `input.focus_follows_mouse` | boolean | `false` |
+
+It is a copy made for each Lua state: a reload re-reads raywm.conf first
+and the plugins get the new table. Changing it changes nothing in the
+core. On RayWM older than 0.2.2 it is `nil`, so read it defensively:
+
+```lua
+-- Takes a colour from raywm.conf, with a fallback for older RayWM.
+local s = raywm.settings and raywm.settings.appearance or {}
+local color = s.border_active or "#5294e2"
+return {
+  api = 1,
+  setup = function()
+    raywm.log("border colour from raywm.conf: " .. color)
+  end,
+}
+```
 
 ## Pointer and border (v0.1.2)
 

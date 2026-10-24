@@ -29,9 +29,11 @@ Temporary branches (`feature/*`, `fix/*`, `hotfix/*`) branch from
 A subscription is a user setting, not a property of the installed
 version: after `v0.2.1-beta → v0.2.1-stable` a Beta subscriber still gets
 `v0.2.2-beta`, and a Stable subscriber who happens to run a Beta build gets
-the next Stable only once it is newer (see "Version order"). The future
-`raywm-update` tool stores the channel separately; this repository only
-publishes the data it needs.
+the next Stable only once it is newer (see "Version order").
+`raywm-update` (since v0.2.2, [INSTALL.md](INSTALL.md#updates-raywm-update))
+stores the subscription in `/etc/raywm/update.conf`, a file the package
+does not own: the install scriptlet creates it once from the installed
+package's channel and never changes it, so Beta ↔ Stable upgrades keep it.
 
 ## Version numbers and tags
 
@@ -81,7 +83,8 @@ the rules below are about the uploaded assets.
 - `raywm-X.Y.Z-1-x86_64.pkg.tar.zst`: built by `makepkg` from
   `packaging/arch/PKGBUILD.in` and the same kind of source archive. It
   installs `/usr/bin/raywm` (ReleaseSafe, `-Dcpu=baseline`, no test-only
-  code), `/usr/bin/raywmctl`, the default configuration and plugins in
+  code), `/usr/bin/raywmctl`, `/usr/bin/raywm-update`, the default
+  configuration (`raywm.conf`, `init.lua`) and plugins in
   `/usr/share/raywm/config`, `/usr/share/wayland-sessions/raywm.desktop`,
   documentation and the license. It never touches `~/.config/raywm`.
 - `….pkg.tar.zst.sha256`, `SHA256SUMS`, `raywm-release.json`.
@@ -112,6 +115,18 @@ the rules below are about the uploaded assets.
 `vercmp` that is greater than the installed one, then verifies `sha256`.
 New fields may be added within schema 1; a breaking change needs a new
 schema number.
+
+`raywm-update` (src/update.zig) treats all of it as untrusted input: it
+derives channel, `pkgver` and the expected asset name from the tag with
+the rules above, ignores releases whose tag is outside the scheme (the
+historical ones), drafts, releases whose Pre-release flag contradicts the
+tag and releases without the asset or the metadata, and accepts
+`raywm-release.json` only if every field agrees with the tag and the asset
+size with GitHub's listing; otherwise it falls back to the next older
+release. Download URLs must be
+`https://github.com/Rreeqqwel/RayWM/releases/download/<tag>/<asset>`.
+Changing asset names, the tag scheme or the metadata fields therefore
+breaks updates for installed versions: keep them, or add a new schema.
 
 ## Beta → Stable
 
@@ -144,10 +159,18 @@ schema number.
 The Release workflow runs the complete CI suite (`.github/workflows/ci.yml`,
 including `tests/perf.sh` and `tests/release-meta.sh`) on the tagged commit,
 then `tests/release-archive.sh --build` (structure, no binaries, versions,
-build and unit tests from the extracted archive) and, for Stable,
-`tests/release-package.sh` (pacman metadata, dependencies, file list,
-baseline-CPU binary without test code, headless start with the packaged
-configuration, `pacman -U`/`-R` in a clean container). Publishing depends on
+build and unit tests from the extracted archive). For both channels it
+then builds the pacman package from that archive with
+`scripts/arch-package.sh` (as an unprivileged user, as `raywm-update` does
+on users' machines for a Beta) and runs `tests/release-package.sh`
+(pacman metadata, dependencies, file list including `raywm-update` and
+`raywm.conf`, nothing in `/etc`, baseline-CPU binary without test code,
+headless start with the packaged configuration) and
+`tests/release-install.sh` (real `pacman -U`, reinstall and `-R` in the
+container: `/etc/raywm/update.conf` created once with the package's
+channel, unowned, kept across reinstall and removal, switched by
+`raywm-update --set-channel`). Only the Stable package is published; for a
+Beta it proves the archive builds into a valid package. Publishing depends on
 every job; a failure stops before anything is uploaded. CI runners have no
 GPU display: hardware validation is manual and recorded in the release
 report.

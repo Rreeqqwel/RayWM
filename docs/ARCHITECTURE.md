@@ -314,6 +314,35 @@ bits. Reentrant actions can emit events, so dead-client destruction is
 swept only after the active callback returns. Native state queries expose
 IDs and values, never arbitrary object access or code evaluation.
 
+## v0.2.2: settings and updates
+
+**raywm.conf** (`src/conf.zig`, loaded by `src/settings.zig`). One
+`conf.Settings` value lives in the server; it is built from fixed-size
+fields (bounded integers, colours as `#rrggbbaa`, strings of at most 256
+bytes), so parsing allocates nothing and a reload cannot leak. The schema
+is the struct itself: the parser, `raywm -t` and the Lua export walk its
+fields at compile time, so a setting cannot exist in one place and be
+missing in another. `main` loads it before `Server.init` (Xwayland reads it
+there); a reload loads it again in `Runtime.leaveOuter` *before* the old Lua
+state is closed, and replaces the whole value only if every layer is
+valid. Core-owned settings are read where they act, at event time
+(map, button press, motion, the fallback key), so no other state needs to
+be refreshed. Plugin-owned settings (gaps, borders) are only exported:
+`raywm.settings` is a fresh table per Lua state; the plugins remain the
+only code that lays out windows or draws borders. Plugin loading stays in
+`init.lua`, so there is no second list of plugins. Cost: a struct of a few hundred
+bytes, one file read per start or reload, and one table per Lua state;
+nothing per frame.
+
+**raywm-update** (`src/update.zig`) is a separate short-lived program,
+not part of the compositor. It links only libc and runs `curl` (HTTPS
+transport and CA handling, already a pacman dependency), `vercmp` (exact
+pacman version order), `tar`, `pacman` and, for Betas, the archive's own
+`scripts/arch-package.sh`. Everything it reads from the network is
+validated against the tag scheme before use; see
+[RELEASE-WORKFLOW.md](RELEASE-WORKFLOW.md#update-metadata-raywm-releasejson-schema-1)
+and [INSTALL.md](INSTALL.md#updates-raywm-update).
+
 ## Extension points and limits
 
 The core owns protocol/resource correctness; Lua owns layout, bindings,
