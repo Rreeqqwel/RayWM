@@ -32,6 +32,8 @@ pub fn build(b: *std.Build) void {
     scanner.addSystemProtocol("staging/xdg-activation/xdg-activation-v1.xml");
     scanner.addSystemProtocol("staging/ext-foreign-toplevel-list/ext-foreign-toplevel-list-v1.xml");
     scanner.addSystemProtocol("staging/ext-workspace/ext-workspace-v1.xml");
+    scanner.addSystemProtocol("staging/tearing-control/tearing-control-v1.xml");
+    scanner.addSystemProtocol("staging/linux-drm-syncobj/linux-drm-syncobj-v1.xml");
     scanner.addSystemProtocol("unstable/pointer-constraints/pointer-constraints-unstable-v1.xml");
     scanner.addSystemProtocol("unstable/relative-pointer/relative-pointer-unstable-v1.xml");
     scanner.addSystemProtocol("unstable/keyboard-shortcuts-inhibit/keyboard-shortcuts-inhibit-unstable-v1.xml");
@@ -125,6 +127,8 @@ pub fn build(b: *std.Build) void {
     scanner.generate("zwlr_foreign_toplevel_manager_v1", 3);
     scanner.generate("ext_foreign_toplevel_list_v1", 1);
     scanner.generate("ext_workspace_manager_v1", 1);
+    scanner.generate("wp_tearing_control_manager_v1", 1);
+    scanner.generate("wp_linux_drm_syncobj_manager_v1", 1);
     scanner.generate("zwp_pointer_constraints_v1", 1);
     scanner.generate("zwp_relative_pointer_manager_v1", 1);
     scanner.generate("zwp_keyboard_shortcuts_inhibit_manager_v1", 1);

@@ -281,6 +281,13 @@ pub const Server = struct {
         return null;
     }
 
+    /// The visible fullscreen window on `o`, most recently focused first.
+    pub fn fullscreenOn(server: *Server, o: *Output) ?*View {
+        var it = server.views.iterator(.forward);
+        while (it.next()) |v| if (v.fullscreen_output == o.id and v.revealed and v.visible()) return v;
+        return null;
+    }
+
     /// Most recently focused visible view.
     pub fn firstVisible(server: *Server) ?*View {
         var it = server.views.iterator(.forward);

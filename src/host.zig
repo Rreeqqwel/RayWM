@@ -204,6 +204,7 @@ pub fn output(server: *Server, id: u32) ?lua.OutputInfo {
         .mode = .{ w.width, w.height, w.refresh },
         .physical = .{ w.phys_width, w.phys_height },
         .adaptive_sync = w.adaptive_sync_status == .enabled,
+        .allow_tearing = o.allow_tearing,
     };
 }
 
@@ -242,7 +243,7 @@ pub fn outputConfigure(server: *Server, target: lua.OutputTarget, cfg: lua.Outpu
             break :blk null;
         },
     } orelse return .stale;
-    var c: output_mod.Config = .{ .enabled = cfg.enabled, .adaptive_sync = cfg.adaptive_sync };
+    var c: output_mod.Config = .{ .enabled = cfg.enabled, .adaptive_sync = cfg.adaptive_sync, .allow_tearing = cfg.allow_tearing };
     if (cfg.mode) |m| c.mode = .{ .size = .{ .width = m[0], .height = m[1], .refresh = m[2] } };
     if (cfg.scale) |sc| c.scale = @floatCast(sc);
     if (cfg.transform) |t| c.transform = output_mod.parseTransform(t) orelse return .bad_transform;

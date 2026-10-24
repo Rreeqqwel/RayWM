@@ -119,6 +119,8 @@ pub const OutputInfo = struct {
     mode: [3]i32 = .{ 0, 0, 0 },
     physical: [2]i32 = .{ 0, 0 },
     adaptive_sync: bool = false,
+    /// raywm.output_configure { allow_tearing } (RayWM 0.2.1).
+    allow_tearing: bool = false,
 };
 pub const ModeInfo = struct { w: i32, h: i32, refresh: i32, preferred: bool, current: bool };
 /// raywm.output_configure options; null: unchanged.
@@ -131,6 +133,8 @@ pub const OutputConfig = struct {
     /// null: unchanged; auto: next to the other outputs.
     position: ?union(enum) { auto, at: [2]i32 } = null,
     adaptive_sync: ?bool = null,
+    /// Tearing page flips for fullscreen windows that ask for them.
+    allow_tearing: ?bool = null,
 };
 pub const OutputTarget = union(enum) { id: u32, name: []const u8 };
 /// raywm.input_configure settings (see src/inputconfig.zig); strings are
@@ -1007,6 +1011,7 @@ pub fn Runtime(comptime H: type) type {
                 setInt(L, "h", info.physical[1]);
                 c.lua_setfield(L, -2, "physical");
                 setBool(L, "adaptive_sync", info.adaptive_sync);
+                setBool(L, "allow_tearing", info.allow_tearing);
                 n += 1;
                 c.lua_rawseti(L, -2, n);
             }
@@ -1135,7 +1140,8 @@ pub fn Runtime(comptime H: type) type {
         }
 
         /// raywm.output_configure(name or id, { enabled, mode, scale,
-        /// transform, position, adaptive_sync }) -> true, or nil + reason.
+        /// transform, position, adaptive_sync, allow_tearing }) -> true,
+        /// or nil + reason.
         /// Tested before it is applied; refuses to disable the last output.
         fn lOutputConfigure(L: ?*c.lua_State) callconv(.c) c_int {
             const self = get(L);
@@ -1190,6 +1196,8 @@ pub fn Runtime(comptime H: type) type {
             }
             c.lua_settop(L, -2);
             if (c.lua_getfield(L, 2, "adaptive_sync") != c.LUA_TNIL) cfg.adaptive_sync = c.lua_toboolean(L, -1) != 0;
+            c.lua_settop(L, -2);
+            if (c.lua_getfield(L, 2, "allow_tearing") != c.LUA_TNIL) cfg.allow_tearing = c.lua_toboolean(L, -1) != 0;
             c.lua_settop(L, -2);
             const r = Api.outputConfigure(self.host, target, cfg);
             if (r == .ok) {

@@ -7,6 +7,21 @@ const srv = @import("server.zig");
 const View = @import("view.zig").View;
 
 pub const capacity = 256;
+
+// wlroots 0.20.2 explicit-sync helpers without zig-wlroots 0.20.1 bindings.
+// Only the public prefix of the surface state is declared; C owns it.
+const SyncobjState = extern struct {
+    acquire_timeline: ?*wlr.DrmSyncobjTimeline,
+    acquire_point: u64,
+};
+const SetBufferOptions = extern struct {
+    damage: ?*const anyopaque = null,
+    wait_timeline: ?*wlr.DrmSyncobjTimeline = null,
+    wait_point: u64 = 0,
+};
+extern fn wlr_linux_drm_syncobj_v1_get_surface_state(surface: *wlr.Surface) ?*SyncobjState;
+extern fn wlr_linux_drm_syncobj_v1_state_signal_release_with_buffer(state: *SyncobjState, buffer: *wlr.Buffer) bool;
+extern fn wlr_scene_buffer_set_buffer_with_options(buffer: *wlr.SceneBuffer, wlr_buffer: ?*wlr.Buffer, options: *const SetBufferOptions) void;
 const Snapshot = struct {
     tag: srv.Tag = .visual,
     tree: *wlr.SceneTree,
@@ -44,9 +59,23 @@ const Snapshot = struct {
                 if (s.count >= 256) return error.TooManyBuffers;
                 const bytes = @as(u64, @intCast(@max(0, buffer.width))) * @as(u64, @intCast(@max(0, buffer.height))) * 4;
                 if (bytes > 128 << 20 or s.bytes > (128 << 20) - bytes) return error.SnapshotTooLarge;
-                const dest = try s.tree.createSceneBuffer(buffer);
+                const dest = try s.tree.createSceneBuffer(null);
                 // SceneBuffer locks the client buffer. The additional lock
                 // prevents wlroots from updating its texture in place.
+                // With explicit sync the client ignores wl_buffer.release:
+                // wait for its acquire point, and delay its release point
+                // until the snapshot drops the buffer.
+                var options: SetBufferOptions = .{};
+                const sync = if (wlr.SceneSurface.tryFromBuffer(source)) |ss| wlr_linux_drm_syncobj_v1_get_surface_state(ss.surface) else null;
+                if (sync) |state| {
+                    options.wait_timeline = state.acquire_timeline;
+                    options.wait_point = state.acquire_point;
+                }
+                wlr_scene_buffer_set_buffer_with_options(dest, buffer, &options);
+                if (sync) |state| if (!wlr_linux_drm_syncobj_v1_state_signal_release_with_buffer(state, buffer)) {
+                    dest.node.destroy();
+                    return error.OutOfMemory;
+                };
                 dest.node.setPosition(nx, ny);
                 dest.setSourceBox(&source.src_box);
                 dest.setDestSize(source.dst_width, source.dst_height);
@@ -168,6 +197,15 @@ pub const Engine = struct {
         e.apply(&e.slots[index].?, from);
         e.schedule();
         return .{ .ok = id };
+    }
+
+    /// Jobs still animating (diagnostics).
+    pub fn running(e: *const Engine) usize {
+        var n: usize = 0;
+        for (e.slots) |slot| if (slot) |job| {
+            n += @intFromBool(job.active);
+        };
+        return n;
     }
 
     fn schedule(e: *Engine) void {
