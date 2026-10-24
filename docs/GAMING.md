@@ -205,5 +205,10 @@ Please include:
   committing while any animation runs (normally under 200 ms).
 - No gaming-specific "game mode"; use window rules (`opacity`, floating) and
   the optional plugins to keep fullscreen games undecorated.
+- wlroots 0.20's XWM learns an X11 window's pre-map `_NET_WM_STATE` only if
+  it subscribed to the window's property changes before the client set it;
+  otherwise wlroots overwrites the state when the window maps and the window
+  starts as a normal window (RayWM never sees the request). Games that also
+  request fullscreen after mapping (most SDL/Wine paths) are unaffected.
 - Frame scheduling is wlroots' default (render at the frame event); there is
   no configurable render delay ("max render time") in this release.

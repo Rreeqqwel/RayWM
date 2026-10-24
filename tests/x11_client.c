@@ -68,6 +68,20 @@ int main(int argc,char **argv) {
     xcb_atom_t protocols[]={atom("WM_DELETE_WINDOW")};
     xcb_change_property(c,XCB_PROP_MODE_REPLACE,win,atom("WM_PROTOCOLS"),XCB_ATOM_ATOM,32,1,protocols);
     clipboard=atom("CLIPBOARD");utf8=atom("UTF8_STRING");targets=atom("TARGETS");property=atom("RAYWM_TEST_SELECTION");
+    if(getenv("RAYWM_TEST_X11_FULLSCREEN")||getenv("RAYWM_TEST_X11_MAXIMIZED")) {
+        /* wlroots' XWM only learns pre-map state through PropertyNotify,
+         * which it selects after it sees CreateNotify; a property set
+         * earlier is overwritten at map (wlroots 0.20 race). Real clients
+         * can lose that race too; this test exercises RayWM's handling of
+         * the state wlroots does report, so wait for the selection. */
+        for(int i=0;i<200;i++) {
+            xcb_get_window_attributes_reply_t *a=xcb_get_window_attributes_reply(c,xcb_get_window_attributes(c,win),NULL);
+            int ready=a&&(a->all_event_masks&XCB_EVENT_MASK_PROPERTY_CHANGE);
+            free(a);
+            if(ready) break;
+            usleep(10000);
+        }
+    }
     if(getenv("RAYWM_TEST_X11_FULLSCREEN")) {
         /* Like SDL and Wine games: the state is set before the first map. */
         xcb_atom_t fs=atom("_NET_WM_STATE_FULLSCREEN");
