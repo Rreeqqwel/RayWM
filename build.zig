@@ -147,6 +147,14 @@ pub fn build(b: *std.Build) void {
     wlroots.resolved_target = target;
     wlroots.linkSystemLibrary("wlroots-0.20", .{});
 
+    // TEST ONLY: DebugAllocator for the compositor and the Lua host (leaks,
+    // double frees, poisoned freed memory); see src/alloc.zig.
+    const leak_check = b.option(bool, "leak-check", "TEST ONLY: check every allocation at exit") orelse false;
+    const alloc_options = b.addOptions();
+    alloc_options.addOption(bool, "leak_check", leak_check);
+    const alloc_mod = b.createModule(.{ .root_source_file = b.path("src/alloc.zig"), .target = target, .optimize = optimize, .link_libc = true });
+    alloc_mod.addOptions("alloc_options", alloc_options);
+
     // raywm.conf parser: std and libc only, unit-testable on its own.
     const conf = b.createModule(.{
         .root_source_file = b.path("src/conf.zig"),
@@ -164,6 +172,7 @@ pub fn build(b: *std.Build) void {
     });
     lua.linkSystemLibrary("lua5.4", .{});
     lua.addImport("conf", conf);
+    lua.addImport("alloc", alloc_mod);
 
     const exe = b.addExecutable(.{
         .name = "raywm",
@@ -181,6 +190,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("wlroots", wlroots);
     exe.root_module.addImport("lua", lua);
     exe.root_module.addImport("conf", conf);
+    exe.root_module.addImport("alloc", alloc_mod);
     const options = b.addOptions();
     options.addOption(bool, "test_input", test_input);
     exe.root_module.addOptions("build_options", options);
@@ -363,6 +373,7 @@ pub fn build(b: *std.Build) void {
     core.addImport("wlroots", wlroots);
     core.addImport("lua", lua);
     core.addImport("conf", conf);
+    core.addImport("alloc", alloc_mod);
     core.addOptions("build_options", options);
     if (test_input) core.addImport("test_input", exe.root_module.import_table.get("test_input").?);
     const core_tests_mod = b.createModule(.{

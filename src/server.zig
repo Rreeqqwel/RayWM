@@ -23,7 +23,7 @@ const Taskbar = @import("taskbar.zig").Taskbar;
 const Data = @import("data.zig").Data;
 const TextInput = @import("textinput.zig").Relay;
 
-pub const gpa = std.heap.c_allocator;
+pub const gpa = @import("alloc").gpa;
 const log = std.log.scoped(.server);
 /// `raywm -d`: also log diagnostics meant for debugging, like key bindings.
 pub var verbose = false;

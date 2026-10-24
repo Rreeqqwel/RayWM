@@ -13,7 +13,7 @@ pub const c = @cImport({
 });
 
 const log = std.log.scoped(.lua);
-const gpa = std.heap.c_allocator;
+const gpa = @import("alloc").gpa;
 
 pub const api_version = 1;
 /// RayWM release this host belongs to (raywm.version).

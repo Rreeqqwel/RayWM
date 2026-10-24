@@ -10,6 +10,7 @@ pub const animation = @import("animation.zig");
 pub const ipc = @import("ipc.zig");
 pub const conf = @import("conf");
 const settings = @import("settings.zig");
+const alloc = @import("alloc");
 
 const usage =
     \\Usage: raywm [-c config.lua] [-s startup-command] [-d] [-t]
@@ -24,6 +25,12 @@ const usage =
 extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
 
 pub fn main(init: std.process.Init) !void {
+    // Registered first, so it runs last: after the Lua host and the server
+    // are gone, every allocation must be freed (-Dleak-check builds only).
+    defer if (!alloc.finish()) {
+        std.log.err("leak-check: memory still allocated at exit (listed above)", .{});
+        std.process.exit(3);
+    };
     var config: ?[*:0]const u8 = null;
     var startup: ?[*:0]const u8 = null;
     var debug = false;
