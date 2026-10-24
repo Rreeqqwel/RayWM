@@ -71,6 +71,9 @@ jobs:
           CHANNEL: ${{ steps.meta.outputs.channel }}
         run: |
           set -eu
+          # actions/checkout replaces the pushed tag with a lightweight ref to
+          # its commit; fetch the real tag object before inspecting it.
+          git fetch --force --no-tags origin "+refs/tags/$TAG:refs/tags/$TAG"
           commit=$(git rev-parse "$TAG^{commit}")
           [ "$(git cat-file -t "refs/tags/$TAG")" = tag ] || { echo "::error::$TAG must be an annotated tag"; exit 1; }
           git merge-base --is-ancestor "$commit" origin/master || { echo "::error::$commit is not in master"; exit 1; }

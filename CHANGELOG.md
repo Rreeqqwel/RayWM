@@ -55,6 +55,9 @@ changes below are defects found and measured independently. See
   built with makepkg. Tests and asset checks gate publishing; an existing
   release is never replaced. `raywm-release.json` describes each release
   for the beta and stable update channels.
+- The tag `v0.2.1-beta` exists without a release: its workflow rejected
+  the tag as lightweight (actions/checkout rewrites tag refs) and tags are
+  immutable, so the first published Beta is `v0.2.1-beta.2`.
 - Release binaries are built for baseline x86-64 (`-Dcpu=baseline`); the
   v0.1.x–v0.2.1 binary archives were built for the build host's CPU and
   need AVX2/BMI2.
