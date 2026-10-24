@@ -160,7 +160,10 @@ guessing.
 Requirements: `curl` and `tar` (package dependencies), pacman's `vercmp`,
 `sudo`; for Beta builds `base-devel`, `wayland-protocols`, `pkgconf`, and
 network access to ziglang.org. GitHub allows 60 unauthenticated API
-requests per hour; raywm-update reports when that limit is hit.
+requests per hour; raywm-update reports when that limit is hit. A transfer
+that stalls (less than 1 byte/s for 30 s) is abandoned and retried twice;
+release lists and metadata get 2 minutes in all. The working directories
+of runs that were interrupted (Ctrl+C, a crash) are removed on the next run.
 
 ### What SHA256 verification guarantees
 

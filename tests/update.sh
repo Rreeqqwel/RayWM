@@ -251,6 +251,18 @@ if want; then setup 0.2.2beta-1 - v0.2.2-stable v0.2.3-beta
     upd --channel; status 0; says "Channel: stable \(no .* and no installed package; the default\)"
     finish; fi
 
+name="working directories of killed runs are removed, live ones kept"
+if want; then setup 0.2.1-1 beta v0.2.2-beta
+    # A run killed with SIGKILL/Ctrl+C never cleans up after itself.
+    mkdir -p "$tmp/cache/run-999999999-dead" "$tmp/cache/run-$$-alive" "$tmp/cache/other"
+    touch "$tmp/cache/run-999999999-dead/partial.tar.gz"
+    upd --check; status 0
+    [ ! -e "$tmp/cache/run-999999999-dead" ] || fail "stale work directory of a dead process kept"
+    [ -d "$tmp/cache/run-$$-alive" ] || fail "work directory of a live process removed"
+    [ -d "$tmp/cache/other" ] || fail "unrelated directory removed"
+    rm -rf "$tmp/cache/run-$$-alive" "$tmp/cache/other"
+    finish; fi
+
 name="--version and --help"
 if want; then setup 0.2.2beta-1 beta
     upd --version; status 0; says "^raywm-update [0-9]+\.[0-9]+\.[0-9]+$"; says "^raywm package: 0.2.2beta-1$"

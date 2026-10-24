@@ -509,7 +509,12 @@ fn fetch(c: *Ctx, url: []const u8, dest: []const u8, max_bytes: u64, headers: ?[
     var max_buf: [32]u8 = undefined;
     const max = std.fmt.bufPrint(&max_buf, "{d}", .{max_bytes}) catch unreachable;
     var argv: std.ArrayList([]const u8) = .empty;
-    argv.appendSlice(c.arena, &.{ "curl", "--silent", "--show-error", "--fail", "--location", "--proto", proto, "--proto-redir", "=https", "--connect-timeout", "20", "--max-time", "1800", "--retry", "2", "--max-filesize", max, "--user-agent", "raywm-update/" ++ build_options.version, "--output", dest }) catch return .{ .failed = "out of memory" };
+    // A server that accepts and then stalls must not hang raywm-update:
+    // fewer than 1 byte/s for 30 s ends a transfer, and lists and metadata
+    // (small) get 2 minutes in all. Before, only --max-time 1800 applied,
+    // three times with --retry (found by tests/stress update, case stall).
+    const max_time = if (max_bytes <= 16 << 20) "120" else "1800";
+    argv.appendSlice(c.arena, &.{ "curl", "--silent", "--show-error", "--fail", "--location", "--proto", proto, "--proto-redir", "=https", "--connect-timeout", "20", "--speed-limit", "1", "--speed-time", "30", "--max-time", max_time, "--retry", "2", "--max-filesize", max, "--user-agent", "raywm-update/" ++ build_options.version, "--output", dest }) catch return .{ .failed = "out of memory" };
     if (headers) |h| argv.appendSlice(c.arena, &.{ "--dump-header", h, "--header", "Accept: application/vnd.github+json", "--header", "X-GitHub-Api-Version: 2022-11-28" }) catch return .{ .failed = "out of memory" };
     argv.append(c.arena, url) catch return .{ .failed = "out of memory" };
     const r = capture(c, argv.items);
@@ -572,6 +577,24 @@ const Choice = struct { release: Release, sha256: []const u8 };
 
 const Selection = union(enum) { update: Choice, up_to_date, failed };
 
+/// Working directories of runs that were killed (Ctrl+C, a timeout, a
+/// crash) never got cleaned: run-<pid>-<random> of processes that no longer
+/// exist are removed. Only that name pattern, only the user's own cache.
+fn removeStale(c: *Ctx, base: []const u8) void {
+    var dir = std.Io.Dir.cwd().openDir(c.io, base, .{ .iterate = true }) catch return;
+    defer dir.close(c.io);
+    var it = dir.iterate();
+    while (it.next(c.io) catch return) |entry| {
+        if (entry.kind != .directory or !std.mem.startsWith(u8, entry.name, "run-")) continue;
+        const rest = entry.name["run-".len..];
+        const dash = std.mem.indexOfScalar(u8, rest, '-') orelse continue;
+        const pid = std.fmt.parseInt(std.c.pid_t, rest[0..dash], 10) catch continue;
+        if (pid == std.c.getpid()) continue;
+        if (std.c.kill(pid, @enumFromInt(0)) == 0 or std.c._errno().* != @intFromEnum(std.posix.E.SRCH)) continue;
+        dir.deleteTree(c.io, entry.name) catch |e| err("could not remove stale {s}/{s}: {s}\n", .{ base, entry.name, @errorName(e) });
+    }
+}
+
 fn workDir(c: *Ctx) ![]const u8 {
     const base = if (std.c.getenv("RAYWM_UPDATE_CACHE")) |v|
         try c.arena.dupe(u8, std.mem.span(v))
@@ -582,6 +605,7 @@ fn workDir(c: *Ctx) ![]const u8 {
     else
         return error.NoCacheDirectory;
     std.Io.Dir.cwd().createDirPath(c.io, base) catch return error.CannotCreateCache;
+    removeStale(c, base);
     // A fresh private directory per run (mode 0700; mkdir fails if it exists).
     var tries: u32 = 0;
     while (tries < 16) : (tries += 1) {
