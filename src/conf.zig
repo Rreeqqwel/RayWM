@@ -629,3 +629,171 @@ test "each visits every setting" {
     each(&s, &c, Counter.visit);
     try testing.expectEqual(@as(usize, 10), c.n);
 }
+
+// ---- fuzzing (tests/stress, docs/TORTURE.md) ----------------------------------
+
+/// Writes `s` as raywm.conf text that parses back to exactly `s`.
+fn serialize(s: *const Settings, buf: []u8) ![]const u8 {
+    var w: std.Io.Writer = .fixed(buf);
+    const Emit = struct {
+        w: *std.Io.Writer,
+        section: []const u8 = "",
+        failed: bool = false,
+        fn f(e: *@This(), section: []const u8, key: []const u8, v: Value) void {
+            if (!std.mem.eql(u8, e.section, section)) {
+                e.w.print("[{s}]\n", .{section}) catch {
+                    e.failed = true;
+                };
+                e.section = section;
+            }
+            (switch (v) {
+                .boolean => |b| e.w.print("{s} = {}\n", .{ key, b }),
+                .integer => |i| e.w.print("{s} = {d}\n", .{ key, i }),
+                .string => |str| e.w.print("{s} = {s}\n", .{ key, str }),
+                // Quoted: keeps leading/trailing blanks and quotes inside.
+                .text => |str| e.w.print("{s} = \"{s}\"\n", .{ key, str }),
+            }) catch {
+                e.failed = true;
+            };
+        }
+    };
+    var e: Emit = .{ .w = &w };
+    each(s, &e, Emit.f);
+    if (e.failed) return error.NoSpaceLeft;
+    return w.buffered();
+}
+
+/// Every value of an accepted configuration is in its documented domain.
+fn checkDomain(s: *const Settings) !void {
+    inline for (std.meta.fields(Settings)) |sf| {
+        const sec = &@field(s, sf.name);
+        inline for (std.meta.fields(sf.type)) |kf| {
+            const v = &@field(sec, kf.name);
+            const T = kf.type;
+            if (comptime hasDecl(T, "min")) {
+                if (v.value < T.min or v.value > T.max) return error.OutOfDomain;
+            } else if (comptime hasDecl(T, "capacity")) {
+                if (v.len > T.capacity or hasControl(v.slice()) or !std.unicode.utf8ValidateSlice(v.slice())) return error.OutOfDomain;
+            } else if (comptime hasDecl(T, "optional")) {
+                if (!v.none) {
+                    if (v.text[0] != '#') return error.OutOfDomain;
+                    for (v.text[1..]) |ch| if (!std.ascii.isHex(ch) or std.ascii.isUpper(ch)) return error.OutOfDomain;
+                } else if (!T.optional) return error.OutOfDomain;
+            }
+        }
+    }
+}
+
+/// The invariants every input must keep (also the std.testing.fuzz target).
+fn fuzzOne(input: []const u8) !void {
+    var base: Settings = .{};
+    base.appearance.inner_gaps.value = 17; // a non-default base
+    const before = base;
+    var d: Diag = .{};
+    const result = parse(input, base, &d);
+    // Transactional: the base is a value and must never change.
+    if (!std.meta.eql(base, before)) return error.BaseChanged;
+    if (d.n > Diag.max or d.n > d.errors + d.warnings) return error.DiagCount;
+    for (d.slice()) |item| if (item.len == 0) return error.EmptyMessage;
+    const s = result orelse {
+        if (d.errors == 0) return error.RejectedWithoutError;
+        return;
+    };
+    if (d.errors != 0) return error.AcceptedWithErrors;
+    try checkDomain(&s);
+    // Round trip: what was accepted can be written and read back exactly.
+    var buf: [4096]u8 = undefined;
+    const text = try serialize(&s, &buf);
+    var d2: Diag = .{};
+    const again = parse(text, .{}, &d2) orelse {
+        for (d2.slice()) |item| std.debug.print("round trip: line {d}: {s}\n{s}\n", .{ item.line, item.text(), text });
+        return error.RoundTripRejected;
+    };
+    if (d2.n != 0 or !std.meta.eql(again, s)) return error.RoundTripDiffers;
+}
+
+const fuzz_corpus = [_][]const u8{
+    "",
+    "[general]\nfocus_new_windows = no\nterminal = \"kitty -1\"\n",
+    "[appearance]\ninner_gaps = 500\nouter_gaps = 0\nborder_active = #FFffFF80\nborder_inactive = none\n",
+    "[input]\nmouse_modifier = MOD1\nfocus_follows_mouse = 1\n",
+    "[general\nxwayland = true\n",
+    "[appearance]\nborder_width = 65\n",
+    "\xff\xfe",
+    "[general]\nterminal = a\x00b\n",
+    @embedFile("fuzz/raywm.conf"),
+};
+
+// A std.testing.fuzz target: in normal test runs it checks the corpus.
+// Coverage-guided fuzzing (`zig test -ffuzz`) does not build with Zig 0.16.0
+// itself (lib/compiler/test_runner.zig:566 passes a builtin.StackTrace where
+// std.debug.StackTrace is expected), so the seeded generator below is the
+// fuzzer that runs; this target is ready for a fixed Zig.
+test "fuzz target: raywm.conf parser invariants" {
+    try std.testing.fuzz({}, struct {
+        fn one(_: void, smith: *std.testing.Smith) anyerror!void {
+            var buf: [8192]u8 = undefined;
+            const n = smith.sliceWithHash(&buf, 0x5ea7c0f);
+            try fuzzOne(buf[0..n]);
+        }
+    }.one, .{ .corpus = &fuzz_corpus });
+}
+
+/// Seeded structured inputs: valid lines, damaged lines, random bytes,
+/// boundary values. Deterministic; the seed of a failing input is printed.
+fn generate(r: std.Random, buf: []u8) []const u8 {
+    var w: std.Io.Writer = .fixed(buf);
+    const sections = [_][]const u8{ "general", "appearance", "input", "future", "" };
+    const keys = [_][]const u8{ "focus_new_windows", "terminal", "xwayland", "inner_gaps", "outer_gaps", "border_width", "border_active", "border_inactive", "mouse_modifier", "focus_follows_mouse", "unknown", "" };
+    const values = [_][]const u8{ "true", "false", "yes", "OFF", "1", "0", "maybe", "", "8", "-1", "500", "501", "64", "65", "2147483647", "2147483648", "-2147483649", "99999999999999999999", "0x10", "1e3", "#5294e2", "#5294E2FF", "#12345", "#gggggg", "none", "NONE", "super", "Alt", "ctrl", "hyper", "\"quoted\"", "'single'", "\"open", "a\x01b", "\xc3\x28", "Ω日本", "=", "==", "[x]", "#", ";" };
+    const n_lines = r.uintLessThan(usize, 30);
+    var i: usize = 0;
+    while (i < n_lines) : (i += 1) {
+        const k = r.uintLessThan(u32, 100);
+        (if (k < 15)
+            w.print("[{s}]", .{sections[r.uintLessThan(usize, sections.len)]})
+        else if (k < 80)
+            w.print("{s}{s}{s}", .{ keys[r.uintLessThan(usize, keys.len)], ([_][]const u8{ "=", " = ", "\t=\t", " " })[r.uintLessThan(usize, 4)], values[r.uintLessThan(usize, values.len)] })
+        else if (k < 85)
+            w.print("# {s}", .{values[r.uintLessThan(usize, values.len)]})
+        else if (k < 90) blk: {
+            // Random bytes (any value, including NUL and invalid UTF-8).
+            var junk: [64]u8 = undefined;
+            r.bytes(junk[0..r.uintLessThan(usize, junk.len)]);
+            break :blk w.writeAll(junk[0..r.uintLessThan(usize, junk.len)]);
+        } else if (k < 93) blk: {
+            // A long value (around the 256-byte string limit).
+            w.writeAll("terminal = ") catch {};
+            const len = ([_]usize{ 255, 256, 257, 1000 })[r.uintLessThan(usize, 4)];
+            var j: usize = 0;
+            while (j < len) : (j += 1) w.writeByte('x') catch break;
+            break :blk {};
+        } else w.writeAll("")) catch break;
+        w.writeAll(if (r.uintLessThan(u32, 10) == 0) "\r\n" else "\n") catch break;
+    }
+    return w.buffered();
+}
+
+test "fuzz: 20000 seeded raywm.conf inputs keep the parser invariants" {
+    var prng: std.Random.DefaultPrng = .init(0x7a5c_2026);
+    var buf: [16384]u8 = undefined;
+    var accepted: usize = 0;
+    var i: usize = 0;
+    while (i < 20000) : (i += 1) {
+        const seed = prng.random().int(u64);
+        var case: std.Random.DefaultPrng = .init(seed);
+        const input = generate(case.random(), &buf);
+        fuzzOne(input) catch |err| {
+            std.debug.print("conf fuzz: seed {d} failed with {s}; input:\n{s}\n", .{ seed, @errorName(err), input });
+            return err;
+        };
+        var d: Diag = .{};
+        if (parse(input, .{}, &d) != null) accepted += 1;
+    }
+    // Both outcomes must actually be exercised.
+    try testing.expect(accepted > 500 and accepted < 19500);
+}
+
+test "fuzz regression corpus (tests/stress/conf-corpus via src/fuzz)" {
+    for (fuzz_corpus) |input| try fuzzOne(input);
+}
