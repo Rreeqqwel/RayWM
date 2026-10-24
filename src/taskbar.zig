@@ -193,8 +193,12 @@ const Toplevel = struct {
 
     fn update(entry: *Toplevel, v: *View) void {
         const handle = entry.foreign;
-        handle.setTitle(v.title() orelse "");
-        handle.setAppId(v.appId() orelse "");
+        // wlroots sends title/app_id (and a done) on every call, even when
+        // unchanged; the other setters below already compare.
+        const title = v.title() orelse "";
+        if (!sameText(handle.title, title)) handle.setTitle(title);
+        const app_id = v.appId() orelse "";
+        if (!sameText(handle.app_id, app_id)) handle.setAppId(app_id);
         cabi.call(v.maximized, wlr.ForeignToplevelHandleV1.setMaximized, .{handle});
         cabi.call(v.minimized, wlr.ForeignToplevelHandleV1.setMinimized, .{handle});
         cabi.call(v.server.focused == v, wlr.ForeignToplevelHandleV1.setActivated, .{handle});
@@ -261,6 +265,11 @@ const Toplevel = struct {
         if (entry.view()) |v| v.close();
     }
 };
+
+fn sameText(current: ?[*:0]const u8, wanted: [*:0]const u8) bool {
+    const c = current orelse return false;
+    return std.mem.orderZ(u8, c, wanted) == .eq;
+}
 
 fn overlaps(v: *View, o: *srv.Output) bool {
     if (!o.inLayout()) return false;

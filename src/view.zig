@@ -61,6 +61,8 @@ pub const View = struct {
     announced: bool = false,
     x: i32 = 0,
     y: i32 = 0,
+    /// Geometry when taskbars were last told (see syncPosition).
+    published_box: wlr.Box = .{ .x = 0, .y = 0, .width = -1, .height = -1 },
     /// A size asked for and not yet acknowledged, and where the window goes
     /// once it is (`center`: centred on its output, the client picks the size).
     pending: ?struct { serial: u32, x: i32, y: i32, w: i32, h: i32, center: bool = false } = null,
@@ -487,7 +489,14 @@ pub const View = struct {
     /// origin is the window geometry's top-left.
     fn syncPosition(view: *View) void {
         view.applyVisualPosition();
-        view.server.taskbar.schedule();
+        // Called on every surface commit: a game may commit thousands of
+        // times a second. Taskbars only need geometry changes (output
+        // membership); title and state changes schedule on their own.
+        const g = view.geometry();
+        if (!std.meta.eql(g, view.published_box)) {
+            view.published_box = g;
+            view.server.taskbar.schedule();
+        }
         view.server.textinput.positionPopups();
         if (view.impl == .xwayland) {
             const xs = view.impl.xwayland;
