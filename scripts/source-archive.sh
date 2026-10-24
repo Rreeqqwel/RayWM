@@ -45,6 +45,6 @@ rm -rf "$stage/.zig-cache"
 if find "$stage" -type f -exec sh -c 'head -c4 "$1" | grep -q "ELF"' _ {} \; -print | grep -q .; then
     echo 'source-archive: ELF binary in archive'; exit 1
 fi
-(cd "$work" && tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$epoch" -cf - "$name" | gzip -n -9) >"$out/$name.tar.gz"
+(cd "$work" && tar --sort=name --owner=0 --group=0 --numeric-owner --mode=go-w --mtime="@$epoch" -cf - "$name" | gzip -n -9) >"$out/$name.tar.gz"
 (cd "$out" && sha256sum "$name.tar.gz" >"$name.tar.gz.sha256")
 cat "$out/$name.tar.gz.sha256"
