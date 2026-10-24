@@ -156,4 +156,29 @@ o7() {
     stop
 }
 
-run_scenarios outputs o1 o2 o3 o4 o5 o6 o7
+o8() {
+    name="unplugging an output: a window never shown there appears on it as it goes (no crash)"
+    # When an output goes away its workspaces leave it one by one, and each
+    # time the next one becomes the shown one, so windows of a hidden
+    # workspace appear on the dying output for a moment. wlroots 0.20 keeps
+    # the output's scene output until after the destroy signal, so a window
+    # that had never been on that output got wl_surface.enter for it from
+    # inside that signal, and wlr_output_finish asserted (RayWM aborted).
+    # Found by tests/stress protocol (outputs); fixed in output.zig (the
+    # scene output is destroyed first).
+    OUTPUTS=2 WIN=$plain PLUGINS=$helpers start "$cfg" 0
+    drive move 300 360
+    launch a $plain
+    wait_log a "frame done"
+    sleep 0.3
+    drive key super down key f8 down key f8 up key super up sleep 300
+    grep -q '^hide-move' "$tmp/outhelpers.log" || fail "helper did not move the window: $(cat "$tmp/outhelpers.log")"
+    unplug HEADLESS-1
+    sleep 0.5
+    kill -0 "$pid" 2>/dev/null || fail "compositor died when the output was unplugged: $(grep -m1 Assertion "$tmp/raywm.log")"
+    dump                                                                      # 1
+    grep -q "^view " "$tmp/probe.log" || fail "window lost after unplug"
+    stop
+}
+
+run_scenarios outputs o1 o2 o3 o4 o5 o6 o7 o8

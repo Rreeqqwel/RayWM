@@ -239,6 +239,15 @@ pub const Output = struct {
 
     fn handleDestroy(listener: *wl.Listener(*wlr.Output), _: *wlr.Output) void {
         const output: *Output = @fieldParentPtr("destroy", listener);
+        // First the scene output. It is an addon of the wlr_output, which
+        // wlroots 0.20 only destroys after this signal; until then the scene
+        // still counts the dying output and sends wl_surface.enter for it when
+        // windows move, as they do below (workspaces moving to another output,
+        // layouts re-arranging). Those enters add listeners to the output while
+        // its destroy signal is running, which never get called, and
+        // wlr_output_finish then asserts (the output's bind list is not empty).
+        // Found by tests/stress protocol, case outputs.
+        output.scene_output.destroy();
         if (output.force_composite) output.wlr_output.lockAttachRender(false);
         const server = output.server;
         layer_shell.closeAll(output);
