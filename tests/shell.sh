@@ -366,4 +366,24 @@ s14() {
     stop
 }
 
-run_scenarios shell s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11 s12 s13 s14
+s15() {
+    name="window geometry follows buffer-only resizes (set_window_geometry once)"
+    # The client sets a window geometry larger than its first buffer once and
+    # then only commits buffers of the sizes dwindle asks for. xdg-shell: the
+    # effective geometry is the set one clamped to the surface, so it must
+    # follow every buffer. Before v0.2.2-beta+1 RayWM kept the size clamped
+    # at the first commit (200x150): found by tests/stress lifecycle seed 2.
+    WIN="$plain RAYWM_TEST_BAD_GEOMETRY=0,0,2000,2000 RAYWM_TEST_GEOMETRY_ONCE=1" PLUGINS=$helpers start "$cfg" 1
+    dump                                                                      # 1
+    expect 1 "view 11 8,8 1264x704 focused=true"
+    launch b $plain
+    wait_log b "frame done"
+    wait_log a "hold resized 628x704"
+    sleep 0.3
+    dump                                                                      # 2
+    expect 2 "view 11 8,8 628x704 focused=false"
+    expect 2 "view 12 644,8 628x704 focused=true"
+    stop
+}
+
+run_scenarios shell s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11 s12 s13 s14 s15

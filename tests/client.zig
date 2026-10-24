@@ -643,6 +643,9 @@ fn keyboardListener(_: *wl.Keyboard, event: wl.Keyboard.Event, use: *SeatUse) vo
     }
 }
 
+/// RAYWM_TEST_GEOMETRY_ONCE: the bad geometry is set with the first buffer only.
+var bad_geometry_set = false;
+
 /// A window's content of w x h. RAYWM_TEST_SHADOW=N adds an N pixel
 /// magenta margin around it, outside the window geometry, like client-side
 /// shadows (the window geometry is set to the content).
@@ -660,6 +663,15 @@ fn windowBuffer(shm: *wl.Shm, xdg_surface: *xdg.Surface, w: i32, h: i32) !*wl.Bu
     }
     const m: i32 = if (std.c.getenv("RAYWM_TEST_SHADOW")) |v| std.fmt.parseInt(i32, std.mem.span(v), 10) catch 0 else 0;
     if (m > 0) xdg_surface.setWindowGeometry(m, m, w, h);
+    // RAYWM_TEST_BAD_GEOMETRY=X,Y,W,H: a window geometry that does not fit
+    // the buffer (xdg-shell clamps it to the surface's extents).
+    if (std.c.getenv("RAYWM_TEST_BAD_GEOMETRY")) |v| if (!(std.c.getenv("RAYWM_TEST_GEOMETRY_ONCE") != null and bad_geometry_set)) {
+        bad_geometry_set = true;
+        var it = std.mem.splitScalar(u8, std.mem.span(v), ',');
+        var n: [4]i32 = .{ 0, 0, 1, 1 };
+        for (&n) |*x| x.* = std.fmt.parseInt(i32, it.next() orelse "1", 10) catch 1;
+        xdg_surface.setWindowGeometry(n[0], n[1], n[2], n[3]);
+    };
     return makeBufferMargin(shm, w, h, m);
 }
 

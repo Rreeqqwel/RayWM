@@ -252,9 +252,27 @@ pub const View = struct {
     /// shadows) and size.
     fn windowBox(view: *View) wlr.Box {
         return switch (view.impl) {
-            .xdg => |t| t.base.geometry,
+            .xdg => |t| effectiveGeometry(t.base),
             .xwayland => |xs| .{ .x = 0, .y = 0, .width = xs.surface.?.current.width, .height = xs.surface.?.current.height },
         };
+    }
+
+    /// xdg-shell: the window geometry the client set, clamped to the
+    /// surface's extents (its buffer and subsurfaces); the extents when it
+    /// set none. wlroots 0.20 computes this only in commits that set the
+    /// geometry, so after a buffer-only commit (a resize that keeps the
+    /// earlier set_window_geometry) its value is stale: a window that grew
+    /// kept its old size. Found by tests/stress (lifecycle) and
+    /// tests/shell.sh "window geometry follows buffer-only resizes".
+    fn effectiveGeometry(xs: *wlr.XdgSurface) wlr.Box {
+        var extents: wlr.Box = undefined;
+        xs.surface.getExtents(&extents);
+        const set = xs.current.geometry;
+        if (set.width <= 0 or set.height <= 0) return extents;
+        var clamped: wlr.Box = undefined;
+        // Disjoint from the surface: keep what wlroots chose.
+        if (!clamped.intersection(&set, &extents)) return xs.geometry;
+        return clamped;
     }
 
     pub fn title(view: *View) ?[*:0]const u8 {
