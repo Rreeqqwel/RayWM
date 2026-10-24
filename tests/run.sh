@@ -6,10 +6,10 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 bin=$(cd "${1:-zig-out/test-input/bin}" && pwd)
 logs=${2:-$(mktemp -d /tmp/raywm-validation.XXXXXX)}
 mkdir -p "$logs"
-suites=${SUITES:-smoke focus docs input pointer captures navigation windows workspaces rules session outputs devices protocols shell taskbar screenshot stress xwayland data effects ipc}
+suites=${SUITES:-smoke focus docs input pointer captures navigation windows workspaces rules session outputs devices protocols shell taskbar screenshot stress xwayland data effects ipc perf}
 for suite in $suites; do
     case "$suite" in
-        smoke|focus|docs|input|pointer|captures|navigation|windows|workspaces|rules|session|outputs|devices|protocols|shell|taskbar|screenshot|stress|xwayland|data|effects|ipc) ;;
+        smoke|focus|docs|input|pointer|captures|navigation|windows|workspaces|rules|session|outputs|devices|protocols|shell|taskbar|screenshot|stress|xwayland|data|effects|ipc|perf) ;;
         *) echo "unknown suite: $suite"; exit 2 ;;
     esac
     [ ! -e "$logs/$suite.log" ] && [ ! -e "$logs/$suite.status" ] || { echo "existing log: $suite"; exit 2; }

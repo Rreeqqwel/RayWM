@@ -260,6 +260,22 @@ pub fn build(b: *std.Build) void {
         taskbar_client.root_module.addImport("wayland", wayland);
         taskbar_client.root_module.linkSystemLibrary("wayland-client", .{});
         b.installArtifact(taskbar_client);
+
+        // High-frequency client and passive taskbar for tests/perf.sh.
+        const perf_client = b.addExecutable(.{
+            .name = "raywm-test-perf",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("tests/perf_client.zig"),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+            }),
+            .use_llvm = use_llvm,
+            .use_lld = use_llvm,
+        });
+        perf_client.root_module.addImport("wayland", wayland);
+        perf_client.root_module.linkSystemLibrary("wayland-client", .{});
+        b.installArtifact(perf_client);
     }
     exe.root_module.linkSystemLibrary("wayland-server", .{});
     exe.root_module.linkSystemLibrary("xkbcommon", .{});
