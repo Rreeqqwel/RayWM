@@ -1,5 +1,9 @@
 # RayWM
 
+[![CI](https://github.com/Rreeqqwel/RayWM/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Rreeqqwel/RayWM/actions/workflows/ci.yml?query=branch%3Amaster)
+[![Release](https://github.com/Rreeqqwel/RayWM/actions/workflows/release.yml/badge.svg)](https://github.com/Rreeqqwel/RayWM/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/Rreeqqwel/RayWM?include_prereleases&sort=date)](https://github.com/Rreeqqwel/RayWM/releases)
+
 A lightweight Wayland compositor written in Zig on top of wlroots, with
 its window-management policy written in Lua.
 
@@ -119,10 +123,22 @@ zig build -Doptimize=ReleaseSafe      # -> zig-out/bin/raywm
 
 ## Install
 
-From a release archive (after checking `sha256sum -c SHA256SUMS`):
+Releases come in two channels ([docs/RELEASE-WORKFLOW.md](docs/RELEASE-WORKFLOW.md)):
+
+- **Stable** (`vX.Y.Z-stable`): an Arch Linux package with a ready binary.
+  ```sh
+  sha256sum -c raywm-X.Y.Z-1-x86_64.pkg.tar.zst.sha256
+  sudo pacman -U raywm-X.Y.Z-1-x86_64.pkg.tar.zst
+  cp -r /usr/share/raywm/config ~/.config/raywm   # only if you have no configuration yet
+  ```
+- **Beta** (`vX.Y.Z-beta[.N]`, GitHub Pre-release): a source archive that
+  builds offline; see [docs/INSTALL.md](docs/INSTALL.md#install-a-beta-source-archive).
+
+Releases up to v0.2.1 (before the channels) ship a binary archive with
+`install.sh`:
 
 ```sh
-tar -xzf raywm-v0.2.0-linux-x86_64.tar.gz && cd raywm-v0.2.0
+tar -xzf raywm-v0.2.1-linux-x86_64.tar.gz && cd raywm-v0.2.1
 ./install.sh        # ~/.local/bin/raywm; config copied only if ~/.config/raywm does not exist
 ```
 
@@ -329,6 +345,18 @@ docs/           INSTALL, CONFIGURATION, API, ARCHITECTURE, TESTING, screenshots/
 tests/          unit, integration, input, pointer, navigation, screenshot and stress tests
 scripts/        package.sh (release archive), install.sh, gallery.sh
 ```
+
+## Branches and releases
+
+| Branch | Role |
+|---|---|
+| `master` (default) | development: code, tests, docs, CHANGELOG, CI |
+| `beta` | public testing; each `vX.Y.Z-beta[.N]` is a GitHub Pre-release |
+| `release` | stable; each `vX.Y.Z-stable` is a GitHub Release with a pacman package |
+
+Work happens on `master` (or short-lived `feature/*`, `fix/*` branches
+merged into it). Promotion and tagging rules are in
+[docs/RELEASE-WORKFLOW.md](docs/RELEASE-WORKFLOW.md).
 
 ## Contributing
 

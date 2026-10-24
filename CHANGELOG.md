@@ -45,6 +45,22 @@ changes below are defects found and measured independently. See
 - `docs/GAMING.md`, `docs/GAMING-TESTING.md`; `tests/perf.sh`,
   `raywm-test-perf`, `tests/gaming_bench.py`; two Xwayland scenarios.
 
+### Release process (first channel release: v0.2.1-beta)
+
+- New branch model: `master` (development, default), `beta` (public
+  testing), `release` (stable); see docs/RELEASE-WORKFLOW.md. Earlier
+  tags and releases are unchanged.
+- `.github/workflows/release.yml`: Beta tags publish a Pre-release with an
+  offline-buildable source archive; Stable tags publish a pacman package
+  built with makepkg. Tests and asset checks gate publishing; an existing
+  release is never replaced. `raywm-release.json` describes each release
+  for the beta and stable update channels.
+- Release binaries are built for baseline x86-64 (`-Dcpu=baseline`); the
+  v0.1.x–v0.2.1 binary archives were built for the build host's CPU and
+  need AVX2/BMI2.
+- The pre-map X11 fullscreen/maximize tests no longer race wlroots' XWM;
+  the underlying wlroots 0.20 race is documented in GAMING.md.
+
 ### Changed
 
 - Output frames use `wlr_scene_output_build_state` + `wlr_output_commit_state`

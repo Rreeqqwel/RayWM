@@ -1,17 +1,60 @@
 # Installing RayWM
 
-RayWM v0.2.0 is an experimental Wayland compositor. It is safe to
+RayWM is an experimental Wayland compositor. It is safe to
 install next to your current desktop:
 - nothing replaces your window manager or login screen;
 - nothing writes to an existing configuration;
 - no root is needed for the release archive.
 
 - [1. Runtime requirements](#1-runtime-requirements)
-- [2. Install the release archive (Arch Linux)](#2-install-the-release-archive-arch-linux)
+- [Install a Stable release (pacman)](#install-a-stable-release-pacman)
+- [Install a Beta source archive](#install-a-beta-source-archive)
+- [2. Install the release archive (Arch Linux, releases up to v0.2.1)](#2-install-the-release-archive-arch-linux-releases-up-to-v021)
 - [3. Build from source](#3-build-from-source)
 - [4. First start](#4-first-start)
 - [5. Uninstall](#5-uninstall)
 - [Troubleshooting](#troubleshooting)
+
+## Install a Stable release (pacman)
+
+Stable releases (`vX.Y.Z-stable`) carry `raywm-X.Y.Z-1-x86_64.pkg.tar.zst`,
+built with `makepkg` from `packaging/arch/PKGBUILD.in` (ReleaseSafe,
+baseline x86-64 CPU, no test-only code). pacman installs the dependencies
+listed in the package:
+
+```sh
+sha256sum -c raywm-X.Y.Z-1-x86_64.pkg.tar.zst.sha256
+sudo pacman -U raywm-X.Y.Z-1-x86_64.pkg.tar.zst
+cp -r /usr/share/raywm/config ~/.config/raywm   # first install only
+```
+
+The package installs `/usr/bin/raywm`, `/usr/bin/raywmctl`, the default
+configuration and plugins in `/usr/share/raywm/config`, a session entry for
+display managers (`/usr/share/wayland-sessions/raywm.desktop`) and the
+documentation; it never changes `~/.config/raywm`. Remove it with
+`sudo pacman -R raywm`.
+
+## Install a Beta source archive
+
+Beta releases (`vX.Y.Z-beta[.N]`, GitHub Pre-releases) carry
+`raywm-vX.Y.Z-beta.tar.gz`: the sources, configuration, plugins and the
+pinned Zig dependencies (`zig-pkg/`), so no network is needed to build.
+With Zig 0.16.0 and the build dependencies of section 3:
+
+```sh
+sha256sum -c raywm-vX.Y.Z-beta.tar.gz.sha256
+tar -xzf raywm-vX.Y.Z-beta.tar.gz && cd raywm-vX.Y.Z-beta
+zig build -Doptimize=ReleaseSafe -p out
+install -Dm755 out/bin/raywm ~/.local/bin/raywm
+install -Dm755 scripts/raywmctl ~/.local/bin/raywmctl
+[ -e ~/.config/raywm ] || cp -r config ~/.config/raywm
+```
+
+On Arch Linux you can build a pacman package from it instead:
+`scripts/arch-package.sh vX.Y.Z-beta ../raywm-vX.Y.Z-beta.tar.gz out` (as a
+normal user), then `sudo pacman -U out/raywm-*.pkg.tar.zst`.
+
+Releases up to v0.2.1 use the binary archive described in section 2.
 
 ## 1. Runtime requirements
 
@@ -55,7 +98,7 @@ notification if it can). To drop the plugin, remove
 The binary is **not** static. It is not built for distributions without
 the libraries above (with these sonames).
 
-## 2. Install the release archive (Arch Linux)
+## 2. Install the release archive (Arch Linux, releases up to v0.2.1)
 
 ```sh
 sudo pacman -S --needed wlroots0.20 lua54 wayland libxkbcommon foot   # runtime

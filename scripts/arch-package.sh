@@ -24,7 +24,7 @@ sum=$(sha256sum "$src" | cut -d' ' -f1)
 sed -e "s|@PKGVER@|$pkgver|" -e "s|@TAG@|$tag|" -e "s|@SOURCE_SHA256@|$sum|" \
     "$root/packaging/arch/PKGBUILD.in" >"$work/PKGBUILD"
 cp "$root/packaging/arch/raywm.desktop" "$root/packaging/arch/raywm.install" "$src" "$work/"
-(cd "$work" && SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-$(date +%s)} PKGDEST="$out" makepkg --noconfirm --cleanbuild >"$work/makepkg.log" 2>&1) ||
+(cd "$work" && PACKAGER=${PACKAGER:-"RayWM release workflow <https://github.com/Rreeqqwel/RayWM>"} SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-$(date +%s)} PKGDEST="$out" makepkg --noconfirm --cleanbuild >"$work/makepkg.log" 2>&1) ||
     { tail -60 "$work/makepkg.log"; exit 1; }
 [ -e "$out/$pkg" ] || { echo "arch-package: makepkg did not produce $pkg"; ls "$out"; exit 1; }
 cp "$work/PKGBUILD" "$out/PKGBUILD"
