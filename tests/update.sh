@@ -167,6 +167,12 @@ name="10b. corrupted Stable package: nothing installed"
 if want; then setup 0.2.1-1 stable v0.2.2-stable:corrupt
     upd --install --yes; status 1; says "SHA256 mismatch"; no_install; installed 0.2.1-1; finish; fi
 
+name="10c. a source archive with a symlink is refused before extraction"
+if want; then setup 0.2.1beta.2-1 beta v0.2.2-beta:symlink
+    upd --install --yes; status 1; says "contains a link or special file"; no_install
+    if grep -q '^build' "$tmp/calls.log" 2>/dev/null; then fail "the archive was built"; fi
+    installed 0.2.1beta.2-1; finish; fi
+
 name="11. missing release asset: that release is ignored, an older one offered"
 if want; then setup 0.2.1-1 beta v0.2.2-beta v0.2.3-beta:noasset
     upd --check --verbose; status 0; says "ignored v0.2.3-beta: release asset missing"; says "^Update available: v0.2.2-beta"; finish; fi

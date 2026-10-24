@@ -14,6 +14,7 @@ Each SPEC is TAG[:flag,flag...]. Flags:
   evilpkg       the Stable package installs /etc/raywm/update.conf
   legacy        a historical release without metadata (e.g. v0.2.1)
   draft         an unpublished draft
+  symlink       the Beta source archive contains a symlink (to /etc/passwd)
 
 Writes DIR/api/releases-1.json (and -2.json with PAGE2=1 in the
 environment: page 1 then holds 100 historical entries first), and every
@@ -51,7 +52,7 @@ def fake_package(version, evil=False):
             + ''.join('raywm %s\n' % f for f in files)).encode()
 
 
-def source_archive(tag):
+def source_archive(tag, symlink=False):
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode='w:gz') as t:
         script = open(os.path.join(HERE, 'fake-build.sh'), 'rb').read()
@@ -62,11 +63,16 @@ def source_archive(tag):
         info = tarfile.TarInfo(f'raywm-{tag}/README.md')
         info.size = len(readme)
         t.addfile(info, io.BytesIO(readme))
+        if symlink:
+            info = tarfile.TarInfo(f'raywm-{tag}/passwd')
+            info.type, info.linkname = tarfile.SYMTYPE, '/etc/passwd'
+            t.addfile(info)
     return buf.getvalue()
 
 
 def main(out, specs):
-    base = 'file://' + os.path.abspath(out)
+    # WORLD_BASE: serve the same tree over HTTPS (tests/stress/update).
+    base = os.environ.get('WORLD_BASE') or 'file://' + os.path.abspath(out)
     releases = []
     for spec in specs:
         tag, _, flags = spec.partition(':')
@@ -79,7 +85,7 @@ def main(out, specs):
             continue
         channel, pv = pkgver(tag)
         if channel == 'beta':
-            name, kind, data = f'raywm-{tag}.tar.gz', 'source', source_archive(tag)
+            name, kind, data = f'raywm-{tag}.tar.gz', 'source', source_archive(tag, 'symlink' in flags)
         else:
             name, kind, data = f'raywm-{pv}-1-x86_64.pkg.tar.zst', 'arch-package', fake_package(pv + '-1', 'evilpkg' in flags)
         sha = hashlib.sha256(data).hexdigest()

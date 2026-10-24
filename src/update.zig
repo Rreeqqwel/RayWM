@@ -862,6 +862,19 @@ fn buildBeta(c: *Ctx, r: Release, archive: []const u8, work: []const u8) ?[]cons
             return null;
         }
     }
+    // Only regular files and directories (the release archives have
+    // nothing else): no symlinks, hard links or device nodes, whatever tar
+    // itself would make of them.
+    const verbose = capture(c, &.{ "tar", "-tvzf", archive });
+    if (!verbose.ok) return null;
+    var vlines = std.mem.splitScalar(u8, verbose.stdout, '\n');
+    while (vlines.next()) |line| {
+        if (line.len == 0) continue;
+        if (line[0] != '-' and line[0] != 'd') {
+            err("the source archive contains a link or special file: {s}. Nothing was installed.\n", .{line});
+            return null;
+        }
+    }
     const src = std.fmt.allocPrint(c.arena, "{s}/src", .{work}) catch return null;
     std.Io.Dir.cwd().createDirPath(c.io, src) catch return null;
     if (!capture(c, &.{ "tar", "-xzf", archive, "-C", src, "--no-same-owner", "--no-same-permissions" }).ok) {
