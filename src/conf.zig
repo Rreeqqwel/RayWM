@@ -394,6 +394,8 @@ pub fn each(s: *const Settings, ctx: anytype, comptime f: fn (@TypeOf(ctx), []co
                 .{ .string = @tagName(v.*) }
             else if (comptime hasDecl(T, "min"))
                 .{ .integer = v.value }
+            else if (comptime hasDecl(T, "capacity"))
+                .{ .text = v.slice() }
             else
                 .{ .string = v.slice() };
             f(ctx, sf.name, kf.name, value);
@@ -401,7 +403,8 @@ pub fn each(s: *const Settings, ctx: anytype, comptime f: fn (@TypeOf(ctx), []co
     }
 }
 
-pub const Value = union(enum) { boolean: bool, integer: i32, string: []const u8 };
+/// `string`: a keyword or colour; `text`: a free-form string setting.
+pub const Value = union(enum) { boolean: bool, integer: i32, string: []const u8, text: []const u8 };
 
 // ---- tests ------------------------------------------------------------------
 

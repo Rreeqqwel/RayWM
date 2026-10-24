@@ -308,7 +308,7 @@ fn pushSettings(L: ?*c.lua_State, s: *const conf.Settings) void {
             switch (v) {
                 .boolean => |b| c.lua_pushboolean(l, @intFromBool(b)),
                 .integer => |i| c.lua_pushinteger(l, i),
-                .string => |str_v| _ = c.lua_pushlstring(l, str_v.ptr, str_v.len),
+                .string, .text => |str_v| _ = c.lua_pushlstring(l, str_v.ptr, str_v.len),
             }
             c.lua_setfield(l, -2, key_z.ptr);
             c.lua_settop(l, -2);

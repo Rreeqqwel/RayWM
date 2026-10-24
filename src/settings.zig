@@ -67,7 +67,7 @@ pub fn check(dir: []const u8) bool {
             switch (v) {
                 .boolean => |b| std.debug.print("{s}.{s} = {}\n", .{ section, key, b }),
                 .integer => |i| std.debug.print("{s}.{s} = {d}\n", .{ section, key, i }),
-                .string => |s| std.debug.print("{s}.{s} = {s}\n", .{ section, key, s }),
+                .string, .text => |s| std.debug.print("{s}.{s} = {s}\n", .{ section, key, s }),
             }
         }
     };
