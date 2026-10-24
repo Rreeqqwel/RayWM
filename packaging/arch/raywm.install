@@ -1,0 +1,10 @@
+post_install() {
+  echo '==> RayWM: the default configuration is in /usr/share/raywm/config.'
+  echo '==> Start from it with:  cp -r /usr/share/raywm/config ~/.config/raywm'
+  echo '==> (an existing ~/.config/raywm is never changed by the package).'
+}
+
+post_upgrade() {
+  echo '==> RayWM: compare your ~/.config/raywm with /usr/share/raywm/config'
+  echo '==> after upgrades; see /usr/share/doc/raywm/CHANGELOG.md.'
+}

@@ -1,12 +1,16 @@
 name: CI
 
+# Development checks. Runs on the permanent branches (master, beta,
+# release), on topic branches, on pull requests into the permanent
+# branches, and is called by the Release workflow before anything is
+# published (docs/RELEASE-WORKFLOW.md).
 on:
   push:
-    branches: ['feature/**', 'release/**']
-    tags: ['v*']
+    branches: [master, beta, release, 'feature/**', 'fix/**', 'hotfix/**']
   pull_request:
-    branches: [main]
+    branches: [master, beta, release]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -121,6 +125,12 @@ jobs:
       - name: IPC framing, actions, limits and disconnects
         run: tests/ipc.sh zig-out/test-input/bin
 
+      - name: Gaming-path regressions (presentation, taskbar traffic, tearing policy)
+        run: tests/perf.sh zig-out/test-input/bin
+
+      - name: Release scripts (tag scheme, vercmp order, metadata)
+        run: tests/release-meta.sh
+
       - name: Screenshot tests (pixman, real grim/slurp/wl-clipboard)
         run: tests/screenshot.sh
 
@@ -178,36 +188,3 @@ jobs:
         run: |
           zig build && zig build -Dtest-input -p zig-out/test-input
           tests/smoke.sh && tests/focus.sh && tests/input.sh && tests/pointer.sh && tests/captures.sh && tests/navigation.sh && tests/screenshot.sh && tests/windows.sh && tests/workspaces.sh && tests/rules.sh && tests/session.sh && tests/outputs.sh && tests/devices.sh && tests/protocols.sh && tests/shell.sh && tests/taskbar.sh zig-out/test-input/bin && tests/data.sh zig-out/test-input/bin && tests/effects.sh zig-out/test-input/bin
-
-  package:
-    name: release package
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: test
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    container: archlinux:base-devel
-    steps:
-      - name: System packages
-        run: pacman -Syu --noconfirm --needed git wlroots0.20 wayland wayland-protocols libxkbcommon pixman lua54 pkgconf curl xz file binutils
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Zig
-        run: |
-          curl -sSfL -o /tmp/zig.tar.xz "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
-          echo "$ZIG_SHA256  /tmp/zig.tar.xz" | sha256sum -c -
-          mkdir -p /opt/zig && tar -xf /tmp/zig.tar.xz -C /opt/zig --strip-components=1
-          echo /opt/zig >> "$GITHUB_PATH"
-      - name: Package
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          scripts/package.sh "$GITHUB_REF_NAME"
-          scripts/package.sh "$GITHUB_REF_NAME" # identical archive or fail
-          tests/package.sh dist/raywm-"$GITHUB_REF_NAME"-linux-x86_64.tar.gz
-          tar -tzf dist/*.tar.gz
-      - uses: actions/upload-artifact@v4
-        with:
-          name: raywm-${{ github.ref_name }}-linux-x86_64
-          path: |
-            dist/*.tar.gz
-            dist/SHA256SUMS

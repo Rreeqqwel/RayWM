@@ -1,0 +1,213 @@
+name: Release
+
+# Publishes a GitHub Release for a pushed release tag (docs/RELEASE-WORKFLOW.md):
+#   vX.Y.Z-beta[.N]  -> Pre-release with the source archive (beta channel)
+#   vX.Y.Z-stable    -> Release with an Arch Linux package (stable channel)
+# Every step before `publish` must succeed: plan (tag rules, branch,
+# CHANGELOG, no existing release), the complete CI test suite, and the
+# build + structure checks of the assets. A tag that already has a release
+# is refused, so re-running never overwrites a published version.
+#
+# Manual runs (workflow_dispatch) are always dry runs: the same plan
+# checks that do not need a pushed tag, the tests, the asset builds and
+# checks, with the assets kept as workflow artifacts. Nothing is tagged or
+# published.
+on:
+  push:
+    tags: ['v*-beta', 'v*-beta.*', 'v*-stable']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to rehearse (e.g. v0.2.1-beta or v0.2.1-stable); dry run only'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  ZIG_VERSION: 0.16.0
+  ZIG_SHA256: 70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00
+
+jobs:
+  plan:
+    name: plan (tag rules, branch, changelog, no existing release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      channel: ${{ steps.meta.outputs.channel }}
+      pkgver: ${{ steps.meta.outputs.pkgver }}
+      dry_run: ${{ steps.meta.outputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Release metadata
+        id: meta
+        env:
+          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          DRY: ${{ github.event_name == 'push' && 'false' || 'true' }}
+        run: |
+          set -eu
+          info=$(python3 scripts/release-meta.py parse "$TAG")
+          channel=$(printf '%s' "$info" | python3 -c 'import json,sys; print(json.load(sys.stdin)["channel"])')
+          pkgver=$(printf '%s' "$info" | python3 -c 'import json,sys; print(json.load(sys.stdin)["pkgver"])')
+          case "$channel" in beta|stable) ;; *) echo "::error::$TAG is not a beta or stable tag"; exit 1 ;; esac
+          python3 scripts/release-meta.py check-zon "$TAG" build.zig.zon
+          python3 scripts/release-meta.py notes "$TAG" CHANGELOG.md >/dev/null
+          {
+            echo "tag=$TAG"; echo "channel=$channel"; echo "pkgver=$pkgver"; echo "dry_run=$DRY"
+          } >>"$GITHUB_OUTPUT"
+          echo "### $TAG — $channel (pacman $pkgver-1), dry run: $DRY" >>"$GITHUB_STEP_SUMMARY"
+      - name: Tag and branch rules
+        if: github.event_name == 'push'
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          CHANNEL: ${{ steps.meta.outputs.channel }}
+        run: |
+          set -eu
+          commit=$(git rev-parse "$TAG^{commit}")
+          [ "$(git cat-file -t "refs/tags/$TAG")" = tag ] || { echo "::error::$TAG must be an annotated tag"; exit 1; }
+          git merge-base --is-ancestor "$commit" origin/master || { echo "::error::$commit is not in master"; exit 1; }
+          if [ "$CHANNEL" = beta ]; then
+            git merge-base --is-ancestor "$commit" origin/beta || { echo "::error::$commit is not in beta"; exit 1; }
+          else
+            git merge-base --is-ancestor "$commit" origin/release || { echo "::error::$commit is not in release"; exit 1; }
+            # Stable promotes a tested Beta: some vX.Y.Z-beta[.N] tag of the same
+            # version must point to exactly this commit.
+            version=${TAG%-stable}
+            beta=$(git tag --points-at "$commit" | grep -E "^${version}-beta(\.[0-9]+)?$" | head -1 || true)
+            [ -n "$beta" ] || { echo "::error::no ${version}-beta[.N] tag on $commit: promote a tested Beta"; exit 1; }
+            echo "Promotes $beta" >>"$GITHUB_STEP_SUMMARY"
+            echo "BETA_TAG=$beta" >>"$GITHUB_ENV"
+          fi
+      - name: No existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          CHANNEL: ${{ steps.meta.outputs.channel }}
+        run: |
+          set -eu
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::A release for $TAG already exists; published versions are never replaced"
+            exit 1
+          fi
+          if [ "$CHANNEL" = stable ] && [ "${{ github.event_name }}" = push ]; then
+            pre=$(gh release view "$BETA_TAG" -R "$GITHUB_REPOSITORY" --json isPrerelease -q .isPrerelease) ||
+              { echo "::error::$BETA_TAG has no published Beta release"; exit 1; }
+            [ "$pre" = true ] || { echo "::error::$BETA_TAG is not a Pre-release"; exit 1; }
+          fi
+
+  tests:
+    name: tests
+    needs: plan
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  build:
+    name: build and verify assets
+    needs: [plan, tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    container: archlinux:base-devel
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+      CHANNEL: ${{ needs.plan.outputs.channel }}
+      PKGVER: ${{ needs.plan.outputs.pkgver }}
+    steps:
+      - name: System packages
+        run: |
+          pacman -Syu --noconfirm --needed git wlroots0.20 wayland wayland-protocols libxkbcommon pixman \
+            lua54 libinput pkgconf curl xz file binutils python libarchive
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Zig ${{ env.ZIG_VERSION }} (checksum-verified)
+        run: |
+          curl -sSfL -o /tmp/zig.tar.xz "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
+          echo "$ZIG_SHA256  /tmp/zig.tar.xz" | sha256sum -c -
+          mkdir -p /opt/zig && tar -xf /tmp/zig.tar.xz -C /opt/zig --strip-components=1
+          echo /opt/zig >> "$GITHUB_PATH"
+      - name: Source archive
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          scripts/source-archive.sh "$TAG" out HEAD
+          tests/release-archive.sh "out/raywm-$TAG.tar.gz" "$TAG" --build
+          tar -tzf "out/raywm-$TAG.tar.gz" | sed -n '1,400p' >"out/source-files.txt"
+      - name: Arch Linux package (makepkg)
+        if: needs.plan.outputs.channel == 'stable'
+        run: |
+          useradd -m builder
+          chown -R builder "$GITHUB_WORKSPACE"
+          su builder -c "cd '$GITHUB_WORKSPACE' && SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) scripts/arch-package.sh '$TAG' 'out/raywm-$TAG.tar.gz' pkg"
+          tests/release-package.sh "pkg/raywm-$PKGVER-1-x86_64.pkg.tar.zst" "$TAG"
+          pacman -U --noconfirm "pkg/raywm-$PKGVER-1-x86_64.pkg.tar.zst"
+          pacman -Qi raywm | tee -a "$GITHUB_STEP_SUMMARY"
+          raywm -h >/dev/null
+          pacman -R --noconfirm raywm
+      - name: Assets and metadata
+        run: |
+          set -eu
+          mkdir assets
+          if [ "$CHANNEL" = beta ]; then
+            cp "out/raywm-$TAG.tar.gz" "out/raywm-$TAG.tar.gz.sha256" assets/
+          else
+            cp "pkg/raywm-$PKGVER-1-x86_64.pkg.tar.zst" "pkg/raywm-$PKGVER-1-x86_64.pkg.tar.zst.sha256" assets/
+          fi
+          main=$(ls assets | grep -v '\.sha256$')
+          python3 scripts/release-meta.py metadata "$TAG" "$(git rev-parse HEAD)" assets/raywm-release.json "assets/$main"
+          (cd assets && sha256sum -- * | grep -v ' SHA256SUMS$' >SHA256SUMS)
+          python3 scripts/release-meta.py notes "$TAG" CHANGELOG.md >notes.md
+          ls -l assets | tee -a "$GITHUB_STEP_SUMMARY"
+          cat assets/raywm-release.json >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ needs.plan.outputs.tag }}
+          path: |
+            assets/
+            notes.md
+          if-no-files-found: error
+
+  publish:
+    name: publish GitHub Release
+    needs: [plan, build]
+    if: needs.plan.outputs.dry_run == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.plan.outputs.tag }}
+      CHANNEL: ${{ needs.plan.outputs.channel }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-${{ needs.plan.outputs.tag }}
+      - name: Create release (refuses to replace)
+        run: |
+          set -eu
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::A release for $TAG already exists"; exit 1
+          fi
+          (cd assets && sha256sum -c SHA256SUMS)
+          version=${TAG%-*}
+          if [ "$CHANNEL" = beta ]; then
+            title="RayWM ${TAG} (Beta)"
+            flags="--prerelease --latest=false"
+            intro="Public testing build (beta channel). Source archive only: build it with the instructions in docs/INSTALL.md or packaging/arch."
+          else
+            title="RayWM ${version} (Stable)"
+            flags="--latest"
+            intro="Stable release (stable channel). Install: sudo pacman -U raywm-*.pkg.tar.zst"
+          fi
+          { echo "$intro"; echo; cat notes.md; echo; echo "Checksums: SHA256SUMS. Update metadata: raywm-release.json."; } >body.md
+          # shellcheck disable=SC2086
+          gh release create "$TAG" -R "$GITHUB_REPOSITORY" --verify-tag --title "$title" --notes-file body.md $flags assets/*
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json url,isPrerelease,assets -q '{url,isPrerelease,assets:[.assets[].name]}' | tee -a "$GITHUB_STEP_SUMMARY"

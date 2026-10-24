@@ -1,0 +1,68 @@
+# Maintainer: Rreeqqwel <https://github.com/Rreeqqwel>
+# Template for RayWM release packages: scripts/arch-package.sh fills in
+# @PKGVER@, @TAG@ and @SOURCE_SHA256@ from a release tag and its source
+# archive (scripts/source-archive.sh). The source archive vendors the Zig
+# package dependencies, so build() needs no network beyond the sources below.
+pkgname=raywm
+pkgver=@PKGVER@
+pkgrel=1
+_tag=@TAG@
+_zig=0.16.0
+pkgdesc='Lightweight, minimal Wayland compositor (wlroots) extended with Lua plugins'
+arch=('x86_64')
+url='https://github.com/Rreeqqwel/RayWM'
+license=('GPL-3.0-only')
+depends=('wlroots0.20' 'wayland' 'libxkbcommon' 'pixman' 'lua54' 'libinput' 'glibc' 'python')
+makedepends=('wayland-protocols' 'pkgconf')
+optdepends=(
+  'xorg-xwayland: X11 applications and games'
+  'grim: screenshot plugin'
+  'slurp: region screenshots'
+  'wl-clipboard: copy screenshots to the clipboard'
+  'swaylock: screen locking'
+  'swayidle: idle management'
+)
+install=raywm.install
+# Zig builds its own binary; makepkg's LTO/debug-package settings do not apply.
+options=('!debug' '!lto')
+source=("raywm-${_tag}.tar.gz"
+        "https://ziglang.org/download/${_zig}/zig-x86_64-linux-${_zig}.tar.xz"
+        'raywm.desktop'
+        'raywm.install')
+sha256sums=('@SOURCE_SHA256@'
+            '70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00'
+            'SKIP'
+            'SKIP')
+
+build() {
+  cd "raywm-${_tag}"
+  export ZIG_GLOBAL_CACHE_DIR="${srcdir}/zig-global-cache"
+  # -Dcpu=baseline: run on any x86_64 CPU, not only the build machine's.
+  "${srcdir}/zig-x86_64-linux-${_zig}/zig" build -Doptimize=ReleaseSafe -Dcpu=baseline \
+    -Dtest-input=false -p "${srcdir}/out"
+}
+
+check() {
+  cd "raywm-${_tag}"
+  local bin="${srcdir}/out/bin/raywm"
+  "${bin}" -h >/dev/null
+  ! nm -D "${bin}" | grep -q wlr_virtual_pointer_manager_v1_create
+  ! strings "${bin}" | grep -q 'TEST BUILD: virtual pointer'
+  ! strings "${bin}" | grep -q raywm-test-unplug
+  for f in config/init.lua config/plugins/*.lua; do luac5.4 -p "$f"; done
+}
+
+package() {
+  cd "raywm-${_tag}"
+  install -Dm755 "${srcdir}/out/bin/raywm" "${pkgdir}/usr/bin/raywm"
+  install -Dm755 scripts/raywmctl "${pkgdir}/usr/bin/raywmctl"
+  # Default configuration and Lua plugins; copied to ~/.config/raywm by the
+  # user (see raywm.install), never overwritten by the package.
+  install -dm755 "${pkgdir}/usr/share/raywm/config"
+  cp -r --no-preserve=ownership config/. "${pkgdir}/usr/share/raywm/config/"
+  find "${pkgdir}/usr/share/raywm/config" -type f -exec chmod 644 {} +
+  install -Dm644 "${srcdir}/raywm.desktop" "${pkgdir}/usr/share/wayland-sessions/raywm.desktop"
+  install -Dm644 README.md CHANGELOG.md SECURITY.md -t "${pkgdir}/usr/share/doc/raywm/"
+  install -Dm644 docs/*.md -t "${pkgdir}/usr/share/doc/raywm/docs/"
+  install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/raywm/LICENSE"
+}

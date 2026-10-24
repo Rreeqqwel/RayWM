@@ -35,7 +35,7 @@ install -m 0755 "$stage/scripts/install.sh" "$stage/install.sh"
 install -m 0755 "$stage/scripts/raywmctl" "$stage/bin/raywmctl"
 # Remove only the temporary copies; they are not archive paths.
 rm -rf "$stage/scripts"
-"$zig" build -Doptimize=ReleaseSafe -Dtest-input=false -p "$work/build"
+"$zig" build -Doptimize=ReleaseSafe -Dcpu=baseline -Dtest-input=false -p "$work/build"
 bin="$work/build/bin/raywm"
 if nm -D "$bin" | grep -q wlr_virtual_pointer_manager_v1_create || strings "$bin" | grep -q 'TEST BUILD: virtual pointer' || strings "$bin" | grep -q raywm-test-unplug; then
     echo 'package: test-only code in release binary'; exit 1
