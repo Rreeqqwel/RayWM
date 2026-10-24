@@ -127,6 +127,7 @@ test build directory can be passed as its first argument.
 | `tests/release-archive.sh ARCHIVE TAG [--build]` | release asset | Beta source archive: layout, required files, vendored Zig dependencies, no binaries or CI/agent files, version; `--build` builds and runs unit tests from it (network-isolated when possible) |
 | `tests/release-package.sh PKG TAG` | release asset | pacman package (the Stable asset, or built from a Beta archive): metadata, dependencies, file list (`raywm-update`, `raywm.conf`, nothing in `/etc`), the channel scriptlet, baseline-CPU binary without test code, packaged `raywm.conf` valid, headless start with the packaged configuration |
 | `tests/release-install.sh PKG TAG` | release asset, root, CI container only | real `pacman -U`, reinstall, `-R`, install again: `/etc/raywm/update.conf` created once with the package's channel, not owned by the package, kept across all of them, switched by `raywm-update --set-channel` |
+| `tests/stress/run.sh` | torture suite, FAST/STRESS/SOAK | seeded chaos clients, compositor-side chaos, random input, failing plugins, config fuzzing, update attacks, hotplug, crashes, perf against a baseline, soaks; see [TORTURE.md](TORTURE.md) |
 | `tests/stress.sh` | Wayland, bounded | 100 window cycles; 20 waves of 8 `SIGKILL`ed clients; 40 reloads with a plugin failing on each map; 1500 geometry changes in 3 s; clean shutdown; compositor RSS per phase (fails above +16 MiB) |
 
 Each fix found by the pre-release audits was checked by reverting it and

@@ -4,6 +4,43 @@ All notable changes to RayWM. Versions follow [Semantic
 Versioning](https://semver.org/); before 1.0, minor versions may break
 the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
+## [Unreleased]
+
+Reliability hardening from the first torture-suite run
+(docs/TORTURE-TEST-REPORT.md).
+
+### Fixed
+
+- **Unplugging a monitor could abort RayWM** (wlroots assertion in
+  `wlr_output_finish`) when one of its hidden workspaces held a window that
+  had never been shown on it. The scene output is now destroyed first.
+- **A corrupted plugin file could crash the compositor**: Lua runs
+  precompiled chunks unchecked. `init.lua`, plugins, `load`, `loadfile`,
+  `dofile` and `require` now accept Lua source only.
+- **A plugin running away while loading took the rest of `init.lua` with
+  it** (all later plugins, including key bindings, were lost). Each plugin
+  load now has its own instruction budget.
+- **Window geometry went stale** for clients that set it once and then
+  only changed their buffer size (wlroots computes it only on geometry
+  commits); RayWM now follows the effective geometry.
+- **`raywm-update` hung on a stalled server** (up to 90 minutes); stalls
+  now end after 30 s, lists and metadata after 2 minutes. Working
+  directories of interrupted runs are cleaned up; links and special files
+  in Beta source archives are refused.
+- **An IPC socket path that is too long stopped RayWM from starting**; IPC
+  is now disabled with a clear message instead, and a Wayland socket that
+  cannot be created is explained.
+- raywm.conf strings no longer keep bytes of earlier, longer values.
+
+### Added
+
+- The torture suite `tests/stress/` (docs/TORTURE.md): FAST level in every
+  CI run, STRESS and SOAK on demand (Actions → Torture), `zig build stress`.
+- `zig build -Dleak-check` (test builds): DebugAllocator with leak report
+  at exit.
+- `raywm-test-chaos`, a seeded random protocol client.
+- raywm.conf fuzzing in `zig build test` (20000 seeded inputs).
+
 ## [v0.2.2] — Configuration & Update System, candidate prepared 2026-10-24
 
 ### Added
