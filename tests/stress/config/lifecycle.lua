@@ -1,0 +1,13 @@
+-- Torture suite: the shipped desktop plugins plus chaos and audit.
+raywm.load("outputs")
+raywm.load("input")
+raywm.load("workspaces")
+raywm.load("window-rules")
+raywm.load("dwindle")
+raywm.load("floating")
+raywm.load("binds")
+raywm.load("focus")
+raywm.load("animations")
+raywm.load("focus-indicator")
+raywm.load("chaos")
+raywm.load("audit")
