@@ -290,6 +290,36 @@ pub fn parseColor(spec: []const u8) ?[4]f32 {
     return .{ v[0] * v[3], v[1] * v[3], v[2] * v[3], v[3] };
 }
 
+/// Lua runs precompiled (binary) chunks without checking them, and a
+/// damaged one can crash the interpreter, i.e. the compositor (Lua 5.4
+/// manual, `load`). init.lua and plugins are therefore loaded as text, and
+/// this makes every other way to load code text-only too: load, loadfile,
+/// dofile and require's Lua searcher. Found by tests/stress (lua bytecode):
+/// 7 of 40 randomly corrupted plugin files crashed RayWM before.
+const text_only =
+    \\local load, loadfile, searchpath, select, error = load, loadfile, package.searchpath, select, error
+    \\_G.load = function(chunk, name, _, ...)
+    \\  if select("#", ...) > 0 then return load(chunk, name, "t", ...) end
+    \\  return load(chunk, name, "t")
+    \\end
+    \\_G.loadfile = function(file, _, ...)
+    \\  if select("#", ...) > 0 then return loadfile(file, "t", ...) end
+    \\  return loadfile(file, "t")
+    \\end
+    \\_G.dofile = function(file)
+    \\  local fn, err = loadfile(file, "t")
+    \\  if not fn then error(err, 2) end
+    \\  return fn()
+    \\end
+    \\package.searchers[2] = function(name)
+    \\  local path, err = searchpath(name, package.path)
+    \\  if not path then return "\n\t" .. err end
+    \\  local fn, lerr = loadfile(path, "t")
+    \\  if not fn then error(("error loading module '%s' from file '%s':\n\t%s"):format(name, path, lerr), 2) end
+    \\  return fn, path
+    \\end
+;
+
 /// raywm.settings: { general = {...}, appearance = {...}, input = {...} }.
 fn pushSettings(L: ?*c.lua_State, s: *const conf.Settings) void {
     c.lua_createtable(L, 0, 4);
@@ -422,7 +452,8 @@ pub fn Runtime(comptime H: type) type {
             self.in_config = true;
             // Settings that belong to the configuration start afresh.
             if (@hasDecl(Api, "configBegin")) Api.configBegin(self.host);
-            const rc = c.luaL_loadfilex(L, self.config_path.ptr, null);
+            // Text only: see text_only below.
+            const rc = c.luaL_loadfilex(L, self.config_path.ptr, "t");
             if (rc != c.LUA_OK) {
                 const msg = str(L, -1, "?");
                 // A missing config is normal on first start: fallback bindings apply.
@@ -505,6 +536,9 @@ pub fn Runtime(comptime H: type) type {
                 c.lua_setfield(L, -2, g[0]);
             }
             c.lua_setglobal(L, "raywm");
+            // Runs before any configuration code, with the libraries intact.
+            if (c.luaL_loadbufferx(L, text_only, text_only.len, "=raywm", "t") != c.LUA_OK) return c.lua_error(L);
+            c.lua_callk(L, 0, 0, 0, null);
             return 0;
         }
 
@@ -943,7 +977,7 @@ pub fn Runtime(comptime H: type) type {
             var buf: [std.fs.max_path_bytes]u8 = undefined;
             const path = std.fmt.bufPrintZ(&buf, "{s}/plugins/{s}.lua", .{ dir, name }) catch
                 return c.luaL_error(L, "plugin path too long");
-            if (c.luaL_loadfilex(L, path.ptr, null) != c.LUA_OK) return fail(L, name);
+            if (c.luaL_loadfilex(L, path.ptr, "t") != c.LUA_OK) return fail(L, name);
             if (c.lua_pcallk(L, 0, 1, 0, 0, null) != c.LUA_OK) return fail(L, name);
             if (c.lua_type(L, -1) != c.LUA_TTABLE) return failMsg(L, name, "must return a table");
             _ = c.lua_getfield(L, -1, "api");

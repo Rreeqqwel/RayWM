@@ -385,6 +385,20 @@ test "memory and instruction limits unload only the offender" {
     try std.testing.expectEqual(2, takeErrors());
 }
 
+test "precompiled chunks are refused by every loader; text still loads" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/textonly.lua", opts);
+    defer rt.destroy();
+    for ([_][]const u8{ "load:nil:true", "loadb:nil:true", "loadfile:nil:true", "loadfilebt:nil:true", "dofile:false:true", "require:false:true", "plugin:nil:true", "text:2", "env:5", "envnil:false" }) |want| {
+        if (f.count(want) != 1) {
+            std.debug.print("missing {s}\n", .{want});
+            return error.TestUnexpectedResult;
+        }
+    }
+    _ = takeErrors(); // the refused plugin is reported
+}
+
 test "reload tears everything down and runs the config again" {
     var f: Fake = .{};
     defer f.deinit();

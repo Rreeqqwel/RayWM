@@ -6,6 +6,11 @@ same care as any other compositor.
 
 ## Lua plugins are trusted code — there is no sandbox
 
+(One robustness rule that is not a sandbox: Lua code is only ever loaded
+from source. Lua does not verify precompiled chunks, and a damaged one can
+crash the interpreter and with it the compositor, so `init.lua`, plugins,
+`load`, `loadfile`, `dofile` and `require` refuse binary chunks.)
+
 Plugins (`~/.config/raywm/init.lua` and `plugins/*.lua`) run inside the
 compositor with the full Lua standard library:
 

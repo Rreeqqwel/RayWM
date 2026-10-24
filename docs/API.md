@@ -109,6 +109,7 @@ plugin. See [SECURITY.md](../SECURITY.md).
 | Instructions | about 200 M per top-level callback | the running plugin gets `instruction budget exceeded`. Catching it with `pcall`, in any coroutine, does not help: the error is raised again on every instruction, in every Lua thread, until control returns to RayWM |
 | Registrations | 65 536 at once (all plugins together; registrations released during a callback count until it returns) | `too many registrations` |
 | `debug` library, native modules | not available: no `debug`, no `package.loadlib`, no C module searchers | they could rewrite internal upvalues and the registry, or load native code |
+| Precompiled chunks | refused (since v0.2.2-beta+1): `init.lua` and plugin files must be Lua source; `load`, `loadfile`, `dofile` and `require` load text only, whatever mode is asked for (`string.dump` still works) | Lua does not check binary chunks, and a damaged one (a corrupted plugin file) crashed the whole compositor |
 
 ## Ids
 
