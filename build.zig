@@ -296,6 +296,22 @@ pub fn build(b: *std.Build) void {
         perf_client.root_module.addImport("wayland", wayland);
         perf_client.root_module.linkSystemLibrary("wayland-client", .{});
         b.installArtifact(perf_client);
+
+        // Seeded random protocol operations for tests/stress (torture suite).
+        const chaos_client = b.addExecutable(.{
+            .name = "raywm-test-chaos",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("tests/stress/chaos_client.zig"),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+            }),
+            .use_llvm = use_llvm,
+            .use_lld = use_llvm,
+        });
+        chaos_client.root_module.addImport("wayland", wayland);
+        chaos_client.root_module.linkSystemLibrary("wayland-client", .{});
+        b.installArtifact(chaos_client);
     }
     exe.root_module.linkSystemLibrary("wayland-server", .{});
     exe.root_module.linkSystemLibrary("xkbcommon", .{});
@@ -333,6 +349,16 @@ pub fn build(b: *std.Build) void {
     update_mod.addOptions("build_options", update_options);
     const update = b.addExecutable(.{ .name = "raywm-update", .root_module = update_mod, .use_llvm = use_llvm, .use_lld = use_llvm });
     b.installArtifact(update);
+
+    // The torture suite on this install (docs/TORTURE.md); needs the test
+    // build: zig build stress -Dtest-input -p zig-out/test-input -- --level fast
+    const stress = b.addSystemCommand(&.{ "sh", "tests/stress/run.sh", "--bin" });
+    stress.addArg(b.getInstallPath(.bin, ""));
+    if (b.args) |args| stress.addArgs(args);
+    stress.setCwd(b.path("."));
+    stress.has_side_effects = true;
+    stress.step.dependOn(b.getInstallStep());
+    b.step("stress", "Torture suite tests/stress/run.sh (build with -Dtest-input)").dependOn(&stress.step);
 
     const run = b.addRunArtifact(exe);
     if (b.args) |args| run.addArgs(args);
