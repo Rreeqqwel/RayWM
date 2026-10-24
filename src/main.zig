@@ -71,9 +71,18 @@ pub fn main(init: std.process.Init) !void {
     defer sigterm.remove();
 
     var buf: [11]u8 = undefined;
-    const socket = try server.wl_server.addSocketAuto(&buf);
+    const socket = server.wl_server.addSocketAuto(&buf) catch |err| {
+        const runtime = if (std.c.getenv("XDG_RUNTIME_DIR")) |r| std.mem.span(r) else "(not set)";
+        std.log.err("cannot create the Wayland socket in XDG_RUNTIME_DIR={s}: it must exist, be writable by you, and its path must be short enough for a socket name (about 100 characters)", .{runtime});
+        return err;
+    };
     if (setenv("WAYLAND_DISPLAY", socket, 1) != 0) return error.SetenvFailed;
-    try server.ipc.init(&server, socket);
+    // IPC (raywmctl, panels) is optional: without it the desktop still
+    // works. Before, a runtime directory whose socket path exceeds
+    // sun_path (108 bytes), or an insecure one, aborted the start with a
+    // bare "error: NoSpaceLeft" (found by tests/stress recovery,
+    // init-failures).
+    server.ipc.init(&server, socket) catch |err| std.log.err("IPC disabled ({s}): raywmctl and IPC clients will not work; check XDG_RUNTIME_DIR (private, owned by you, path under ~100 characters)", .{@errorName(err)});
     try server.backend.start();
 
     // Started after the backend so plugins see the initial outputs in setup.

@@ -43,4 +43,28 @@ keep_previous=${KEEP:-}
 KEEP=1 stop
 grep -qx 'replacement' "$socket" || fail "replacement path was removed"
 if [ -z "$keep_previous" ]; then rm -rf "$tmp"; fi
+
+# A runtime directory where the Wayland socket fits in sun_path (108 bytes)
+# but the longer IPC socket name does not: RayWM runs, without IPC. Before,
+# the start aborted with a bare "error: NoSpaceLeft" (tests/stress recovery).
+name="an IPC socket path that is too long disables IPC, not the compositor"
+base=$(mktemp -d)
+pad=$((96 - ${#base}))
+if [ "$pad" -gt 1 ]; then
+    rt="$base/$(printf '%*s' "$pad" '' | tr ' ' x)"; mkdir -p "$rt"; chmod 700 "$rt"
+    env -i PATH="$PATH" HOME="$base" XDG_RUNTIME_DIR="$rt" XDG_CONFIG_HOME="$base/none" RAYWM_SYSTEM_CONF= RAYWM_XWAYLAND=0 \
+        WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 \
+        timeout 20 "$bin/raywm" -s "echo up >'$base/up'" >"$base/raywm.log" 2>&1 &
+    lp=$!
+    w=0; while [ ! -e "$base/up" ] && kill -0 $lp 2>/dev/null && [ $w -lt 200 ]; do w=$((w + 1)); sleep 0.05; done
+    [ -e "$base/up" ] || fail "compositor did not start with a long runtime directory: $(grep -m1 error "$base/raywm.log")"
+    grep -q 'IPC disabled' "$base/raywm.log" || fail "no 'IPC disabled' diagnostic"
+    pkill -TERM -P $lp -x raywm 2>/dev/null || kill -TERM $lp
+    st=0; wait $lp || st=$?
+    [ "$st" -eq 0 ] || fail "exit status $st"
+    [ "$failures" -eq 0 ] && echo "ok   [$name]"
+else
+    echo "skip [$name]: temporary directory path too long already"
+fi
+rm -rf "$base"
 [ "$failures" -eq 0 ]
