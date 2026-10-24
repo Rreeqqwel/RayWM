@@ -331,6 +331,17 @@ pub fn main() !void {
             }
             step("round {d} resized {d}x{d}", .{ round, state.width, state.height });
         }
+        // RAYWM_TEST_CLOSE_WHEN=<path>: stay mapped (dispatching) until the
+        // test creates that file, at most 10 s, so a test can close this
+        // window only after another client reached an observable state.
+        if (std.c.getenv("RAYWM_TEST_CLOSE_WHEN")) |path| {
+            var waited: u32 = 0;
+            while (std.c.access(path, 0) != 0) : (waited += 1) {
+                if (waited == 200) return error.CloseSignalTimeout;
+                try dispatchTimeout(display, 50);
+            }
+            step("round {d} close signalled", .{round});
+        }
         toplevel.destroy();
         if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
     }
