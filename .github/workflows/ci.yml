@@ -158,6 +158,47 @@ jobs:
           zig-out/release/bin/raywm -h
           tests/smoke.sh zig-out/release/bin
 
+  torture-fast:
+    name: torture suite (FAST, pixman)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container: archlinux:base-devel
+    steps:
+      - name: System packages
+        run: |
+          pacman -Syu --noconfirm --needed git wlroots0.20 wayland wayland-protocols \
+            libxkbcommon pixman lua54 pkgconf curl xz python openssl xorg-xwayland libxcb procps-ng
+
+      - uses: actions/checkout@v4
+
+      - name: Zig ${{ env.ZIG_VERSION }} (checksum-verified)
+        run: |
+          curl -sSfL -o /tmp/zig.tar.xz "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
+          echo "$ZIG_SHA256  /tmp/zig.tar.xz" | sha256sum -c -
+          mkdir -p /opt/zig && tar -xf /tmp/zig.tar.xz -C /opt/zig --strip-components=1
+          echo /opt/zig >> "$GITHUB_PATH"
+
+      - name: Test build
+        run: zig build -Dtest-input -p zig-out/test-input
+
+      # Runs as an unprivileged user (raywm-update refuses to build as root;
+      # the suite never needs root). The seed is the run number, printed and
+      # recorded, so a failure can be replayed with the same seed.
+      - name: Torture suite, FAST level
+        run: |
+          useradd -m tester
+          chown -R tester "$GITHUB_WORKSPACE"
+          su tester -c "cd '$GITHUB_WORKSPACE' && tests/stress/run.sh --level fast --seed ${{ github.run_number }} --out stress-results"
+
+      - name: Keep the torture logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: torture-fast-${{ github.run_number }}
+          path: stress-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
   gles2:
     name: GLES2 renderer
     runs-on: ubuntu-latest

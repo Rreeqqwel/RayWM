@@ -1,0 +1,93 @@
+name: Torture
+
+# The STRESS and SOAK levels of the torture suite (docs/TORTURE.md). FAST
+# runs with every CI run (ci.yml, job "torture suite (FAST, pixman)").
+# Manual only: the levels take from tens of minutes to hours. All headless
+# (pixman); nothing here needs or claims to test a GPU.
+on:
+  workflow_dispatch:
+    inputs:
+      level:
+        description: 'stress (about 1 h) or soak (duration below)'
+        required: true
+        default: stress
+        type: choice
+        options: [stress, soak]
+      duration:
+        description: 'soak duration in seconds (300 smoke, 1800 extended, 7200 soak)'
+        required: false
+        default: '7200'
+      seed:
+        description: 'master seed (empty: the run number)'
+        required: false
+        default: ''
+      categories:
+        description: 'comma-separated categories (empty: all for stress, soak for soak)'
+        required: false
+        default: ''
+      leak_check:
+        description: 'build with -Dleak-check (DebugAllocator; slower)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  ZIG_VERSION: 0.16.0
+  ZIG_SHA256: 70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00
+
+jobs:
+  torture:
+    name: torture suite (${{ inputs.level }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    container: archlinux:base-devel
+    steps:
+      - name: System packages
+        run: |
+          pacman -Syu --noconfirm --needed git wlroots0.20 wayland wayland-protocols \
+            libxkbcommon pixman lua54 pkgconf curl xz python openssl xorg-xwayland libxcb procps-ng
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Zig ${{ env.ZIG_VERSION }} (checksum-verified)
+        run: |
+          curl -sSfL -o /tmp/zig.tar.xz "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
+          echo "$ZIG_SHA256  /tmp/zig.tar.xz" | sha256sum -c -
+          mkdir -p /opt/zig && tar -xf /tmp/zig.tar.xz -C /opt/zig --strip-components=1
+          echo /opt/zig >> "$GITHUB_PATH"
+
+      - name: Test build${{ inputs.leak_check && ' (leak check)' || '' }}
+        run: zig build -Dtest-input ${{ inputs.leak_check && '-Dleak-check' || '' }} -p zig-out/test-input
+
+      - name: Baseline build (v0.2.2-beta) for the perf comparison
+        if: inputs.level == 'stress'
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          mkdir -p /tmp/baseline && git archive v0.2.2-beta | tar -x -C /tmp/baseline
+          (cd /tmp/baseline && zig build -Dtest-input -p out)
+
+      - name: Torture suite
+        env:
+          LEVEL: ${{ inputs.level }}
+          DURATION: ${{ inputs.duration }}
+          SEED: ${{ inputs.seed || github.run_number }}
+          CATS: ${{ inputs.categories }}
+        run: |
+          useradd -m tester
+          chown -R tester "$GITHUB_WORKSPACE"
+          [ -d /tmp/baseline/out/bin ] && chown -R tester /tmp/baseline && baseline="--baseline-bin /tmp/baseline/out/bin" || baseline=
+          su tester -c "cd '$GITHUB_WORKSPACE' && tests/stress/run.sh --level $LEVEL --duration $DURATION --seed $SEED ${CATS:+--category $CATS} $baseline --out stress-results"
+
+      - name: Keep the torture logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: torture-${{ inputs.level }}-${{ github.run_number }}
+          path: stress-results/
+          if-no-files-found: ignore
+          retention-days: 30
