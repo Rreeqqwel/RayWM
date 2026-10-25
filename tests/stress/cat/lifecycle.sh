@@ -22,6 +22,7 @@ ops=$(level_pick 300 1500 3000)
 input_ops=${LC_INPUT_OPS:-$(level_pick 150 800 1500)}
 expected='\[audit\]|\[chaos\]'
 r=0
+want_case mixed-round || rounds=0
 while [ $r -lt "$rounds" ]; do
     seed=$((STRESS_SEED + r))
     case_begin "mixed-round" "$seed"
@@ -111,4 +112,33 @@ while [ $r -lt "$rounds" ]; do
     case_end
     r=$((r + 1))
 done
+# Hundreds of short-lived clients one after another (each maps windows,
+# popups and subsurfaces, then disconnects, a third of them without
+# cleaning up): nothing may accumulate.
+if want_case sequential-clients; then
+    n=$(level_pick 150 600 2000)
+    case_begin sequential-clients "$STRESS_SEED"
+    start "$stress_root/config/lifecycle.lua" 1 || { case_end; summary; }
+    : >"$dir/stop"
+    client warm.log RAYWM_CHAOS_SEED=1 RAYWM_CHAOS_OPS=40 "$BIN/raywm-test-chaos"; wait_pids 30 $!
+    sleep 0.3; fd_list >"$dir/fds-before.txt"; r0=$(rss_now)
+    i=0
+    while [ $i -lt "$n" ]; do
+        extra=; [ $((i % 3)) -eq 0 ] && extra="RAYWM_CHAOS_CRASH=1"
+        # shellcheck disable=SC2086
+        client "s.log" RAYWM_CHAOS_SEED=$((STRESS_SEED * 10000 + i)) RAYWM_CHAOS_OPS=$((20 + i % 60)) $extra "$BIN/raywm-test-chaos"
+        cp_=$!; wait_pids 30 $cp_
+        grep -q 'chaos: done\|crash exit' "$dir/s.log" || { fail "client $i: $(tail -1 "$dir/s.log")"; cp "$dir/s.log" "$dir/failed-$i.log"; }
+        i=$((i + 1))
+        [ $((i % 100)) -eq 0 ] && { health "after $i clients"; printf '%s\t%s\t%s\n' "$i" "$(rss_now)" "$(fds_now)" >>"$dir/per100.tsv"; }
+    done
+    sleep 0.5
+    echo 0 >"$dir/expect-views"; : >"$dir/audit-request"
+    wait_for audit.txt 'audit done' 10 || fail "audit did not run"
+    grep -q VIOLATION "$dir/audit.txt" && fail "after $n clients: $(grep -m1 VIOLATION "$dir/audit.txt")"
+    fd_list >"$dir/fds-after.txt"; check_fds "$dir/fds-before.txt" "$dir/fds-after.txt" 1
+    note "$n sequential clients ($((n / 3)) without cleanup): RSS $r0 -> $(rss_now) kB; per 100: $(awk '{printf "%s ", $2}' "$dir/per100.tsv" 2>/dev/null)"
+    stop "$expected"
+    case_end
+fi
 summary

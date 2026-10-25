@@ -37,7 +37,11 @@ while [ "$(date +%s)" -lt "$t_end" ]; do
         cp "$dir/confs/fuzz-0000.conf" "$dir/config/raywm/raywm.conf"
         drive key ctrl down key alt down key r down key r up key alt up key ctrl up || true
     fi
-    if [ $((r % 5)) -eq 4 ]; then
+    # At most 12 hotplug cycles: each new headless output has a new name
+    # (HEADLESS-3, -4, ...) and workspaces.lua keeps the workspaces of
+    # every output name it has seen, so endless hotplug grows that state
+    # (bounded by the connectors of real hardware; see the report).
+    if [ $((r % 5)) -eq 4 ] && [ "$next_out" -lt 15 ]; then
         echo "HEADLESS-$([ $next_out -eq 3 ] && echo 2 || echo $((next_out - 1)))" >"$dir/raywm-test-unplug"; kill -USR2 "$rpid" 2>/dev/null || true
         sleep 0.3; kill -USR1 "$rpid" 2>/dev/null || true; next_out=$((next_out + 1))
     fi

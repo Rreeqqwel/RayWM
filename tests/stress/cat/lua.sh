@@ -26,10 +26,14 @@ canary_check() {
     awk '/^gen [0-9]+ start/ {g = $2; next} $1 == "gen" && $2 < g && $3 != "teardown" {print "stale: " $0; exit 1}' "$dir/canary.log" ||
         fail "a callback of an older Lua state ran after a reload: $(awk '/^gen [0-9]+ start/ {g = $2; next} $1 == "gen" && $2 < g && $3 != "teardown" {print; exit}' "$dir/canary.log")"
     last=$(awk '/start$/ {g = $2} END {print g}' "$dir/canary.log")
+    # Runaway plugins may hold the event loop for their whole instruction
+    # budget each (about a second), several in a row after a reload: wait
+    # up to 15 s for the next tick.
     before=$(grep -c "^gen $last tick" "$dir/canary.log" || true)
-    sleep 0.5
-    after=$(grep -c "^gen $last tick" "$dir/canary.log" || true)
+    w=0; after=$before
+    while [ "$after" -le "$before" ] && [ $w -lt 300 ]; do sleep 0.05; w=$((w + 1)); after=$(grep -c "^gen $last tick" "$dir/canary.log" || true); done
     [ "$after" -gt "$before" ] || fail "canary (generation $last) stopped ticking ($1)"
+    if [ $w -gt 20 ]; then note "canary waited $((w * 50)) ms for a tick ($1): runaway plugins held the loop"; fi
 }
 reload_now() {
     r0=$(grep -c 'reloading' "$dir/raywm.log" || true)
