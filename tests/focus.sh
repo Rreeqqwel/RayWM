@@ -34,7 +34,7 @@ run() {
     env -i PATH="$PATH" HOME="$tmp" XDG_RUNTIME_DIR="$tmp" XDG_CONFIG_HOME="$tmp/config" \
         RAYWM_TEST_OUT="$tmp/plugin.log" RAYWM_TEST_ROUNDS=1 \
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER="${RENDERER:-pixman}" WLR_LIBINPUT_NO_DEVICES=1 \
-        timeout 20 "$bin/raywm" -s "RAYWM_TEST_HOLD=1 '$client' >'$tmp/a.log' 2>&1 & until grep -q 'frame done' '$tmp/a.log'; do sleep 0.05; done; $resize_env'$client' >'$tmp/b.log' 2>&1; echo \$? >'$tmp/b.status'" \
+        timeout 20 "$bin/raywm" -s "RAYWM_TEST_HOLD=1 '$client' >'$tmp/a.log' 2>&1 & w=0; until grep -q 'frame done' '$tmp/a.log' || [ \$w -ge 600 ]; do w=\$((w + 1)); sleep 0.05; done; $resize_env'$client' >'$tmp/b.log' 2>&1; echo \$? >'$tmp/b.status'" \
         >"$tmp/raywm.log" 2>&1 &
     pid=$!
     if [ -n "${B_CLOSE_WHEN:-}" ]; then

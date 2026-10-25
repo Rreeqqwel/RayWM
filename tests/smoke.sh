@@ -17,7 +17,7 @@ cp -r "$root/tests/config/." "$tmp/config/raywm/"
 env -i PATH="$PATH" HOME="$tmp" XDG_RUNTIME_DIR="$tmp" XDG_CONFIG_HOME="$tmp/config" \
     RAYWM_TEST_OUT="$tmp/plugin.log" RAYWM_TEST_RESIZE=1 \
     WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER="${RENDERER:-pixman}" WLR_LIBINPUT_NO_DEVICES=1 \
-    timeout 20 "$bin/raywm" -s "grep SigBlk /proc/\$\$/status >'$tmp/sigmask'; RAYWM_TEST_LAYER=1 '$bin/raywm-test-client' >'$tmp/panel.log' 2>&1 & until grep -q 'layer frame done' '$tmp/panel.log'; do sleep 0.05; done; '$bin/raywm-test-client' >'$tmp/client.log' 2>&1; echo \$? >'$tmp/client.status'" \
+    timeout 20 "$bin/raywm" -s "grep SigBlk /proc/\$\$/status >'$tmp/sigmask'; RAYWM_TEST_LAYER=1 '$bin/raywm-test-client' >'$tmp/panel.log' 2>&1 & w=0; until grep -q 'layer frame done' '$tmp/panel.log' || [ \$w -ge 600 ]; do w=\$((w + 1)); sleep 0.05; done; '$bin/raywm-test-client' >'$tmp/client.log' 2>&1; echo \$? >'$tmp/client.status'" \
     >"$tmp/raywm.log" 2>&1 &
 pid=$!
 

@@ -36,7 +36,9 @@ start() {
     if [ -n "${CONF:-}" ]; then cp "$CONF" "$tmp/config/raywm/raywm.conf"; fi
     client="'$bin/raywm-test-client'"
     win="${WIN:-$default_win} $client"
-    wait_for() { echo "until grep -q '$2' '$tmp/$1'; do sleep 0.05; done"; }
+    # Bounded (30 s): the startup command is detached from the compositor,
+    # so an endless wait for a client that died outlived the test.
+    wait_for() { echo "w=0; until grep -q '$2' '$tmp/$1' || [ \$w -ge 600 ]; do w=\$((w + 1)); sleep 0.05; done"; }
     cmd="echo \$WAYLAND_DISPLAY >'$tmp/display'"
     case "${3:-}" in
         panel) cmd="$cmd; RAYWM_TEST_LAYER=1 RAYWM_TEST_KBD=1 $client >'$tmp/panel.log' 2>&1 & echo \$! >'$tmp/panel.pid'; $(wait_for panel.log 'layer frame done')" ;;

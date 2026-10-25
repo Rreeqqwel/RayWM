@@ -50,7 +50,7 @@ EOF
     env -i PATH="$tmp/fakebin:$PATH" HOME="$tmp" XDG_RUNTIME_DIR="$tmp" XDG_CONFIG_HOME="$tmp/config" \
         XDG_PICTURES_DIR="$tmp/pics" MALLOC_PERTURB_=165 \
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS="$outputs" WLR_RENDERER="${RENDERER:-pixman}" WLR_LIBINPUT_NO_DEVICES=1 \
-        timeout 120 "$bin/raywm" -s "echo \$WAYLAND_DISPLAY >'$tmp/display'; RAYWM_TEST_HOLD=1 RAYWM_TEST_PATTERN=1 RAYWM_TEST_ROUNDS=1 $client >'$tmp/a.log' 2>&1 & until grep -q 'frame done' '$tmp/a.log'; do sleep 0.05; done; sleep 0.2; touch '$tmp/ready'" \
+        timeout 120 "$bin/raywm" -s "echo \$WAYLAND_DISPLAY >'$tmp/display'; RAYWM_TEST_HOLD=1 RAYWM_TEST_PATTERN=1 RAYWM_TEST_ROUNDS=1 $client >'$tmp/a.log' 2>&1 & w=0; until grep -q 'frame done' '$tmp/a.log' || [ \$w -ge 600 ]; do w=\$((w + 1)); sleep 0.05; done; sleep 0.2; touch '$tmp/ready'" \
         >"$tmp/raywm.log" 2>&1 &
     pid=$!
     i=0
