@@ -8,7 +8,7 @@ reliability fixes it led to.
 | Baseline | `d0fbe73` (v0.2.2-beta, also `beta`); `release` untouched |
 | Fixes and suite | on `master` after the baseline (commits listed below) |
 | Host | Linux 7.2.11-zen1 x86_64, 24 CPUs, Zig 0.16.0, wlroots 0.20, Lua 5.4 |
-| Renderer | headless, pixman (CI also runs the regular suites with GLES2 on llvmpipe) |
+| Renderer | headless, pixman (the CI GLES2 job is skipped: no DRM render node on GitHub runners) |
 | Dates | 2026-10-24 … 2026-10-25 |
 
 All results are headless. They say nothing about GPU drivers, DRM/KMS,
@@ -29,7 +29,7 @@ VRR, tearing, real monitors or input devices; see [Limits](#limits).
 | SOAK 30 min, leak-check build, capped hotplug | soak, 9007 | 1 | pass, no leak reported | 1802 s |
 | Final check on `caded64` | `zig build test`, `tests/run.sh` | 69 unit tests, 25 suites | all pass; fmt, ast-check, luac, lint clean | – |
 | Regular suites under `-Dleak-check` | 24 suites | – | all pass, no leak | – |
-| CI (`ci.yml` on `ed67886`) | FAST, run number | 38 | pass (build+tests, torture FAST, GLES2) | – |
+| CI (`ci.yml` on `ed67886` and `ede951e`) | FAST, run number | 39 | pass (build+tests, torture FAST; GLES2 job has no render node) | – |
 
 Categories and what they check are in [TORTURE.md](TORTURE.md#categories):
 lifecycle (`mixed-round`, `sequential-clients`), lua (5 cases), config (2),
@@ -226,7 +226,7 @@ in 4 s produced 3 title and 4 done events (the v0.2.1 throttling holds).
 
 ## Limits
 
-- Headless pixman only (GLES2 llvmpipe in CI for the regular suites). GPU
+- Headless pixman only. GPU
   renderers, DRM/KMS, VRR, tearing, real input devices, real monitors and
   hotplug of real connectors are not exercised. No frame-rate or latency
   claim for real hardware follows from these numbers.
