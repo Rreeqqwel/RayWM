@@ -57,6 +57,7 @@ local options = {
 -- Rules of this file. Your own are best kept in rules.lua (see above),
 -- which has examples.
 local rules = {}
+local disabled_rules = {}
 
 local function fits(pattern, s)
   if type(pattern) == "table" then
@@ -164,7 +165,17 @@ local function apply(id)
   local d = {}
   if options.auto_float and is_dialog(v, out) then d.float = true end
   for _, r in ipairs(rules) do
-    if matches(r.match or {}, v, out) then
+    -- Lua only diagnoses some malformed patterns once their prefix matches.
+    -- Isolate each rule here as well as checking it during setup.
+    local ok, matched = true, false
+    if not disabled_rules[r] then
+      ok, matched = pcall(matches, r.match or {}, v, out)
+      if not ok then
+        disabled_rules[r] = true
+        raywm.log(("window-rules: rule disabled: %s"):format(tostring(matched)))
+      end
+    end
+    if ok and matched then
       for _, k in ipairs({ "float", "size", "position", "opacity", "workspace", "output", "focus", "fullscreen", "maximize", "decoration" }) do
         if r[k] ~= nil then d[k] = r[k] end
       end
@@ -235,6 +246,7 @@ end
 -- A bad pattern would stop the plugin on the first window: check them
 -- once, and drop (and report) rules that do not work.
 local function check_rules()
+  disabled_rules = {}
   local ok_rules = {}
   for i, r in ipairs(rules) do
     local ok, err = pcall(function()

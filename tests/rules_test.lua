@@ -178,6 +178,21 @@ test("bad rules are reported and dropped, the others kept", function()
   eq(c, "floating true")
 end)
 
+test("a lazily invalid pattern disables only its rule", function()
+  load({
+    { match = { app_id = "^foot[" }, float = true },
+    { match = { app_id = "^foot$" }, opacity = 0.7 },
+  })
+  eq(#logs, 0, "pattern has not reached its invalid suffix yet")
+  local _, c = new({ app_id = "foot" })
+  eq(c, "opacity 0.7", "other rules still run on the same window")
+  eq(#logs, 1, "bad rule reported")
+  assert(logs[1]:find("malformed pattern", 1, true), logs[1])
+  _, c = new({ app_id = "foot" })
+  eq(c, "opacity 0.7", "other rules still run on later windows")
+  eq(#logs, 1, "disabled rule is not retried")
+end)
+
 test("decoration action; a bad decoration rule is dropped before any window", function()
   load({ { match = { app_id = "^kde$" }, decoration = "client" }, { match = { app_id = "^x$" }, decoration = "fancy" } })
   eq(#logs, 1, "bad decoration reported")
