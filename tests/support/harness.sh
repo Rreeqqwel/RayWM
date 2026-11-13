@@ -101,11 +101,12 @@ launch() {
         "$bin/raywm-test-client" >"$tmp/$n.log" 2>&1 &
     echo $! >"$tmp/$n.pid"
 }
-# wait_log <name> <text>: waits up to 5 s for a line in <name>.log.
+# wait_log <name> <text> [tries]: waits up to 5 s (or TRIES * 50 ms) for a
+# line in <name>.log.
 wait_log() {
     w=0
     until grep -q "$2" "$tmp/$1.log" 2>/dev/null; do
-        w=$((w + 1)); [ $w -gt 100 ] && { fail "$1.log: '$2' never appeared"; return 0; }
+        w=$((w + 1)); [ $w -gt "${3:-100}" ] && { fail "$1.log: '$2' never appeared"; return 0; }
         sleep 0.05
     done
 }
@@ -156,6 +157,41 @@ stop() {
 expect() {
     awk -v n="dump $1" '$0 == n {on=1; next} /^dump / {on=0} on' "$tmp/probe.log" | grep -qxF "$2" ||
         fail "dump $1: expected '$2'"
+}
+
+# last_dump: number of the newest probe dump (see dump_until).
+last_dump() {
+    sed -n 's/^dump \([0-9][0-9]*\)$/\1/p' "$tmp/probe.log" 2>/dev/null | tail -1
+}
+
+# probe_until TRIES LINE...: keeps dumping until one section contains every
+# LINE, then sets LAST_DUMP and returns 0. Some wlroots state (an X11
+# window's pre-map fullscreen/maximized flags) arrives asynchronously, so a
+# fixed dump races.
+probe_until() {
+    tries=$1; shift
+    i=0
+    while [ "$i" -lt "$tries" ]; do
+        i=$((i + 1))
+        dump
+        n=$(last_dump)
+        if [ -n "$n" ]; then
+            ok=1
+            for line in "$@"; do
+                awk -v n="dump $n" '$0 == n {on=1; next} /^dump / {on=0} on' "$tmp/probe.log" |
+                    grep -qxF "$line" || { ok=0; break; }
+            done
+            if [ "$ok" -eq 1 ]; then LAST_DUMP=$n; return 0; fi
+        fi
+        sleep 0.05
+    done
+    LAST_DUMP=$(last_dump)
+    return 1
+}
+
+# dump_until TRIES LINE...: probe_until, but a timeout is a test failure.
+dump_until() {
+    probe_until "$@" || fail "no dump with: $*"
 }
 
 # run_scenarios <suite> <s1 s2 ...>: runs each scenario function, or only

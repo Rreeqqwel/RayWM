@@ -73,7 +73,8 @@ int main(int argc,char **argv) {
          * which it selects after it sees CreateNotify; a property set
          * earlier is overwritten at map (wlroots 0.20 race). Real clients
          * can lose that race too; this test exercises RayWM's handling of
-         * the state wlroots does report, so wait for the selection. */
+         * the state wlroots does report, so wait for the selection. A slow
+         * or loaded CI machine may take several seconds to get there. */
         for(int i=0;i<200;i++) {
             xcb_get_window_attributes_reply_t *a=xcb_get_window_attributes_reply(c,xcb_get_window_attributes(c,win),NULL);
             int ready=a&&(a->all_event_masks&XCB_EVENT_MASK_PROPERTY_CHANGE);
