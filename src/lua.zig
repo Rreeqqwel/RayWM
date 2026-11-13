@@ -235,7 +235,7 @@ pub const RectOptions = struct {
 pub const ResourceResult = union(enum) { ok: u32, stale, hidden, failed, limit };
 pub const Limits = struct {
     memory: usize = 64 << 20,
-    instructions: u64 = 200_000_000,
+    instructions: u64 = 10_000_000,
     /// Receives plugin/config errors ("init.lua" for the config itself).
     report: *const fn (source: []const u8, msg: []const u8) void = logError,
     /// Receives non-fatal warnings (missing config, ignored reload, ...).

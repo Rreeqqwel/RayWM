@@ -106,10 +106,22 @@ plugin. See [SECURITY.md](../SECURITY.md).
 | Limit | Default | Behaviour |
 |---|---|---|
 | Lua memory | 64 MiB, **shared by all plugins** | an allocation over the cap fails with a Lua memory error in whichever plugin is running, which need not be the plugin that used the memory |
-| Instructions | about 200 M per top-level callback | the running plugin gets `instruction budget exceeded`. Catching it with `pcall`, in any coroutine, does not help: the error is raised again on every instruction, in every Lua thread, until control returns to RayWM |
+| Instructions | about 10 M per top-level callback and plugin load | the running plugin gets `instruction budget exceeded`. Catching it with `pcall`, in any coroutine, does not help: the error is raised again on every instruction, in every Lua thread, until control returns to RayWM |
 | Registrations | 65 536 at once (all plugins together; registrations released during a callback count until it returns) | `too many registrations` |
 | `debug` library, native modules | not available: no `debug`, no `package.loadlib`, no C module searchers | they could rewrite internal upvalues and the registry, or load native code |
 | Precompiled chunks | refused (since v0.2.2-beta+1): `init.lua` and plugin files must be Lua source; `load`, `loadfile`, `dofile` and `require` load text only, whatever mode is asked for (`string.dump` still works) | Lua does not check binary chunks, and a damaged one (a corrupted plugin file) crashed the whole compositor |
+
+The instruction budget was reduced from 200 M to 10 M. Custom plugins that
+previously performed more work in a single callback or during loading may now
+be unloaded and should split work into smaller callbacks. The limit counts Lua
+instructions, not time spent inside native calls.
+
+For context, profiling the shipped dwindle, focus, workspaces, window-rules,
+and screenshot test scenarios with a 10,000-instruction Lua hook found a
+maximum of 30,000–40,000 instructions per measured callback (including mock
+API code); these fixtures do not cover every configuration or plugin. On the
+measurement machine an empty runaway loop took approximately 0.09 s to reach
+10 M versus 1.65 s to reach 200 M of Lua instructions; actual latency varies.
 
 ## Ids
 

@@ -371,7 +371,7 @@ test "timers are one-shot and use the injected clock" {
 test "memory and instruction limits unload only the offender" {
     var f: Fake = .{};
     defer f.deinit();
-    const rt = try start(&f, "tests/lua/limits.lua", .{ .memory = 16 << 20, .instructions = 5_000_000, .report = report, .warn = warn });
+    const rt = try start(&f, "tests/lua/limits.lua", .{ .memory = 16 << 20, .report = report, .warn = warn });
     defer rt.destroy();
     try std.testing.expect(rt.configured());
     try std.testing.expectEqual(1, f.count("hog:nil"));
@@ -383,6 +383,17 @@ test "memory and instruction limits unload only the offender" {
     try std.testing.expect(hasError("hog: not enough memory"));
     try std.testing.expect(hasError("spin: instruction budget exceeded"));
     try std.testing.expectEqual(2, takeErrors());
+}
+
+test "default instruction budget stops a finite expensive callback" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/defaultbudget.lua", .{ .report = report, .warn = warn });
+    defer rt.destroy();
+    rt.emit(.view_map, 3);
+    try std.testing.expectEqual(0, f.count("over-default-budget"));
+    try std.testing.expect(hasError("budget_default: instruction budget exceeded"));
+    try std.testing.expectEqual(1, takeErrors());
 }
 
 test "precompiled chunks are refused by every loader; text still loads" {
