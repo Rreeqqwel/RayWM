@@ -77,7 +77,9 @@ while [ $r -lt "$rounds" ]; do
     if [ "$crashed" -gt 0 ]; then
         # Their windows go away asynchronously.
         sleep 0.5
-        held=$(for f in "$dir"/chaos-*.log; do grep -q 'crash exit\|disconnected' "$f" || grep '^chaos: mapped ' "$f"; done | wc -l)
+        # `grep` returns 1 when a client holds no window; without `|| true`
+        # `set -e` would stop this subshell early and skip the later clients.
+        held=$(for f in "$dir"/chaos-*.log; do grep -q 'crash exit\|disconnected' "$f" || grep '^chaos: mapped ' "$f" || true; done | wc -l)
     fi
     echo "$held" >"$dir/expect-views"
     : >"$dir/audit-request"
