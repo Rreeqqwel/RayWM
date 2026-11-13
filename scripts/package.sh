@@ -30,7 +30,8 @@ trap 'rm -rf "$work"' EXIT HUP INT TERM
 name="raywm-$version"
 stage="$work/$name"
 mkdir -p "$stage/bin"
-git archive HEAD README.md LICENSE CHANGELOG.md SECURITY.md config docs scripts/install.sh scripts/raywmctl | tar -xf - -C "$stage"
+git archive -o "$work/source.tar" HEAD README.md LICENSE CHANGELOG.md SECURITY.md config docs scripts/install.sh scripts/raywmctl
+tar -xf "$work/source.tar" -C "$stage"
 install -m 0755 "$stage/scripts/install.sh" "$stage/install.sh"
 install -m 0755 "$stage/scripts/raywmctl" "$stage/bin/raywmctl"
 # Remove only the temporary copies; they are not archive paths.
@@ -55,7 +56,9 @@ printf '%s\n' "$commit" >"$stage/COMMIT"
 (cd "$stage" && find . -type f -print0 | sort -z | xargs -0 sha256sum) >"$work/MANIFEST.sha256"
 install -m 0644 "$work/MANIFEST.sha256" "$stage/MANIFEST.sha256"
 archive="$name-linux-x86_64.tar.gz"
-(cd "$work" && tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$epoch" -cf - "$name" | gzip -n -9) >"$work/$archive"
+# Keep producer failures visible to POSIX sh instead of masking them in a pipe.
+(cd "$work" && tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$epoch" -cf payload.tar "$name")
+gzip -n -9 -c "$work/payload.tar" >"$work/$archive"
 if [ -e "$dist/$archive" ]; then
     cmp -s "$work/$archive" "$dist/$archive" || { echo 'package: different archive already exists; preserve it before rebuilding'; exit 1; }
 else

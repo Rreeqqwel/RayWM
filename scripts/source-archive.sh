@@ -25,12 +25,14 @@ name="raywm-$tag"
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
 [ ! -e "$out/$name.tar.gz" ] || { echo "source-archive: $out/$name.tar.gz exists; refusing to overwrite"; exit 1; }
-work=$(mktemp -d)
+# Keep publication on the output filesystem so the final hard link is atomic.
+work=$(mktemp -d "$out/.source-archive.XXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 stage="$work/$name"
 mkdir -p "$stage"
-git archive "$commit" -- . ':(exclude).github' ':(exclude).claude' ':(exclude)CLAUDE.md' \
-    ':(exclude)docs/measurements' ':(exclude).gitignore' | tar -xf - -C "$stage"
+git archive -o "$work/source.tar" "$commit" -- . ':(exclude).github' ':(exclude).claude' ':(exclude)CLAUDE.md' \
+    ':(exclude)docs/measurements' ':(exclude).gitignore'
+tar -xf "$work/source.tar" -C "$stage"
 git show "$commit:build.zig.zon" >/dev/null
 python3 scripts/release-meta.py check-zon "$tag" "$stage/build.zig.zon"
 # Pinned dependencies (hashes are checked by Zig against build.zig.zon).
@@ -45,6 +47,9 @@ rm -rf "$stage/.zig-cache"
 if find "$stage" -type f -exec sh -c 'head -c4 "$1" | grep -q "ELF"' _ {} \; -print | grep -q .; then
     echo 'source-archive: ELF binary in archive'; exit 1
 fi
-(cd "$work" && tar --sort=name --owner=0 --group=0 --numeric-owner --mode=go-w --mtime="@$epoch" -cf - "$name" | gzip -n -9) >"$out/$name.tar.gz"
+# Check tar independently: POSIX sh only reports gzip's status in a pipeline.
+(cd "$work" && tar --sort=name --owner=0 --group=0 --numeric-owner --mode=go-w --mtime="@$epoch" -cf payload.tar "$name")
+gzip -n -9 -c "$work/payload.tar" >"$work/$name.tar.gz"
+ln "$work/$name.tar.gz" "$out/$name.tar.gz"
 (cd "$out" && sha256sum "$name.tar.gz" >"$name.tar.gz.sha256")
 cat "$out/$name.tar.gz.sha256"

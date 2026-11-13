@@ -129,7 +129,9 @@ jobs:
         run: tests/perf.sh zig-out/test-input/bin
 
       - name: Release scripts (tag scheme, vercmp order, metadata)
-        run: tests/release-meta.sh
+        run: |
+          tests/release-meta.sh
+          sh tests/archive-errors.sh
 
       - name: raywm.conf (raywm -t, layers, settings with real input, reload)
         run: tests/conf.sh zig-out/test-input/bin
