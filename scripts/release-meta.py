@@ -24,15 +24,18 @@ import os
 import re
 import sys
 
-TAG = re.compile(r'^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-(beta(?:\.([2-9]|[1-9]\d+))?|stable)$')
-LEGACY = re.compile(r'^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$')
+# Match src/update.zig: ASCII numbers, at most six digits, no leading zero.
+NUMBER = r'(0|[1-9][0-9]{0,5})'
+VERSION = rf'v{NUMBER}\.{NUMBER}\.{NUMBER}'
+TAG = re.compile(VERSION + r'-(beta(?:\.([2-9]|[1-9][0-9]{1,5}))?|stable)')
+LEGACY = re.compile(VERSION)
 SCHEMA = 1
 
 
 def parse(tag):
-    m = TAG.match(tag)
+    m = TAG.fullmatch(tag)
     if not m:
-        if LEGACY.match(tag):
+        if LEGACY.fullmatch(tag):
             v = tag[1:]
             return dict(tag=tag, channel='legacy', version=v, prerelease=None, pkgver=v, pacman_version=v + '-1')
         return None

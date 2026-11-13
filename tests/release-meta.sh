@@ -14,6 +14,24 @@ for t in v0.2.1-beta.1 v0.2.1-beta.0 v0.2.1-rc1 v0.2.1-Stable 0.2.1-stable v0.2-
     if $meta parse "$t" >/dev/null 2>&1; then fail "accepted $t"; fi
 done
 [ "$(field v0.2.1 channel)" = legacy ] || fail "v0.2.1 is legacy"
+python3 - "$root" <<'PY' || fail "strict tag parsing"
+import importlib.util
+import sys
+
+spec = importlib.util.spec_from_file_location('release_meta', sys.argv[1] + '/scripts/release-meta.py')
+meta = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(meta)
+for tag in ('v999999.999999.999999-stable', 'v0.2.1-beta.999999', 'v999999.0.0'):
+    assert meta.parse(tag) is not None, repr(tag)
+for tag in (
+    'v0.2.1-stable\n', 'v0.2.1-beta.2\n', 'v0.2.1\n',
+    'v1\u0662.2.1-stable', 'v0.1\u0662.1', 'v0.2.1-beta.1\u0662',
+    'v1000000.2.1-stable', 'v0.1000000.1-beta', 'v0.2.1000000-stable',
+    'v0.2.1-beta.1000000', 'v1000000.0.0',
+):
+    assert meta.parse(tag) is None, repr(tag)
+print('release-meta: strict tag parsing OK')
+PY
 [ "$(field v0.2.1-beta pkgver)" = 0.2.1beta ] || fail "beta pkgver"
 [ "$(field v0.2.1-beta.3 pkgver)" = 0.2.1beta.3 ] || fail "beta.3 pkgver"
 [ "$(field v0.2.1-stable pkgver)" = 0.2.1 ] || fail "stable pkgver"
