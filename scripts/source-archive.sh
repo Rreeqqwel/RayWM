@@ -50,6 +50,10 @@ fi
 # Check tar independently: POSIX sh only reports gzip's status in a pipeline.
 (cd "$work" && tar --sort=name --owner=0 --group=0 --numeric-owner --mode=go-w --mtime="@$epoch" -cf payload.tar "$name")
 gzip -n -9 -c "$work/payload.tar" >"$work/$name.tar.gz"
+(cd "$work" && sha256sum "$name.tar.gz" >"$name.tar.gz.sha256")
 ln "$work/$name.tar.gz" "$out/$name.tar.gz"
-(cd "$out" && sha256sum "$name.tar.gz" >"$name.tar.gz.sha256")
+if ! ln "$work/$name.tar.gz.sha256" "$out/$name.tar.gz.sha256"; then
+    rm -f "$out/$name.tar.gz"
+    exit 1
+fi
 cat "$out/$name.tar.gz.sha256"

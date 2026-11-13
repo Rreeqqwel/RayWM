@@ -44,6 +44,9 @@ chmod +x "$2/bin/raywm"''')
         real = shutil.which(name)
         condition = '[ "${FAIL_TOOL:-}" = gzip ]' if name == 'gzip' else '[ "${FAIL_TOOL:-}" = tar ] && [ "${1:-}" = --sort=name ]'
         tool(name, f'if {condition}; then echo "injected {name} failure" >&2; exit 42; fi\nexec "{real}" "$@"')
+    real_sha256sum = shutil.which('sha256sum')
+    tool('sha256sum', f'''if [ "${{FAIL_TOOL:-}}" = sha256sum ]; then echo "injected sha256sum failure" >&2; exit 42; fi
+exec "{real_sha256sum}" "$@"''')
     tool('nm', ':')
     tool('strings', ':')
     tool('strip', 'if [ "$1" = --version ]; then echo "test strip"; fi')
@@ -51,7 +54,8 @@ chmod +x "$2/bin/raywm"''')
     env = dict(os.environ, PATH=str(tools) + ':' + os.environ['PATH'], ZIG=str(tools / 'zig'))
     checks = 0
     for script in ('source-archive.sh', 'package.sh'):
-        for failure in ('tar', 'gzip', ''):
+        for failure in (('tar', 'gzip', 'sha256sum', '') if script == 'source-archive.sh'
+                        else ('tar', 'gzip', '')):
             out = work / (script + '-' + (failure or 'success'))
             case_env = dict(env, FAIL_TOOL=failure, RAYWM_DIST_DIR=str(out))
             if script == 'source-archive.sh':
