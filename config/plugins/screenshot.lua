@@ -79,8 +79,14 @@ shot "$tmp" || fail 'grim could not capture the screen'
 out=$file n=0
 until [ ! -e "$out" ] && [ ! -L "$out" ] && ln "$tmp" "$out" 2>/dev/null; do
   if [ ! -e "$out" ] && [ ! -L "$out" ]; then
-    mv "$tmp" "$out" || fail "cannot write $out" # no hard links here
-    break
+    # Filesystems without hard links still need an exclusive name claim.
+    # A plain mv could replace a concurrent shot after the existence check.
+    if (umask 077; set -C; { cat "$tmp" || exit 3; } >"$out") 2>/dev/null; then
+      break
+    else
+      [ "$?" -ne 3 ] || fail "cannot copy screenshot to $out"
+    fi
+    [ -e "$out" ] || [ -L "$out" ] || fail "cannot write $out"
   fi
   n=$((n + 1))
   [ "$n" -le 1000 ] || fail "no free file name for $file"

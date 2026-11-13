@@ -331,6 +331,36 @@ sh("mkdir -p " .. q(plain .. "/screenshot-2026-10-22_12-35-56.png"))
 check(run_only(m._test.command("save", "full", now + 60), bins.all) == 0, "save next to a directory")
 check(exists(plain .. "/screenshot-2026-10-22_12-35-56-1.png"), "a directory with the target name was not skipped")
 
+-- No hard links: fallback saves stay private and never use a replacing mv.
+-- The fake mv models another shot claiming the name just before the move.
+local fallback = make_bin("bin-no-links")
+local function fake_tool(name, body)
+  local f = assert(io.open(fallback .. "/" .. name, "w"))
+  f:write("#!/bin/sh\n", body, "\n")
+  f:close()
+  sh("chmod +x " .. q(fallback .. "/" .. name))
+end
+fake_tool("ln", "exit 1")
+fake_tool("mv", [[printf 'concurrent shot' >"$2"
+printf '%s' "$2" >"$LOG/concurrent-path"
+exec /bin/mv "$@"]])
+local fallback_dir = tmp .. "/fallback"
+local fallback_plugin = plugin_for(fallback_dir)
+local fallback_cmd = fallback_plugin._test.command("save", "full", now)
+code = run_only(fallback_cmd, fallback)
+check(code == 0, "no hard links: save failed: " .. stderr())
+local concurrent_path = read(logdir .. "/concurrent-path")
+check(not concurrent_path or read(concurrent_path) == "concurrent shot", "fallback overwrote a concurrent shot")
+local fallback_file = fallback_dir .. "/" .. name .. ".png"
+check((read(fallback_file) or ""):find("^PNG"), "fallback did not save PNG data")
+local permissions = io.popen("stat -c %a " .. q(fallback_file))
+check(permissions:read("l") == "600", "fallback screenshot is not private (0600)")
+permissions:close()
+local original = read(fallback_file)
+check(run_only(fallback_cmd, fallback) == 0, "second fallback save failed")
+check(read(fallback_file) == original and exists(fallback_dir .. "/" .. name .. "-1.png"),
+  "fallback did not preserve the existing shot and choose a unique name")
+
 -- 5c. Region: slurp's geometry goes to grim; cancelling saves nothing.
 code = run_only(m._test.command("save", "region", now + 90), bins.all)
 check(code == 0 and (read(logdir .. "/grim.args") or ""):find("-g 10,20 30x40 -t png", 1, true), "region not passed to grim")
