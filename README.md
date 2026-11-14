@@ -16,9 +16,10 @@ correctness ahead of artificial code reduction.
 - Basic settings (focus, gaps, borders, drag modifier) live in one small,
   validated file, `ray.conf`.
 
-> **Status: v0.2.2 (Configuration & Update System), Beta, experimental.**
-> v0.2.2 adds the central `ray.conf` and the `raywm-update` manager with
-> persistent Beta/Stable channels; see [CHANGELOG.md](CHANGELOG.md).
+> **Status: v0.2.3 (Sticky, pinned and ray.conf), Beta, experimental.**
+> v0.2.3 adds sticky and pinned windows, special (scratchpad) workspaces,
+> the `raywm.conf` → `ray.conf` rename, session autostart in `ray.conf`,
+> and the first torture-suite hardening pass; see [CHANGELOG.md](CHANGELOG.md).
 > Earlier implementation and validation are recorded in [the development
 > ledger](docs/DEVELOPMENT.md) and [candidate acceptance](docs/RELEASE-STATUS.md).
 > Headless tests do not establish physical hardware compatibility.
@@ -147,10 +148,10 @@ Releases come in two channels ([docs/RELEASE-WORKFLOW.md](docs/RELEASE-WORKFLOW.
   built into a pacman package as your user (needs `base-devel`,
   `wayland-protocols`, `pkgconf`):
   ```sh
-  sha256sum -c raywm-v0.2.2-beta.tar.gz.sha256
-  tar -xzf raywm-v0.2.2-beta.tar.gz
-  raywm-v0.2.2-beta/scripts/arch-package.sh v0.2.2-beta raywm-v0.2.2-beta.tar.gz pkg
-  sudo pacman -U pkg/raywm-0.2.2beta-1-x86_64.pkg.tar.zst
+  sha256sum -c raywm-v0.2.3-beta.tar.gz.sha256
+  tar -xzf raywm-v0.2.3-beta.tar.gz
+  raywm-v0.2.3-beta/scripts/arch-package.sh v0.2.3-beta raywm-v0.2.3-beta.tar.gz pkg
+  sudo pacman -U pkg/raywm-0.2.3beta-1-x86_64.pkg.tar.zst
   ```
   Other distributions: [docs/INSTALL.md](docs/INSTALL.md#install-a-beta-release-source-built-into-a-pacman-package).
 

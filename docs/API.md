@@ -199,8 +199,8 @@ Window commands return `true` or `nil, "stale"`:
 | Function | Behavior |
 |---|---|
 | `view_floating(id, on)` | Change floating intent; layout plugins respond to `view_state`. The shipped floating plugin restores the last floating geometry. |
-| `view_sticky(id, on)` | Keep the window visible on every workspace of its output (added after v0.2.2). It keeps its workspace and geometry; intended for floating windows. |
-| `view_pinned(id, on)` | Keep the window above every normal window (added after v0.2.2). Pinning makes it floating in place; unpinning leaves it floating. |
+| `view_sticky(id, on)` | Keep the window visible on every workspace of its output (since v0.2.3). It keeps its workspace and geometry; intended for floating windows. |
+| `view_pinned(id, on)` | Keep the window above every normal window (since v0.2.3). Pinning makes it floating in place; unpinning leaves it floating. |
 | `view_fullscreen(id, on [, output])` | Enter/leave native fullscreen. An omitted/zero output selects the window's output. Invalid output IDs fall back to the window's output. |
 | `view_maximize(id, on)` | Fill the output's usable area; leaving restores normal geometry. |
 | `view_workspace(id, workspace)` | Move to a native workspace; nil/0 removes workspace membership. A stale workspace fails without moving the view. |

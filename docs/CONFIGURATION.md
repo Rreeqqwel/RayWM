@@ -2,12 +2,13 @@
 
 RayWM has two configuration files, each the only authority for its part:
 
-- **`ray.conf`** (since v0.2.2): the compositor's basic settings: focus,
-  gaps, borders, the drag modifier, Xwayland. A small INI-like file, read
-  and validated by the core; it never runs code.
+- **`ray.conf`** (since v0.2.2, renamed from `raywm.conf` in v0.2.3): the
+  compositor's basic settings: focus, gaps, borders, the drag modifier,
+  Xwayland, and session autostart commands. A small INI-like file, read and
+  validated by the core; it never runs code.
 - **`init.lua` and plugins** (Lua): which plugins are loaded, and
-  everything they do: tiling, key bindings, window rules, outputs, input
-  devices, autostart. The plugin API is described in [API.md](API.md).
+  everything they do: tiling, key bindings, window rules, outputs and input
+  devices. The plugin API is described in [API.md](API.md).
 
 ## ray.conf
 

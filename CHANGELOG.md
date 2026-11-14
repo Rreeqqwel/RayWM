@@ -4,10 +4,26 @@ All notable changes to RayWM. Versions follow [Semantic
 Versioning](https://semver.org/); before 1.0, minor versions may break
 the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
-## [Unreleased]
+## [v0.2.3] — Sticky, pinned and ray.conf, candidate prepared 2026-11-14
 
-Reliability hardening from the first torture-suite run
-(docs/TORTURE-TEST-REPORT.md).
+The first Beta after v0.2.2: 32 commits since `v0.2.2-beta`, including the
+first torture-suite hardening pass, special workspaces, sticky and pinned
+windows, and the `raywm.conf` → `ray.conf` migration with session
+autostart in the config. `raywm.api_version` stays `1`; all changes to the
+Lua API are additions.
+
+### Changed
+
+- **`raywm.conf` is now `ray.conf`.** The two layers are
+  `/usr/share/raywm/config/ray.conf` and the file next to `init.lua`
+  (`~/.config/raywm/ray.conf`). There is no fallback to the old name:
+  rename or copy the file when upgrading. Parser behaviour, setting names
+  and `raywm.settings` are unchanged.
+- **Autostart moved into the config.** `[autostart] exec` lines in
+  `ray.conf` replace `plugins/autostart.lua`'s local
+  `options.commands` list. The shipped plugin now only reads
+  `raywm.settings.autostart.exec` and calls `raywm.spawn_once`; commands
+  from system and user files append.
 
 ### Fixed
 
@@ -34,7 +50,16 @@ Reliability hardening from the first torture-suite run
   animations ending at a non-default transform kept their processing slot
   forever. They now release the slot while retaining their registration,
   so `ctx.cancel` still restores the window.
-- raywm.conf strings no longer keep bytes of earlier, longer values.
+- **A malformed window-rule pattern disabled unrelated rules**; each rule
+  now fails on its own and the rest stay active.
+- **Concurrent screenshots could overwrite a fallback save**; each capture
+  now keeps its own target name.
+- **Rescuing workspaces from a removed output could lose geometry**; the
+  destination geometry is preserved.
+- **Release tag validation disagreed with the updater** about accepted
+  version suffixes; both now use the same rules, and packaging refuses to
+  publish an incomplete archive or hashes it before publication.
+- `ray.conf` strings no longer keep bytes of earlier, longer values.
 
 ### Added
 
@@ -56,12 +81,28 @@ Reliability hardening from the first torture-suite run
   `raywm.workspace_toggle`, a `special` field in workspace entries, the
   `workspace_special` event, and a dedicated scene layer. Switching to a
   regular workspace hides the overlay; reloads and output hotplug keep it.
-- The torture suite `tests/stress/` (docs/TORTURE.md): FAST level in every
+
+### Tests and infrastructure
+
+- **Torture suite** (`tests/stress/`, docs/TORTURE.md): FAST level in every
   CI run, STRESS and SOAK on demand (Actions → Torture), `zig build stress`.
-- `zig build -Dleak-check` (test builds): DebugAllocator with leak report
-  at exit.
-- `raywm-test-chaos`, a seeded random protocol client.
-- raywm.conf fuzzing in `zig build test` (20000 seeded inputs).
+  It includes a seeded chaos client, lifecycle/output/reload rounds, FD and
+  leak checks, and a two-hour soak report (docs/TORTURE-TEST-REPORT.md).
+- **`zig build -Dleak-check`**: test builds use `DebugAllocator` and report
+  memory still allocated at exit.
+- **`zig build test` now fuzzes `ray.conf`** with 20,000 seeded inputs and
+  keeps the parser allocation-free and transactional; the corpus and
+  structured generator cover list settings, CRLF, invalid UTF-8, quoting
+  and boundary values.
+- **Bounded test waits** and stress fixes: no harness command waits forever
+  for a dead client, mixed rounds count every client, and the soak caps
+  headless hotplug.
+- **Real-input coverage** grew with hotplug rescue, hidden-window input
+  isolation, reload, special overlays, sticky windows and a config without
+  workspaces. `tests/workspaces.sh` has 15 scenarios, `tests/windows.sh`
+  17 and `tests/conf.sh` 13.
+- Refreshed C-bool lint, release metadata/package checks and the Xwayland
+  pre-map test.
 
 ## [v0.2.2] — Configuration & Update System, candidate prepared 2026-10-24
 

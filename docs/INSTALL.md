@@ -47,10 +47,10 @@ build a pacman package from it as your normal user (never as root; needs
 checksum-pinned Zig 0.16.0 from ziglang.org) and install that:
 
 ```sh
-sha256sum -c raywm-v0.2.2-beta.tar.gz.sha256
-tar -xzf raywm-v0.2.2-beta.tar.gz
-raywm-v0.2.2-beta/scripts/arch-package.sh v0.2.2-beta raywm-v0.2.2-beta.tar.gz pkg
-sudo pacman -U pkg/raywm-0.2.2beta-1-x86_64.pkg.tar.zst
+sha256sum -c raywm-v0.2.3-beta.tar.gz.sha256
+tar -xzf raywm-v0.2.3-beta.tar.gz
+raywm-v0.2.3-beta/scripts/arch-package.sh v0.2.3-beta raywm-v0.2.3-beta.tar.gz pkg
+sudo pacman -U pkg/raywm-0.2.3beta-1-x86_64.pkg.tar.zst
 [ -e ~/.config/raywm ] || cp -r /usr/share/raywm/config ~/.config/raywm
 ```
 
@@ -63,7 +63,7 @@ Without pacman (other distributions), build it like any checkout, with Zig
 pacman-based systems only:
 
 ```sh
-cd raywm-v0.2.2-beta
+cd raywm-v0.2.3-beta
 zig build -Doptimize=ReleaseSafe -p out
 install -Dm755 out/bin/raywm ~/.local/bin/raywm
 install -Dm755 scripts/raywmctl ~/.local/bin/raywmctl
@@ -112,7 +112,7 @@ The channel is a setting of the installation, stored in
 
 - **beta** receives Beta *and* Stable releases. Installing
   `v0.2.2-stable` from the beta channel keeps you on beta, so `v0.2.3-beta`
-  is offered next: `v0.2.1-beta.2 → v0.2.1-stable → v0.2.2-beta → v0.2.2-stable`.
+  is offered next: `v0.2.1-beta.2 → v0.2.1-stable → v0.2.2-beta → v0.2.2-stable → v0.2.3-beta`.
 - **stable** receives Stable releases only, never a Beta. A Stable
   subscriber who runs a Beta build gets the next Stable once it is newer.
 

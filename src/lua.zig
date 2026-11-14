@@ -17,7 +17,7 @@ const gpa = @import("alloc").gpa;
 
 pub const api_version = 1;
 /// RayWM release this host belongs to (raywm.version).
-pub const version = "0.2.2";
+pub const version = "0.2.3";
 pub const Event = enum {
     view_map,
     view_unmap,
