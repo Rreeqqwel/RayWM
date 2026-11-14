@@ -81,6 +81,8 @@ pub const View = struct {
     reveal_timer: ?*wl.EventSource = null,
     /// Layouts leave floating windows alone (raywm.view_floating).
     floating: bool = false,
+    /// Shown on every workspace of its output (raywm.view_sticky).
+    sticky: bool = false,
     /// Geometry it last had while floating, restored when it floats again.
     float_box: ?wlr.Box = null,
     /// Size the client chose when it mapped, used when it first floats.
@@ -542,6 +544,7 @@ pub const View = struct {
     /// hidden, whatever plugins ask (raywm.view_show).
     pub fn visible(view: *View) bool {
         if (!view.mapped or view.hidden or view.minimized) return false;
+        if (view.sticky) return true;
         const ws = view.workspace orelse return true;
         return ws.isActive();
     }
@@ -671,6 +674,19 @@ pub const View = struct {
         view.updateVisibility();
     }
 
+    /// Shows the window on every workspace of its output. It keeps its
+    /// workspace membership and layout geometry; floating windows are the
+    /// intended use.
+    pub fn setSticky(view: *View, on: bool) void {
+        if (view.sticky == on) return;
+        view.sticky = on;
+        view.updateVisibility();
+        view.restack();
+        view.restackChildren();
+        view.server.afterVisibilityChange();
+        view.stateChanged();
+    }
+
     /// A live plugin lays out this window (ctx.manage).
     pub fn managed(view: *View) bool {
         const rt = view.server.rt orelse return false;
@@ -683,9 +699,23 @@ pub const View = struct {
         return if (w.special) w else null;
     }
 
-    /// The layer of a non-fullscreen window: a window of a special
-    /// workspace floats above the normal windows, below panels.
+    /// Whether this window or one of its dialogs has `flag` set.
+    fn hasAncestorFlag(view: *View, comptime flag: []const u8) bool {
+        var p = view.parent();
+        var depth: usize = 0;
+        while (p) |pv| : (p = pv.parent()) {
+            if (@field(pv, flag)) return true;
+            depth += 1;
+            if (depth > 64) return false; // a parent cycle cannot come from clients
+        }
+        return false;
+    }
+
+    /// The layer of a non-fullscreen window: sticky windows above normal
+    /// ones (and their dialogs with them), a special workspace above that,
+    /// everything below panels.
     fn windowLayer(view: *View) srv.Layer {
+        if (view.sticky or hasAncestorFlag(view, "sticky")) return .sticky;
         if (view.workspace) |w| if (w.special) return .special;
         return if (view.managed()) .tiled else .floating;
     }

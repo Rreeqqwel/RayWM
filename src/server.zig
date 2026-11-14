@@ -32,10 +32,11 @@ pub var verbose = false;
 pub const Tag = enum { view, layer, visual };
 
 /// Scene layers, bottom to top. Windows a layout manages are `tiled`,
-/// others `floating`; a shown special workspace overlays both in `special`.
+/// others `floating`; sticky windows are visible on every workspace in
+/// `sticky`, a shown special workspace overlays both in `special`.
 /// `popups` holds popups of layer surfaces, so a dock's menu is never
 /// hidden behind windows.
-pub const Layer = enum { background, bottom, tiled, floating, special, top, fullscreen, overlay, popups, unmanaged, drag, lock };
+pub const Layer = enum { background, bottom, tiled, floating, sticky, special, top, fullscreen, overlay, popups, unmanaged, drag, lock };
 
 pub const Server = struct {
     /// Host functions for the Lua runtime.

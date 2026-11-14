@@ -39,6 +39,9 @@ return {
           out:write(string.format("shell %d minimized=%s urgent=%s decoration=%s\n", id, tostring(v.minimized),
             tostring(v.urgent), tostring(v.decoration)))
         end
+        if raywm.view_sticky then
+          out:write(string.format("flags %d sticky=%s\n", id, tostring(v.sticky)))
+        end
         if raywm.workspace and v.workspace ~= 0 then
           local w = raywm.workspace(v.workspace)
           if w then out:write(string.format("where %d %s@%s\n", id, w.name, w.home)) end

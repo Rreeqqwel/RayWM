@@ -36,8 +36,9 @@ correctness ahead of artificial code reduction.
 - **Layer-shell** (wlr-layer-shell v5) for external panels, docks,
   launchers and wallpapers: exclusive zones, keyboard interactivity,
   popups.
-- **Native window state:** floating, fullscreen, maximize, minimize and
-  urgency, with configure/ack handling, dialog stacking and focus rules.
+- **Native window state:** floating, sticky (visible on every workspace),
+  fullscreen, maximize, minimize and urgency, with configure/ack handling,
+  dialog stacking and focus rules.
 - **Workspaces:** one shown per output, native visibility/focus and hotplug
   recovery; Lua controls naming, switching, assignment and tiling.
   **Special workspaces** (`Super+S`) are per-output overlays used as a
@@ -221,6 +222,7 @@ With the example configuration (`config/`):
 | Super+Q | close the focused window |
 | Super+Shift+Space | toggle floating |
 | Super+F / Super+M | toggle fullscreen / maximize |
+| Super+Ctrl+S | toggle sticky (visible on every workspace) |
 | Super+N / Super+Shift+N | minimize / restore the latest minimized visible-workspace window |
 | Super+1..9 / Super+Shift+1..9 | switch workspace / move focused window |
 | Super+S / Super+Shift+S | show/hide the special (scratchpad) workspace / move the focused window there |

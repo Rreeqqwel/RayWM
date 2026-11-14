@@ -65,6 +65,7 @@ pub fn view(server: *Server, id: u32) ?lua.ViewInfo {
         .max_w = hints.max[0],
         .max_h = hints.max[1],
         .floating = v.floating,
+        .sticky = v.sticky,
         .fullscreen = v.isFullscreen(),
         .fullscreen_output = v.fullscreen_output,
         .maximized = v.maximized,
@@ -101,6 +102,7 @@ pub fn viewCmd(server: *Server, id: u32, cmd: lua.ViewCmd) bool {
         },
         .border => |b| v.setBorder(b.width, &b.color) catch std.log.err("out of memory", .{}),
         .floating => |on| v.setFloating(on),
+        .sticky => |on| v.setSticky(on),
         .fullscreen => |f| {
             v.decisions +%= 1;
             const out = if (f.output != 0) server.outputById(f.output) else null;

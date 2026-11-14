@@ -62,6 +62,9 @@ return {
       ctx.bind("Super+f", toggle("fullscreen", raywm.view_fullscreen))
       ctx.bind("Super+m", toggle("maximized", raywm.view_maximize))
     end
+    if raywm.view_sticky then -- RayWM 0.2.3
+      ctx.bind("Super+Ctrl+s", toggle("sticky", raywm.view_sticky))
+    end
     if raywm.view_minimize then -- RayWM 0.2.0
       -- After a reload: windows that are still minimized.
       for _, id in ipairs(raywm.views()) do

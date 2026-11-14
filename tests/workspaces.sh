@@ -315,4 +315,27 @@ ws14() {
     stop
 }
 
-run_scenarios workspaces ws1 ws2 ws3 ws4 ws5 ws6 ws7 ws8 ws9 ws10 ws11 ws12 ws13 ws14
+ws15() {
+    name="sticky windows stay visible on every workspace until unpinned"
+    WIN=$plain PLUGINS=$helpers start "$cfg" 2
+    super_ctrl s                                             # b (12) becomes sticky
+    dump                                                                      # 1
+    expect 1 "flags 12 sticky=true"
+    super_key 2
+    dump                                                                      # 2
+    expect 2 "view 11 8,8 628x704 focused=false"
+    expect 2 "state 12 floating=false fullscreen=false maximized=false visible=true managed=true ws=2 output=1"
+    expect 2 "view 12 644,8 628x704 focused=true"
+    # It is above the (empty) workspace: the click reaches it.
+    drive move 900 360 down left up left sleep 150
+    has b "ptr button 272 pressed window"
+    super_key 1
+    super_ctrl s                                             # no longer sticky
+    super_key 2
+    dump                                                                      # 3
+    expect 3 "flags 12 sticky=false"
+    expect 3 "state 12 floating=false fullscreen=false maximized=false visible=false managed=true ws=2 output=1"
+    stop
+}
+
+run_scenarios workspaces ws1 ws2 ws3 ws4 ws5 ws6 ws7 ws8 ws9 ws10 ws11 ws12 ws13 ws14 ws15
