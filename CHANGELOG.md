@@ -6,7 +6,7 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ## [v0.2.3] — Sticky, pinned and ray.conf, candidate prepared 2026-11-14
 
-The first Beta after v0.2.2: 32 commits since `v0.2.2-beta`, including the
+The first Beta after v0.2.2: 38 commits since `v0.2.2-beta`, including the
 first torture-suite hardening pass, special workspaces, sticky and pinned
 windows, and the `raywm.conf` → `ray.conf` migration with session
 autostart in the config. `raywm.api_version` stays `1`; all changes to the
