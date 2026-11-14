@@ -26,9 +26,14 @@ old=$(git rev-parse --verify "refs/heads/$branch" 2>/dev/null || true)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 mkdir -p "$tmp/tree"
-git archive "$source" -- \
-    src protocol config packaging scripts build.zig build.zig.zon LICENSE \
-    .github/workflows/release.yml | tar -x -C "$tmp/tree"
+paths=""
+for p in src protocol config packaging scripts build.zig build.zig.zon LICENSE \
+    .github/workflows/release.yml; do
+    if git cat-file -e "$source:$p" 2>/dev/null; then paths="$paths $p"; fi
+done
+[ -n "$paths" ] || { echo "make-release-branch: no release files in $source" >&2; exit 2; }
+# shellcheck disable=SC2086 # paths is a list of top-level paths
+git archive "$source" -- $paths | tar -x -C "$tmp/tree"
 # Older sources may predate this generator; the release tree keeps it so the
 # next branch update can run from the release branch as well.
 [ -e "$tmp/tree/scripts/make-release-branch.sh" ] ||
