@@ -74,6 +74,15 @@ for method in $methods; do
         fail "IPC method $method is handled in src/ipc.zig but missing from docs/IPC.md"
 done
 
+# The shipped client must expose every IPC method.
+ctl=$(sed -n 's/.*choices=(\("[a-z_]*"\(, *"[a-z_]*"\)*\)).*/\1/p' scripts/raywmctl |
+    tr -s '", ' '\n' | grep -E '^[a-z_]+$' | sort -u)
+[ -n "$ctl" ] || fail "no methods found in scripts/raywmctl (update this script)"
+for method in $methods; do
+    echo "$ctl" | grep -qx "$method" ||
+        fail "scripts/raywmctl does not offer IPC method $method"
+done
+
 # Every command-line option in the usage text must be in the README list
 # and in the INSTALL options table.
 options=$(
