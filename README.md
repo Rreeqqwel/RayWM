@@ -208,6 +208,7 @@ Options:
 - `-s CMD`: startup command, e.g. `-s 'waybar & foot'`;
 - `-d`: verbose log: wlroots, plus each key press with Super, Ctrl or
   Alt and the binding it matched (plain typing is never logged);
+- `-t`: check `ray.conf`, print the effective settings and exit;
 - `-h`: help.
 
 The keyboard layout comes from `XKB_DEFAULT_LAYOUT`, `XKB_DEFAULT_OPTIONS`
@@ -388,6 +389,7 @@ use test-only virtual input inside a private compositor.
 ```sh
 zig build test                      # Zig unit tests (core, Lua host, ray.conf, raywm-update), Lua plugin tests
 tests/smoke.sh && tests/focus.sh && tests/docs.sh
+tests/docs-sync.sh                  # docs match the API, settings, IPC and options
 tests/update.sh                     # raywm-update and the channel scriptlet against local release fixtures
 zig build -Dtest-input -p zig-out/test-input
 tests/input.sh && tests/stress.sh   # real pointer/keyboard events, stress

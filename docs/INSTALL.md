@@ -332,6 +332,7 @@ Options:
 | `-c FILE` | use FILE instead of `~/.config/raywm/init.lua` |
 | `-s CMD` | run CMD (with `/bin/sh -c`) once the compositor is ready, e.g. `-s waybar` |
 | `-d` | verbose wlroots logging |
+| `-t` | check `ray.conf`, print the effective settings and exit (exit status 1 if a file has errors) |
 | `-h` | help |
 
 The keyboard layout comes from the standard xkb environment variables,

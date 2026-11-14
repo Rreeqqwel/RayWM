@@ -280,11 +280,13 @@ processes:
 | `workspace.zig`, `taskbar.zig` | native visibility/focus, special-workspace overlays, hotplug recovery and idle-coalesced desktop protocol publication |
 | `protocols.zig`, `constraints.zig` | protocol globals/filtering, input-backed activation grants, constrained pointer/shortcut lifecycles |
 | `data.zig`, `textinput.zig` | drag validation/icons/cancellation; seat-local text/IME relay, popups and keyboard grabs |
-| `output.zig`, `outputconfig.zig`, `inputconfig.zig` | native output transactions and per-device settings |
+| `output.zig`, `inputconfig.zig` | native output transactions and per-device settings |
 | `lock.zig`, `input.zig`, `layer.zig` | lock presentation/input exclusion, pointer/keyboard grabs, layer arrangement |
 | `animation.zig`, `visual.zig` | bounded generation-handle tables; native output-frame tweens, owned snapshots and rectangles |
 | `ipc.zig` | same-UID, versioned NDJSON desktop queries/actions/events with resource limits |
 | `lua.zig`, `host.zig` | VM, plugin-owned registrations, protected dispatch and ID-based native API |
+| `conf.zig`, `settings.zig` | ray.conf parser and the layered load (`RAYWM_SYSTEM_CONF`, then `<config>/ray.conf`) |
+| `alloc.zig`, `cabi.zig` | allocator choice (libc, or debug allocator under `-Dleak-check`); computed booleans crossing the C ABI |
 
 Xwayland associations create the same View abstraction used by Lua layout,
 floating, workspaces and fullscreen. Native X11 objects remain wlroots-owned;

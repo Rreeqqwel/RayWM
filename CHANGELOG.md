@@ -4,6 +4,15 @@ All notable changes to RayWM. Versions follow [Semantic
 Versioning](https://semver.org/); before 1.0, minor versions may break
 the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
+## [Unreleased]
+
+### Fixed
+
+- Documentation drift: the CLI reference in `docs/INSTALL.md` and the
+  options list in README omitted `raywm -t`; `docs/ARCHITECTURE.md`
+  listed a non-existent `outputconfig.zig` and left `conf.zig`,
+  `settings.zig`, `alloc.zig` and `cabi.zig` out of the module table.
+
 ## [v0.2.3] — Sticky, pinned and ray.conf, candidate prepared 2026-11-14
 
 The first Beta after v0.2.2: 38 commits since `v0.2.2-beta`, including the
