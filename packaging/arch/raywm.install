@@ -43,7 +43,7 @@ post_install() {
 post_upgrade() {
   _raywm_channel_init "$1"
   echo '==> RayWM: compare your ~/.config/raywm with /usr/share/raywm/config'
-  echo '==> after upgrades; see /usr/share/doc/raywm/CHANGELOG.md.'
+  echo '==> after upgrades; see CHANGELOG.md on the repository master branch.'
 }
 
 post_remove() {

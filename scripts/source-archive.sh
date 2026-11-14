@@ -4,11 +4,11 @@
 #   TAG     release tag, e.g. v0.2.1-beta (also names the archive)
 #   REF     commit to archive (default: TAG)
 # Produces OUT_DIR/raywm-TAG.tar.gz and its .sha256. The archive holds the
-# committed sources needed to build (src, protocol, tests used by build.zig,
-# config and plugins, scripts, packaging, user documentation) plus the
-# pinned Zig package dependencies (zig-pkg/), so it builds without network.
-# It never contains a RayWM binary; CI/agent files and raw measurement data
-# are left out. Never publishes anything.
+# committed sources needed to build (src, protocol, config and plugins,
+# scripts, packaging, build files and LICENSE) plus the pinned Zig package
+# dependencies (zig-pkg/), so it builds without network. It never contains a
+# RayWM binary; docs, tests, CI/agent files and raw measurement data are not
+# in the source-only release tree. Never publishes anything.
 set -eu
 umask 022
 export LC_ALL=C
@@ -20,6 +20,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 python3 scripts/release-meta.py parse "$tag" >/dev/null
 commit=$(git rev-parse "$ref^{commit}")
+source_commit=$(git show "$commit:SOURCE-COMMIT" 2>/dev/null | tr -d '[:space:]' || true)
 epoch=$(git log -1 --format=%ct "$commit")
 name="raywm-$tag"
 mkdir -p "$out"
@@ -40,9 +41,9 @@ python3 scripts/release-meta.py check-zon "$tag" "$stage/build.zig.zon"
 [ -d "$stage/zig-pkg" ] || { echo 'source-archive: zig build --fetch produced no zig-pkg/'; exit 1; }
 rm -rf "$stage/.zig-cache"
 {
-    printf 'tag=%s\ncommit=%s\nsource_date_epoch=%s\n' "$tag" "$commit" "$epoch"
+    printf 'tag=%s\ncommit=%s\nsource_commit=%s\nsource_date_epoch=%s\n' "$tag" "$commit" "$source_commit" "$epoch"
     printf 'zig=%s\n' "$("$zig" version)"
-    printf 'build=zig build -Doptimize=ReleaseSafe -Dcpu=baseline (see docs/INSTALL.md)\n'
+    printf 'build=zig build -Doptimize=ReleaseSafe -Dcpu=baseline (see packaging/arch)\n'
 } >"$stage/SOURCE-INFO"
 if find "$stage" -type f -exec sh -c 'head -c4 "$1" | grep -q "ELF"' _ {} \; -print | grep -q .; then
     echo 'source-archive: ELF binary in archive'; exit 1
