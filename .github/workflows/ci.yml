@@ -14,7 +14,7 @@ on:
   workflow_call:
     inputs:
       ref:
-        description: Commit or branch to test (default: the caller's ref)
+        description: 'Commit or branch to test (default: the caller ref)'
         required: false
         type: string
 
