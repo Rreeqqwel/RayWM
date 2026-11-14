@@ -38,6 +38,13 @@ Reliability hardening from the first torture-suite run
 
 ### Added
 
+- **Special workspaces** (scratchpad overlays): `config/plugins/special.lua`
+  creates one hidden workspace per output and `Super+S` shows it above the
+  current workspace without hiding it (`Super+Shift+S` moves the focused
+  window there). Core support: `ctx.workspace_create(..., true)`,
+  `raywm.workspace_toggle`, a `special` field in workspace entries, the
+  `workspace_special` event, and a dedicated scene layer. Switching to a
+  regular workspace hides the overlay; reloads and output hotplug keep it.
 - The torture suite `tests/stress/` (docs/TORTURE.md): FAST level in every
   CI run, STRESS and SOAK on demand (Actions → Torture), `zig build stress`.
 - `zig build -Dleak-check` (test builds): DebugAllocator with leak report

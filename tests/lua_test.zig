@@ -34,7 +34,7 @@ const Fake = struct {
         return .limit;
     }
 
-    const FakeWs = struct { id: u32, name: [16:0]u8, alive: bool, orphan: bool };
+    const FakeWs = struct { id: u32, name: [16:0]u8, alive: bool, orphan: bool, special: bool = false, shown: bool = false };
 
     fn wsById(f: *Fake, id: u32) ?*FakeWs {
         for (f.ws[0..f.n_ws]) |*w| if (w.alive and w.id == id) return w;
@@ -172,13 +172,13 @@ const Fake = struct {
         }
         pub fn workspace(f: *Fake, id: u32) ?lua.WorkspaceInfo {
             const w = f.wsById(id) orelse return null;
-            return .{ .name = &w.name, .home = "FAKE-1", .output = 1, .active = false, .urgent = false, .orphan = w.orphan };
+            return .{ .name = &w.name, .home = "FAKE-1", .output = 1, .active = if (w.special) w.shown else false, .urgent = false, .orphan = w.orphan, .special = w.special };
         }
-        pub fn workspaceCreate(f: *Fake, out: u32, name: []const u8) lua.CreateResult {
+        pub fn workspaceCreate(f: *Fake, out: u32, name: []const u8, special: bool) lua.CreateResult {
             if (out != 1) return .stale;
             if (name.len == 0 or name.len > 15) return .bad_name;
             if (f.n_ws == f.ws.len) return .failed;
-            var w: FakeWs = .{ .id = @intCast(100 + f.n_ws), .name = @splat(0), .alive = true, .orphan = false };
+            var w: FakeWs = .{ .id = @intCast(100 + f.n_ws), .name = @splat(0), .alive = true, .orphan = false, .special = special };
             @memcpy(w.name[0..name.len], name);
             f.ws[f.n_ws] = w;
             f.n_ws += 1;
@@ -203,6 +203,12 @@ const Fake = struct {
             const w = f.wsById(id) orelse return .stale;
             if (cmd == .remove) w.alive = false;
             return .ok;
+        }
+        pub fn workspaceToggle(f: *Fake, id: u32) lua.ToggleResult {
+            const w = f.wsById(id) orelse return .stale;
+            if (!w.special) return .not_special;
+            w.shown = !w.shown;
+            return if (w.shown) .shown else .hidden;
         }
         pub fn pointer(_: *Fake) lua.PointerInfo {
             return .{ .x = 10, .y = 20, .busy = false };
@@ -856,6 +862,7 @@ test "workspaces: owned by their plugin, orphaned on unload, adopted or released
     try t.expectEqual(0, takeErrors());
     try t.expectEqual(1, f.count("adopted:0"));
     try t.expectEqual(1, f.count("created:100:101"));
+    try t.expectEqual(1, f.count("special:102:true:false"));
     try t.expectEqual(1, f.count("stale:nil"));
     try t.expectEqual(1, f.count("badname:nil:bad_name"));
     try t.expectEqual(1, f.count("owned:nil:owned")); // owned by a live plugin

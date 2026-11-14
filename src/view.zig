@@ -557,6 +557,8 @@ pub const View = struct {
             if (ws) |w| w.updateUrgent();
         }
         view.updateVisibility();
+        // Moving into or out of a special workspace changes the layer.
+        view.restack();
         view.server.afterVisibilityChange();
         if (view.announced) view.server.emitArgs(.view_workspace, view.id, &.{ .{ .int = if (ws) |w| w.id else 0 }, .{ .int = if (old) |w| w.id else 0 } });
     }
@@ -675,13 +677,27 @@ pub const View = struct {
         return rt.managed(view.id);
     }
 
+    /// The special workspace a window belongs to, if any (dialogs follow it).
+    fn specialWorkspaceOf(view: *View) ?*Workspace {
+        const w = view.workspace orelse return null;
+        return if (w.special) w else null;
+    }
+
+    /// The layer of a non-fullscreen window: a window of a special
+    /// workspace floats above the normal windows, below panels.
+    fn windowLayer(view: *View) srv.Layer {
+        if (view.workspace) |w| if (w.special) return .special;
+        return if (view.managed()) .tiled else .floating;
+    }
+
     /// Puts the window in the stacking layer its state calls for: tiled
     /// (managed by a layout) below floating, fullscreen windows and their
-    /// dialogs above panels.
+    /// dialogs above panels, a shown special workspace above normal windows.
     pub fn restack(view: *View) void {
         const want: srv.Layer = if (view.isFullscreen() or view.fullscreenAncestor() != null)
             .fullscreen
-        else if (view.managed()) .tiled else .floating;
+        else
+            windowLayer(view);
         if (want != view.layer) {
             view.layer = want;
             // Lands on top of the new layer.
@@ -1122,8 +1138,12 @@ pub const View = struct {
         view.hidden = false;
         view.minimized = false;
         view.revealed = false;
-        // On the workspace shown where it appears (rules may move it).
-        if (view.output() orelse server.activeOutput()) |o| view.workspace = o.active_ws;
+        // On the workspace shown where it appears (rules may move it). A
+        // dialog of a special-workspace window stays with that overlay.
+        if (view.output() orelse server.activeOutput()) |o| view.workspace = blk: {
+            if (view.parent()) |p| if (specialWorkspaceOf(p)) |sw| break :blk sw;
+            break :blk o.active_ws;
+        };
         server.views.prepend(view);
         view.restack();
         // Clears a suspended state left from an earlier mapping.

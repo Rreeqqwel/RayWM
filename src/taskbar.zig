@@ -105,6 +105,9 @@ pub const Taskbar = struct {
         }
         var workspaces = t.server.workspaces.iterator(.forward);
         while (workspaces.next()) |ws| {
+            // A special workspace is an overlay, not a workspace a shell
+            // switches to; it is not advertised through ext-workspace.
+            if (ws.special) continue;
             const result = try t.workspaces.getOrPut(gpa, ws.id);
             if (!result.found_existing) {
                 // Core ids are session-local, so omit the optional persistent id.

@@ -455,6 +455,13 @@ from `raywm.conf` need the v0.2.2 `dwindle.lua` and `focus.lua`; your older
 copies keep their own option values. Updates now come through
 `raywm-update` (see [INSTALL.md](INSTALL.md#updates-raywm-update)).
 
+**Special workspace (new):** copy `plugins/special.lua` and load it after
+`workspaces` (`raywm.load("special")`). `Super+S` toggles a scratchpad
+overlay on the current output and `Super+Shift+S` moves the focused window
+there; both keys are in the plugin's `options` table. It needs this RayWM
+build's `workspace_toggle`; older builds log that support is missing and
+leave the rest of the configuration alone.
+
 ## Upgrading to v0.2.1
 
 A patch release: no configuration change is required. New, optional:

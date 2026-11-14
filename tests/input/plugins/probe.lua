@@ -57,6 +57,10 @@ return {
         for _, w in ipairs(raywm.workspaces()) do
           out:write(string.format("ws %s@%s output=%s active=%s orphan=%s\n", w.name, w.home,
             names[w.output] or "none", tostring(w.active), tostring(w.orphan)))
+          if w.special then
+            out:write(string.format("special-ws %s@%s output=%s shown=%s\n", w.name, w.home,
+              names[w.output] or "none", tostring(w.active)))
+          end
           if w.urgent then out:write(string.format("urgent-ws %s@%s\n", w.name, w.home)) end
         end
       end

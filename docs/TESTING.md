@@ -73,7 +73,7 @@ passes when the invalid keymap is rejected.
 
 | Additional suite | Actual client-level assertions |
 |---|---|
-| `windows.sh` / `workspaces.sh` / `rules.sh` | 16 / 12 / 6 scenarios: layout/state/visibility/dialog reparenting, workspace/hotplug/reload, real rule policy |
+| `windows.sh` / `workspaces.sh` / `rules.sh` | 16 / 14 / 6 scenarios: layout/state/visibility/dialog reparenting, workspace/hotplug/reload, special-workspace overlays, real rule policy |
 | `session.sh` / `outputs.sh` / `devices.sh` | 9 / 7 / 3 scenarios: real locker/idle clients, output transactions/power/gamma, virtual device settings |
 | `protocols.sh` / `shell.sh` | 8 / 16 scenarios: actual globals/filtering/selections and xdg initial-configure/decorations/state; activation enter/missing-source/expiry/replay/destruction regressions |
 | `captures.sh` | 10 pointer lock/confine/relative/shortcut-inhibit scenarios with lifecycle and lock coverage |

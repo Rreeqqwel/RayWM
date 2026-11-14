@@ -59,7 +59,9 @@ the same 4096-item cap as the Lua API.
 Window entries contain `id,x,y,w,h,title,app_id,workspace,output,focused,
 visible,floating,fullscreen,maximized,minimized,urgent,xwayland,pid`.
 Output entries contain `id,name,x,y,w,h,scale,transform,enabled,power,workspace`.
-Workspace entries contain `id,name,output,active,urgent`.
+Workspace entries contain `id,name,output,active,urgent,special`. `active`
+also reports a shown special overlay; `special` distinguishes overlays
+from the output's regular workspaces.
 
 `perf` (added in 0.2.1, additive to v1) returns `renderer` (`gles2`,
 `pixman` or `other`), `render_node` (path or null), `renderer_timeline`,

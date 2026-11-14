@@ -2,7 +2,8 @@
 # Workspaces with REAL input events (virtual pointer and keyboard in an
 # isolated headless compositor): switching, moving windows, focus, hidden
 # windows getting no input, floating and fullscreen windows, outputs
-# unplugged and plugged in, reload, and a config without workspaces.
+# unplugged and plugged in, reload, a config without workspaces, and
+# special-workspace overlays (showing, moving into, stacking, reload).
 #
 # Requires the test build:  zig build -Dtest-input -p zig-out/test-input
 #   usage: [RENDERER=pixman|gles2] [KEEP=1] [ONLY=substring] tests/workspaces.sh [test-bin-dir]
@@ -13,6 +14,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 . "$root/tests/support/harness.sh"
 
 cfg="$root/tests/workspaces/init.lua"
+cfg_special="$root/tests/workspaces/special-init.lua"
 helpers="$root/tests/workspaces/plugins"
 plain="RAYWM_TEST_HOLD=1 RAYWM_TEST_KBD=1 RAYWM_TEST_PTR=1 RAYWM_TEST_ROUNDS=1"
 super_key() { drive key super down key "$1" down key "$1" up key super up sleep 300; }
@@ -252,4 +254,65 @@ ws12() {
     stop
 }
 
-run_scenarios workspaces ws1 ws2 ws3 ws4 ws5 ws6 ws7 ws8 ws9 ws10 ws11 ws12
+ws13() {
+    name="a special workspace overlays the current one and toggles"
+    WIN=$plain start "$cfg_special" 2
+    dump                                                                      # 1
+    expect 1 "ws 1@HEADLESS-1 output=HEADLESS-1 active=true orphan=false"
+    expect 1 "special-ws special@HEADLESS-1 output=HEADLESS-1 shown=false"
+    expect 1 "view 13 644,8 628x704 focused=true"
+    super_shift s                                            # b (13) to the overlay
+    dump                                                                      # 2
+    expect 2 "where 13 special@HEADLESS-1"
+    expect 2 "view 12 8,8 1264x704 focused=true"
+    expect 2 "special-ws special@HEADLESS-1 output=HEADLESS-1 shown=false"
+    awk '/^dump 2$/ {on=1; next} /^dump / {on=0} on && /^state 13 / && /visible=false/ {ok=1} END {exit !ok}' "$tmp/probe.log" ||
+        fail "a window on the hidden overlay is visible"
+    super_key s                                              # show the overlay
+    dump                                                                      # 3
+    expect 3 "special-ws special@HEADLESS-1 output=HEADLESS-1 shown=true"
+    expect 3 "ws 1@HEADLESS-1 output=HEADLESS-1 active=true orphan=false"
+    expect 3 "view 13 8,8 1264x704 focused=true"
+    expect 3 "state 12 floating=false fullscreen=false maximized=false visible=true managed=true ws=2 output=1"
+    # The overlay is above the normal window: the click reaches b (13).
+    a_before=$(grep -c 'client: ptr button 272 pressed window' "$tmp/a.log" || true)
+    b_before=$(grep -c 'client: ptr button 272 pressed window' "$tmp/b.log" || true)
+    drive move 640 360 down left up left sleep 150
+    a_after=$(grep -c 'client: ptr button 272 pressed window' "$tmp/a.log" || true)
+    b_after=$(grep -c 'client: ptr button 272 pressed window' "$tmp/b.log" || true)
+    [ "$a_after" -eq "$a_before" ] || fail "the click reached the window under the overlay"
+    [ "$b_after" -gt "$b_before" ] || fail "the overlay window got no click"
+    super_key s                                              # hide it again
+    dump                                                                      # 4
+    expect 4 "special-ws special@HEADLESS-1 output=HEADLESS-1 shown=false"
+    expect 4 "view 12 8,8 1264x704 focused=true"
+    awk '/^dump 4$/ {on=1; next} /^dump / {on=0} on && /^state 13 / && /visible=false/ {ok=1} END {exit !ok}' "$tmp/probe.log" ||
+        fail "the hidden overlay window is still visible"
+    drive move 640 360 down left up left sleep 150
+    [ "$(grep -c 'client: ptr button 272 pressed window' "$tmp/a.log")" -gt "$a_after" ] ||
+        fail "the normal window got no click after the overlay was hidden"
+    [ "$(grep -c 'client: ptr button 272 pressed window' "$tmp/b.log")" -eq "$b_after" ] ||
+        fail "the hidden overlay window got a click"
+    stop
+}
+
+ws14() {
+    name="reload keeps the special workspace, its window and its shown state"
+    WIN=$plain start "$cfg_special" 2
+    super_shift s
+    super_key s
+    drive key ctrl down key alt down key r down key r up key alt up key ctrl up sleep 500
+    dump                                                                      # 1
+    expect 1 "where 13 special@HEADLESS-1"
+    expect 1 "special-ws special@HEADLESS-1 output=HEADLESS-1 shown=true"
+    expect 1 "view 13 8,8 1264x704 focused=true"
+    [ "$(awk '/^dump 1$/ {on=1; next} /^dump / {on=0} on && /^ws /' "$tmp/probe.log" | wc -l)" -eq 10 ] ||
+        fail "reload duplicated or lost workspaces"
+    super_key s
+    dump                                                                      # 2
+    expect 2 "special-ws special@HEADLESS-1 output=HEADLESS-1 shown=false"
+    expect 2 "view 12 8,8 1264x704 focused=true"
+    stop
+}
+
+run_scenarios workspaces ws1 ws2 ws3 ws4 ws5 ws6 ws7 ws8 ws9 ws10 ws11 ws12 ws13 ws14

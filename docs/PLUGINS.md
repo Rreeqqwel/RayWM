@@ -80,6 +80,7 @@ plugins; see [SECURITY.md](../SECURITY.md).
 - `focus.lua`: event-driven border and directional navigation.
 - `window-rules.lua`: metadata policy before layout.
 - `workspaces.lua`: ownership, adoption and hotplug recovery.
+- `special.lua`: per-output scratchpad overlay; toggling and moving windows.
 - `animations.lua`: optional map/close/workspace transitions; native easing.
 - `focus-indicator.lua`: optional input-transparent rectangles on outputs.
 - `screenshot.lua`: external tools with file/process policy in Lua.

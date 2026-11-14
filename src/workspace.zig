@@ -5,6 +5,12 @@
 //! them consistent through output hotplug and reloads, and never leaves
 //! keyboard focus on a hidden window.
 //!
+//! A special workspace (`special = true`) is an overlay: it is never the
+//! output's active workspace. At most one special workspace per output is
+//! shown (`Output.special_ws`); its windows then float above the active
+//! workspace without hiding it. Showing a normal workspace hides the
+//! overlay. Policy lives in config/plugins/special.lua.
+//!
 //! Ownership: a workspace belongs to the plugin that created it (it is a
 //! registration of that plugin). When the plugin goes away (an error, a
 //! reload), the workspace becomes an orphan: windows and state are kept,
@@ -46,18 +52,28 @@ pub const Workspace = struct {
     orphan: bool = false,
     /// One of its windows wants attention (until that window is focused).
     urgent: bool = false,
+    /// An overlay, never the output's active workspace (see the file comment).
+    special: bool = false,
 
-    pub fn create(server: *Server, output: *Output, name: []const u8) !*Workspace {
+    pub fn create(server: *Server, output: *Output, name: []const u8, special: bool) !*Workspace {
         if (name.len == 0 or name.len > max_name) return error.BadName;
         const ws = try gpa.create(Workspace);
         errdefer gpa.destroy(ws);
         const owned = try gpa.dupeZ(u8, name);
         errdefer gpa.free(owned);
         const home = try gpa.dupeZ(u8, std.mem.span(output.wlr_output.name));
-        ws.* = .{ .server = server, .id = server.nextId(), .name = owned, .home = home, .output = output };
+        ws.* = .{
+            .server = server,
+            .id = server.nextId(),
+            .name = owned,
+            .home = home,
+            .output = output,
+            .special = special,
+        };
         server.workspaces.append(ws);
-        // An output with workspaces always shows one of them.
-        if (output.active_ws == null) output.active_ws = ws;
+        // An output with workspaces always shows one of them. A special
+        // workspace is an overlay and never becomes that one.
+        if (!special and output.active_ws == null) output.active_ws = ws;
         server.emit(.workspace_add, ws.id);
         return ws;
     }
@@ -68,9 +84,10 @@ pub const Workspace = struct {
         const server = ws.server;
         const id = ws.id;
         ws.link.remove();
-        if (ws.output) |o| if (o.active_ws == ws) {
-            o.active_ws = firstOn(server, o);
-        };
+        if (ws.output) |o| {
+            if (o.active_ws == ws) o.active_ws = firstOn(server, o);
+            if (o.special_ws == ws) o.special_ws = null;
+        }
         // Ids of the mapped windows it had, for their view_workspace events
         // (sent once the native state is consistent again).
         var moved: std.ArrayList(u32) = .empty;
@@ -81,6 +98,8 @@ pub const Workspace = struct {
             if (v.workspace != ws) continue;
             v.workspace = null;
             v.updateVisibility();
+            // A removed overlay releases its windows to the normal layers.
+            v.restack();
             if (v.announced) moved.append(gpa, v.id) catch {};
         }
         gpa.free(ws.name);
@@ -92,18 +111,36 @@ pub const Workspace = struct {
         for (moved.items) |vid| server.emitArgs(.view_workspace, vid, &.{ .{ .int = 0 }, .{ .int = id } });
     }
 
+    /// Shown: the active workspace of its output, or a special workspace
+    /// currently overlaying it.
     pub fn isActive(ws: *Workspace) bool {
         const o = ws.output orelse return false;
-        return o.active_ws == ws;
+        return if (ws.special) o.special_ws == ws else o.active_ws == ws;
     }
 
     /// Shows this workspace on its output, hiding the one shown before, and
     /// gives the keyboard to its most recently focused window (or to none).
+    /// A special workspace is only shown as an overlay (`setShown`).
     pub fn activate(ws: *Workspace) bool {
+        if (ws.special) {
+            const server = ws.server;
+            const id = ws.id;
+            _ = ws.setShown(true);
+            const after = byId(server, id) orelse return false;
+            return after.isActive();
+        }
         const server = ws.server;
         const id = ws.id;
         const output = ws.output orelse return false;
-        if (output.active_ws == ws) return true;
+        // A normal workspace replaces the visible special overlay.
+        const hidden = hideSpecial(server, output);
+        if (output.active_ws == ws) {
+            if (hidden != null) {
+                server.focusWorkspace(ws);
+                server.afterVisibilityChange();
+            }
+            return true;
+        }
         server.emitArgs(.workspace_will_activate, id, &.{.{ .int = if (output.active_ws) |old| old.id else 0 }});
         // Event handlers can remove or move workspaces synchronously.
         const target = byId(server, id) orelse return false;
@@ -121,6 +158,43 @@ pub const Workspace = struct {
         server.afterVisibilityChange();
         server.emitArgs(.workspace_activate, id, &.{.{ .int = old_id }});
         return true;
+    }
+
+    /// Shows (`on`) or hides this special workspace as an overlay on its
+    /// output, keeping that output's active workspace visible. Only one
+    /// special workspace is shown per output. Returns whether it is shown
+    /// afterwards; false when `ws` is not special or has no output.
+    pub fn setShown(ws: *Workspace, on: bool) bool {
+        if (!ws.special) return false;
+        const server = ws.server;
+        const id = ws.id;
+        const output = ws.output orelse return false;
+        if (on) {
+            if (output.special_ws == ws) return true;
+            if (output.special_ws != null) _ = hideSpecial(server, output);
+            // Event handlers can remove the workspace synchronously.
+            const target = byId(server, id) orelse return false;
+            const o = target.output orelse return false;
+            o.special_ws = target;
+            var it = server.view_ids.valueIterator();
+            while (it.next()) |vp| {
+                const v = vp.*;
+                if (v.workspace == target) {
+                    v.updateVisibility();
+                    v.restack();
+                }
+            }
+            server.focusWorkspace(target);
+            server.afterVisibilityChange();
+            server.emitArgs(.workspace_special, id, &.{.{ .boolean = true }});
+            server.emit(.workspace_change, id);
+            return true;
+        }
+        if (output.special_ws != ws) return false;
+        _ = hideSpecial(server, output);
+        if (output.active_ws) |active| server.focusWorkspace(active) else server.focus(null);
+        server.afterVisibilityChange();
+        return false;
     }
 
     /// Recomputes `urgent` from the windows on the workspace.
@@ -153,10 +227,12 @@ pub const Workspace = struct {
         const source = if (old) |o| o.box() orelse o.last_box else ws.last_box;
         if (out == null) ws.last_box = source;
         ws.output = out;
-        if (old) |o| if (o.active_ws == ws) {
-            o.active_ws = firstOn(server, o);
-        };
-        if (out) |o| if (o.active_ws == null) {
+        if (old) |o| {
+            if (o.active_ws == ws) o.active_ws = firstOn(server, o);
+            // The overlay is not carried to another output by itself.
+            if (o.special_ws == ws) o.special_ws = null;
+        }
+        if (out) |o| if (!ws.special and o.active_ws == null) {
             o.active_ws = ws;
         };
         // Windows go along, at the same place relative to the output.
@@ -172,10 +248,29 @@ pub const Workspace = struct {
     }
 };
 
-/// The first workspace of `o` in creation order, if any.
+/// Hides the special overlay shown on `o`, if any, and updates its windows.
+/// Returns it, so the caller can decide where the keyboard goes afterwards.
+fn hideSpecial(server: *Server, o: *Output) ?*Workspace {
+    const ws = o.special_ws orelse return null;
+    const id = ws.id;
+    o.special_ws = null;
+    var it = server.view_ids.valueIterator();
+    while (it.next()) |vp| {
+        const v = vp.*;
+        if (v.workspace == ws) {
+            v.updateVisibility();
+            v.restack();
+        }
+    }
+    server.emitArgs(.workspace_special, id, &.{.{ .boolean = false }});
+    server.emit(.workspace_change, id);
+    return ws;
+}
+
+/// The first non-special workspace of `o` in creation order, if any.
 fn firstOn(server: *Server, o: *Output) ?*Workspace {
     var it = server.workspaces.iterator(.forward);
-    while (it.next()) |w| if (w.output == o) return w;
+    while (it.next()) |w| if (w.output == o and !w.special) return w;
     return null;
 }
 

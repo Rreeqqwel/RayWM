@@ -214,17 +214,24 @@ inactive workspace or a minimized window. New windows may wait up to
 150 ms for a requested initial size before their scene nodes are shown.
 
 `workspaces()` returns entries
-`{id, name, home, output, active, urgent, orphan}`; `workspace(id)`
+`{id, name, home, output, active, urgent, orphan, special}`; `workspace(id)`
 returns one entry or `nil, "stale"`. `home` is the original output name;
-`output` is the current output ID or 0. At most one workspace is active
-per output. The core moves workspaces off disconnected outputs; policy
-may move them home later.
+`output` is the current output ID or 0. At most one regular workspace is
+active per output. The core moves workspaces off disconnected outputs;
+policy may move them home later.
+
+A **special workspace** (`special = true`) is an overlay: it is never the
+output's active workspace. At most one special workspace per output is
+shown; `active` reports that state, and its windows float above the active
+workspace without hiding it. Switching to a regular workspace hides the
+overlay. See `config/plugins/special.lua`.
 
 | Function | Result / ownership |
 |---|---|
-| `ctx.workspace_create(output, name)` | Workspace ID, or `nil, "stale"/"bad_name"/"failed"`; owned by the calling plugin. |
+| `ctx.workspace_create(output, name[, special])` | Workspace ID, or `nil, "stale"/"bad_name"/"failed"`; owned by the calling plugin. `special` defaults to false. |
 | `ctx.workspace_adopt(id)` | `true`, or `nil, "stale"/"owned"`; take over an orphan after reload/error. |
-| `raywm.workspace_activate(id)` | `true`, or `nil, "stale"/"no_output"`. |
+| `raywm.workspace_activate(id)` | `true`, or `nil, "stale"/"no_output"`. A special workspace is shown as an overlay. |
+| `raywm.workspace_toggle(id)` | `true` (shown), `false` (hidden), or `nil, "stale"/"not_special"`; toggles a special workspace overlay. |
 | `raywm.workspace_rename(id, name)` | `true`, or `nil, "stale"/"bad_name"`. |
 | `raywm.workspace_set_output(id, output)` | `true`, or `nil, "stale"`. |
 | `raywm.workspace_remove(id)` | `true`, or `nil, "stale"`; windows become workspace-less. |
@@ -433,8 +440,9 @@ arguments below. Existing handlers may ignore additional arguments.
 | `view_request_activate` | view | extra `(user)`; activation policy, see SECURITY.md |
 | `workspace_add` / `workspace_remove` | workspace | created / already removed (stale ID) |
 | `workspace_activate` | workspace | extra `(previous_id_or_0)`; now shown on its output |
+| `workspace_special` | workspace | extra `(shown)`; a special overlay was shown or hidden |
 | `workspace_will_activate` | workspace | extra `(previous_id_or_0)`; before visibility changes, for outgoing snapshots |
-| `workspace_change` | workspace | name, output or urgency changed |
+| `workspace_change` | workspace | name, output, urgency or special visibility changed |
 | `view_workspace` | view | extra `(new_workspace_or_0, old_workspace_or_0)` |
 | `session_lock` / `session_unlock` | `0` | native lock state changed |
 | `input_add` / `input_remove` | device | input device appeared/disappeared; separate ID space |

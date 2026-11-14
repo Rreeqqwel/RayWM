@@ -285,13 +285,14 @@ pub fn workspace(server: *Server, id: u32) ?lua.WorkspaceInfo {
         .active = w.isActive(),
         .urgent = w.urgent,
         .orphan = w.orphan,
+        .special = w.special,
     };
 }
 
-pub fn workspaceCreate(server: *Server, output_id: u32, name: []const u8) lua.CreateResult {
+pub fn workspaceCreate(server: *Server, output_id: u32, name: []const u8, special: bool) lua.CreateResult {
     const o = server.outputById(output_id) orelse return .stale;
     if (!o.inLayout()) return .stale;
-    const w = ws.Workspace.create(server, o, name) catch |err| return switch (err) {
+    const w = ws.Workspace.create(server, o, name, special) catch |err| return switch (err) {
         error.BadName => .bad_name,
         else => .failed,
     };
@@ -313,6 +314,17 @@ pub fn workspaceOrphan(server: *Server, id: u32) void {
 /// After every (re)load of the configuration.
 pub fn workspacesSettled(server: *Server) void {
     ws.settle(server);
+}
+
+/// raywm.workspace_toggle: only special workspaces can be overlays.
+pub fn workspaceToggle(server: *Server, id: u32) lua.ToggleResult {
+    const w = ws.byId(server, id) orelse return .stale;
+    if (!w.special) return .not_special;
+    const on = !w.isActive();
+    _ = w.setShown(on);
+    // A workspace_special/workspace_change handler may have removed it.
+    const after = ws.byId(server, id) orelse return .stale;
+    return if (after.isActive()) .shown else .hidden;
 }
 
 pub fn workspaceCmd(server: *Server, id: u32, cmd: lua.WorkspaceCmd) lua.WorkspaceResult {

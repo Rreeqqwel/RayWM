@@ -437,6 +437,12 @@ pub fn build(b: *std.Build) void {
     workspaces.has_side_effects = true;
     test_step.dependOn(&workspaces.step);
 
+    // The special-workspace overlay plugin (create, toggle, adopt), mock API.
+    const special = b.addSystemCommand(&.{ "lua5.4", "tests/special_test.lua" });
+    special.setCwd(b.path("."));
+    special.has_side_effects = true;
+    test_step.dependOn(&special.step);
+
     // The window-rules plugin (matching, dialogs, rules.lua), mock API.
     const rules = b.addSystemCommand(&.{ "lua5.4", "tests/rules_test.lua" });
     rules.setCwd(b.path("."));

@@ -25,7 +25,7 @@ end
 local function ws_info(w)
   local o = out_by_id(w.output)
   return { id = w.id, name = w.name, home = w.home, output = w.output, active = o ~= nil and o.active == w.id,
-    urgent = false, orphan = w.orphan or false }
+    urgent = false, orphan = w.orphan or false, special = w.special or false }
 end
 
 local function emit(ev, ...)
@@ -104,12 +104,12 @@ local function ctx_new()
       binds[k] = fn
     end,
     on = function(ev, fn) handlers[ev] = handlers[ev] or {}; table.insert(handlers[ev], fn) end,
-    workspace_create = function(oid, name)
+    workspace_create = function(oid, name, special)
       local o = out_by_id(oid)
       if not o then return nil, "stale" end
       next_id = next_id + 1
-      workspaces[#workspaces + 1] = { id = next_id, name = name, home = o.name, output = oid }
-      if not o.active then o.active = next_id end
+      workspaces[#workspaces + 1] = { id = next_id, name = name, home = o.name, output = oid, special = special }
+      if not special and not o.active then o.active = next_id end
       return next_id
     end,
     workspace_adopt = function(id)
@@ -304,6 +304,21 @@ test("Super+Alt+Right moves the window to the output on the right and keeps focu
   eq(focused, 50)
   press("Super+Alt+Right") -- nothing further right
   eq(views[50].workspace, out_by_id(2).active)
+end)
+
+test("special workspaces are not numbered, cycled or adopted", function()
+  outputs = { { id = 1, name = "DP-1", x = 0, y = 0, w = 1280, h = 720 } }
+  load_plugin()
+  local o = out_by_id(1)
+  next_id = next_id + 1
+  local special_id = next_id
+  workspaces[#workspaces + 1] = { id = special_id, name = "special", home = o.name, output = 1, special = true }
+  press("Super+Ctrl+Left")
+  eq(active_name(1), "9@DP-1", "the cycle skips the overlay")
+  for _, w in ipairs(workspaces) do w.orphan = true end
+  load_plugin()
+  local w = ws_by_id(special_id)
+  assert(w and w.orphan, "workspaces.lua adopted a special workspace")
 end)
 
 local failed = 0

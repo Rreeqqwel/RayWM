@@ -38,6 +38,8 @@ pub const Output = struct {
     usable: wlr.Box = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
     /// The workspace shown here (see workspace.zig).
     active_ws: ?*Workspace = null,
+    /// A special workspace overlaying `active_ws`, if one is shown.
+    special_ws: ?*Workspace = null,
     /// While the session is locked (see lock.zig): an opaque background,
     /// the commit count when locking started, and whether a frame
     /// committed since then was presented.

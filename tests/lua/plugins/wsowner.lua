@@ -17,6 +17,9 @@ return {
       raywm.spawn("badname:" .. tostring(ok) .. ":" .. tostring(why))
       local ok2, why2 = ctx.workspace_adopt(a)
       raywm.spawn("owned:" .. tostring(ok2) .. ":" .. tostring(why2))
+      local s = ctx.workspace_create(1, "special", true)
+      raywm.spawn("special:" .. tostring(s) .. ":" .. tostring(raywm.workspace_toggle(s)) ..
+        ":" .. tostring(raywm.workspace_toggle(s)))
     end
     ctx.on("view_title", function() error("die") end) -- crash on demand
     ctx.on("layout", function()

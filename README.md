@@ -40,6 +40,9 @@ correctness ahead of artificial code reduction.
   urgency, with configure/ack handling, dialog stacking and focus rules.
 - **Workspaces:** one shown per output, native visibility/focus and hotplug
   recovery; Lua controls naming, switching, assignment and tiling.
+  **Special workspaces** (`Super+S`) are per-output overlays used as a
+  scratchpad: their windows stay above the current workspace while it
+  remains visible, and switching workspaces hides the overlay.
 - **Window rules:** application/title/parent/output/workspace matching,
   floating dialog defaults, geometry, opacity and decoration choices.
 - **Session lock and idle:** ext-session-lock with abandoned-lock handling,
@@ -220,6 +223,7 @@ With the example configuration (`config/`):
 | Super+F / Super+M | toggle fullscreen / maximize |
 | Super+N / Super+Shift+N | minimize / restore the latest minimized visible-workspace window |
 | Super+1..9 / Super+Shift+1..9 | switch workspace / move focused window |
+| Super+S / Super+Shift+S | show/hide the special (scratchpad) workspace / move the focused window there |
 | Super+Ctrl+H/J/K/L | resize the neighboring dwindle split |
 | Super+Shift+H/J/K/L | swap with the neighboring tile |
 | Super+T | toggle split direction |

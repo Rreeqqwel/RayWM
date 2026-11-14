@@ -42,6 +42,9 @@ pub const Event = enum {
     workspace_remove,
     /// A workspace is shown on its output: (id, previously shown id or 0).
     workspace_activate,
+    /// A special workspace was shown (true) or hidden (false): (id, shown).
+    /// It overlays the output's active workspace; at most one is shown.
+    workspace_special,
     /// Renamed, moved to another output, or its urgency changed.
     workspace_change,
     /// A window moved to another workspace: (view, workspace or 0, old or 0).
@@ -170,12 +173,15 @@ pub const WorkspaceInfo = struct {
     /// Name of the output it was created on.
     home: [*:0]const u8,
     output: u32,
+    /// The output's active workspace, or a special workspace currently shown.
     active: bool,
     urgent: bool,
     orphan: bool,
+    special: bool,
 };
 pub const WorkspaceCmd = union(enum) { activate, rename: []const u8, set_output: u32, remove };
 pub const WorkspaceResult = enum { ok, stale, no_output, bad_name };
+pub const ToggleResult = enum { shown, hidden, stale, not_special };
 pub const AdoptResult = enum { ok, stale, owned };
 pub const OutputResult = enum { ok, stale, no_output_left, bad_mode, bad_scale, bad_transform, rejected, failed };
 pub const CreateResult = union(enum) { ok: u32, stale, bad_name, failed };
@@ -945,6 +951,11 @@ pub fn Runtime(comptime H: type) type {
             .{ "input_devices", lInputDevices },
             .{ "keyboard_layout", lKeyboardLayout },
             .{ "keyboard_set_layout", lKeyboardSetLayout },
+        } ++ globals_later;
+
+        /// Added after v0.2.2 (api = 1 still: additions only).
+        const globals_later = .{
+            .{ "workspace_toggle", lWorkspaceToggle },
         };
 
         const ctx_fns = .{
@@ -1350,9 +1361,10 @@ pub fn Runtime(comptime H: type) type {
             setBool(L, "active", w.active);
             setBool(L, "urgent", w.urgent);
             setBool(L, "orphan", w.orphan);
+            setBool(L, "special", w.special);
         }
 
-        /// raywm.workspaces() -> { {id, name, home, output, active, urgent, orphan}, ... }
+        /// raywm.workspaces() -> { {id, name, home, output, active, urgent, orphan, special}, ... }
         fn lWorkspaces(L: ?*c.lua_State) callconv(.c) c_int {
             const self = get(L);
             var buf: [max_list]u32 = undefined;
@@ -1400,6 +1412,21 @@ pub fn Runtime(comptime H: type) type {
                     return 1;
                 }
             }.f;
+        }
+
+        /// raywm.workspace_toggle(id) -> true (shown), false (hidden), or
+        /// nil + "stale" | "not_special". A special workspace overlays its
+        /// output's active workspace.
+        fn lWorkspaceToggle(L: ?*c.lua_State) callconv(.c) c_int {
+            const self = get(L);
+            const r = Api.workspaceToggle(self.host, checkId(L, 1));
+            switch (r) {
+                .shown => c.lua_pushboolean(L, 1),
+                .hidden => c.lua_pushboolean(L, 0),
+                .stale => return stale(L),
+                .not_special => return failWith(L, "not_special"),
+            }
+            return 1;
         }
 
         /// raywm.pointer() -> { x, y, busy }
@@ -1736,14 +1763,16 @@ pub fn Runtime(comptime H: type) type {
             return stale(L);
         }
 
-        /// ctx.workspace_create(output, name) -> id, or nil + "stale" | "bad_name" | "failed".
-        /// The workspace belongs to this plugin (see workspace.zig).
+        /// ctx.workspace_create(output, name[, special]) -> id, or nil +
+        /// "stale" | "bad_name" | "failed". The workspace belongs to this
+        /// plugin (see workspace.zig). A special workspace is an overlay.
         fn ctxWorkspaceCreate(L: ?*c.lua_State) callconv(.c) c_int {
             const self = get(L);
             const oid = checkId(L, 1);
             const name = std.mem.span(c.luaL_checklstring(L, 2, null));
+            const special = c.lua_toboolean(L, 3) != 0;
             checkRegister(L);
-            const wid = switch (Api.workspaceCreate(self.host, oid, name)) {
+            const wid = switch (Api.workspaceCreate(self.host, oid, name, special)) {
                 .ok => |w| w,
                 .stale => return stale(L),
                 .bad_name => return failWith(L, "bad_name"),

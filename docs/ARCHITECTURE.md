@@ -277,7 +277,7 @@ processes:
 |---|---|
 | `server.zig`, `main.zig` | backend/scene/seat ownership, ordered teardown, focus and event dispatch |
 | `view.zig`, `xwayland.zig` | common xdg/X11 view state; configure/ack only for xdg, real buffer-size completion for X11; lazy XWM process and override-redirect surfaces |
-| `workspace.zig`, `taskbar.zig` | native visibility/focus, hotplug recovery and idle-coalesced desktop protocol publication |
+| `workspace.zig`, `taskbar.zig` | native visibility/focus, special-workspace overlays, hotplug recovery and idle-coalesced desktop protocol publication |
 | `protocols.zig`, `constraints.zig` | protocol globals/filtering, input-backed activation grants, constrained pointer/shortcut lifecycles |
 | `data.zig`, `textinput.zig` | drag validation/icons/cancellation; seat-local text/IME relay, popups and keyboard grabs |
 | `output.zig`, `outputconfig.zig`, `inputconfig.zig` | native output transactions and per-device settings |

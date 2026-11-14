@@ -301,7 +301,7 @@ const Client = struct {
                     break :blk try obj(a, &.{ .{ "id", num(id) }, .{ "name", text(o.name) }, .{ "x", num(o.box.x) }, .{ "y", num(o.box.y) }, .{ "w", num(o.box.w) }, .{ "h", num(o.box.h) }, .{ "scale", .{ .float = o.scale } }, .{ "transform", text(o.transform) }, .{ "enabled", boolean(o.enabled) }, .{ "power", boolean(o.power) }, .{ "workspace", num(o.workspace) } });
                 } else blk: {
                     const w = host.workspace(server, id) orelse continue;
-                    break :blk try obj(a, &.{ .{ "id", num(id) }, .{ "name", text(w.name) }, .{ "output", num(w.output) }, .{ "active", boolean(w.active) }, .{ "urgent", boolean(w.urgent) } });
+                    break :blk try obj(a, &.{ .{ "id", num(id) }, .{ "name", text(w.name) }, .{ "output", num(w.output) }, .{ "active", boolean(w.active) }, .{ "urgent", boolean(w.urgent) }, .{ "special", boolean(w.special) } });
                 };
                 try items.append(value);
             }
