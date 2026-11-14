@@ -30,6 +30,10 @@ Reliability hardening from the first torture-suite run
 - **An IPC socket path that is too long stopped RayWM from starting**; IPC
   is now disabled with a clear message instead, and a Wayland socket that
   cannot be created is explained.
+- **Completed animations could exhaust all 256 animation slots**:
+  animations ending at a non-default transform kept their processing slot
+  forever. They now release the slot while retaining their registration,
+  so `ctx.cancel` still restores the window.
 - raywm.conf strings no longer keep bytes of earlier, longer values.
 
 ### Added

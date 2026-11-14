@@ -44,7 +44,9 @@ Snapshots can outlive their source view or a hidden workspace. They
 contain client buffers, including subsurfaces, with their source crops,
 transforms and opacity; they exclude borders and rectangle primitives.
 They retain buffer locks, so use short durations. There are at most 256
-animation slots and 256 buffers per snapshot, with a combined 128 MiB
+active animation slots; a completed non-default transform keeps its
+registration but no longer occupies one. Each snapshot can hold at most
+256 buffers, with a combined 128 MiB
 budget estimated from buffer dimensions at four bytes per pixel. This
 estimate is not a measurement of driver allocations. Allocation failures
 return an error without retaining a partial tree. Session locking clears
