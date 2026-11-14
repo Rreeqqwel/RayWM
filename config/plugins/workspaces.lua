@@ -77,11 +77,13 @@ local function current_output()
   return output_at(p.x, p.y) or list[1]
 end
 
--- Workspaces now on output `o`, in the core's order (creation order).
+-- Regular workspaces now on output `o`, in the core's order (creation
+-- order). Special workspaces are overlays (see special.lua), never part of
+-- the numbered set, the cycle or the "previous workspace".
 local function on_output(o)
   local r = {}
   for _, w in ipairs(raywm.workspaces()) do
-    if w.output == o.id then r[#r + 1] = w end
+    if w.output == o.id and not w.special then r[#r + 1] = w end
   end
   return r
 end
@@ -200,9 +202,10 @@ return {
   api = 1,
   setup = function(ctx)
     assert(options.count >= 1 and options.count <= 10, "options.count must be 1..10")
-    -- After a reload the workspaces are orphans: take them all back.
+    -- After a reload the workspaces are orphans: take the numbered ones
+    -- back. Special workspaces belong to special.lua.
     for _, w in ipairs(raywm.workspaces()) do
-      if w.orphan then ctx.workspace_adopt(w.id) end
+      if w.orphan and not w.special then ctx.workspace_adopt(w.id) end
     end
     for _, o in ipairs(raywm.outputs()) do ensure(ctx, o) end
     adopt_windows()

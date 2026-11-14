@@ -1,6 +1,8 @@
 -- Basic key bindings. Keys use the unshifted keysym name, so the binding
 -- for Shift+1 is written "Super+Shift+1".
-local terminal = os.getenv("TERMINAL") or "foot"
+-- ray.conf [general] terminal (RayWM 0.2.2), else $TERMINAL, else foot.
+local configured = raywm.settings and raywm.settings.general.terminal
+local terminal = (configured and configured ~= "" and configured) or os.getenv("TERMINAL") or "foot"
 
 -- Toggles a state of the focused window with a raywm.view_* function.
 local function toggle(field, set)
@@ -59,6 +61,10 @@ return {
     if raywm.view_fullscreen then -- RayWM 0.2.0
       ctx.bind("Super+f", toggle("fullscreen", raywm.view_fullscreen))
       ctx.bind("Super+m", toggle("maximized", raywm.view_maximize))
+    end
+    if raywm.view_sticky then -- RayWM 0.2.3
+      ctx.bind("Super+Ctrl+s", toggle("sticky", raywm.view_sticky))
+      ctx.bind("Super+Ctrl+p", toggle("pinned", raywm.view_pinned))
     end
     if raywm.view_minimize then -- RayWM 0.2.0
       -- After a reload: windows that are still minimized.

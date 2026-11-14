@@ -11,6 +11,7 @@
 --   position = { x, y } or "auto" (to the right of the others)
 --   enabled = false
 --   adaptive_sync = true
+--   allow_tearing = true  (fullscreen games that ask for it may tear; see GAMING.md)
 --
 -- A setting the monitor or driver refuses is logged and nothing is
 -- changed; RayWM never lets a configuration disable every output. Other
@@ -23,7 +24,7 @@ local outputs = {
   -- { name = "eDP-1", enabled = false },
 }
 
-local fields = { "mode", "scale", "transform", "position", "enabled", "adaptive_sync" }
+local fields = { "mode", "scale", "transform", "position", "enabled", "adaptive_sync", "allow_tearing" }
 
 local function matches(entry, o)
   if entry.name and entry.name ~= o.name then return false end

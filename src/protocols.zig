@@ -99,6 +99,11 @@ pub const Protocols = struct {
     cursor_shape: *wlr.CursorShapeManagerV1,
     decoration: *wlr.XdgDecorationManagerV1,
     activation: *wlr.XdgActivationV1,
+    /// tearing-control-v1: clients state a presentation hint; RayWM only
+    /// acts on it where the user allowed tearing (Output.allow_tearing).
+    tearing: ?*wlr.TearingControlManagerV1 = null,
+    /// linux-drm-syncobj-v1 is advertised (see initExplicitSync).
+    explicit_sync: bool = false,
     /// At most 64 input grants and 64 verified tokens, with no allocations
     /// on input paths. Older entries are conservatively downgraded to
     /// urgency-only activation if the bounded ring wraps.
@@ -126,6 +131,8 @@ pub const Protocols = struct {
         _ = try wlr.FractionalScaleManagerV1.create(display, 1);
         _ = try wlr.Presentation.create(display, server.backend, 2);
         _ = try wlr.AlphaModifierV1.create(display);
+        p.tearing = try wlr.TearingControlManagerV1.create(display, 1);
+        p.initExplicitSync();
         _ = try wlr.XdgForeignV2.create(display, try wlr.XdgForeignRegistry.create(display));
         _ = try wlr.PrimarySelectionDeviceManagerV1.create(display);
         _ = try wlr.DataControlManagerV1.create(display);
@@ -146,6 +153,30 @@ pub const Protocols = struct {
         p.new_token.link.remove();
         for (&p.input_grants) |*g| g.clear();
         for (&p.token_grants) |*g| g.clear();
+    }
+
+    /// Explicit synchronization (acquire/release timeline fences) only
+    /// when both the renderer and the backend can wait on and signal DRM
+    /// syncobj timelines, as wlroots requires; the scene then handles the
+    /// fences of every surface. RAYWM_EXPLICIT_SYNC=0 turns it off (a
+    /// rollback path for driver problems).
+    fn initExplicitSync(p: *Protocols) void {
+        const server = p.server;
+        if (std.c.getenv("RAYWM_EXPLICIT_SYNC")) |v| if (std.mem.eql(u8, std.mem.span(v), "0")) {
+            log.info("explicit sync disabled by RAYWM_EXPLICIT_SYNC=0", .{});
+            return;
+        };
+        const fd = server.renderer.getDrmFd();
+        if (fd < 0 or !server.renderer.features.timeline or !server.backend.features.timeline) {
+            log.info("no explicit sync: renderer timeline={}, backend timeline={}, renderer DRM fd={}", .{ server.renderer.features.timeline, server.backend.features.timeline, fd >= 0 });
+            return;
+        }
+        if (wlr.LinuxDrmSyncobjManagerV1.create(server.wl_server, 1, fd) == null) {
+            log.warn("linux-drm-syncobj-v1 unavailable on this DRM device", .{});
+            return;
+        }
+        p.explicit_sync = true;
+        log.info("explicit sync (linux-drm-syncobj-v1) enabled", .{});
     }
 
     /// Returns constants only: libwayland reads the result as a C bool (see

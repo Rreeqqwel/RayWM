@@ -7,6 +7,21 @@ const srv = @import("server.zig");
 const View = @import("view.zig").View;
 
 pub const capacity = 256;
+
+// wlroots 0.20.2 explicit-sync helpers without zig-wlroots 0.20.1 bindings.
+// Only the public prefix of the surface state is declared; C owns it.
+const SyncobjState = extern struct {
+    acquire_timeline: ?*wlr.DrmSyncobjTimeline,
+    acquire_point: u64,
+};
+const SetBufferOptions = extern struct {
+    damage: ?*const anyopaque = null,
+    wait_timeline: ?*wlr.DrmSyncobjTimeline = null,
+    wait_point: u64 = 0,
+};
+extern fn wlr_linux_drm_syncobj_v1_get_surface_state(surface: *wlr.Surface) ?*SyncobjState;
+extern fn wlr_linux_drm_syncobj_v1_state_signal_release_with_buffer(state: *SyncobjState, buffer: *wlr.Buffer) bool;
+extern fn wlr_scene_buffer_set_buffer_with_options(buffer: *wlr.SceneBuffer, wlr_buffer: ?*wlr.Buffer, options: *const SetBufferOptions) void;
 const Snapshot = struct {
     tag: srv.Tag = .visual,
     tree: *wlr.SceneTree,
@@ -44,9 +59,23 @@ const Snapshot = struct {
                 if (s.count >= 256) return error.TooManyBuffers;
                 const bytes = @as(u64, @intCast(@max(0, buffer.width))) * @as(u64, @intCast(@max(0, buffer.height))) * 4;
                 if (bytes > 128 << 20 or s.bytes > (128 << 20) - bytes) return error.SnapshotTooLarge;
-                const dest = try s.tree.createSceneBuffer(buffer);
+                const dest = try s.tree.createSceneBuffer(null);
                 // SceneBuffer locks the client buffer. The additional lock
                 // prevents wlroots from updating its texture in place.
+                // With explicit sync the client ignores wl_buffer.release:
+                // wait for its acquire point, and delay its release point
+                // until the snapshot drops the buffer.
+                var options: SetBufferOptions = .{};
+                const sync = if (wlr.SceneSurface.tryFromBuffer(source)) |ss| wlr_linux_drm_syncobj_v1_get_surface_state(ss.surface) else null;
+                if (sync) |state| {
+                    options.wait_timeline = state.acquire_timeline;
+                    options.wait_point = state.acquire_point;
+                }
+                wlr_scene_buffer_set_buffer_with_options(dest, buffer, &options);
+                if (sync) |state| if (!wlr_linux_drm_syncobj_v1_state_signal_release_with_buffer(state, buffer)) {
+                    dest.node.destroy();
+                    return error.OutOfMemory;
+                };
                 dest.node.setPosition(nx, ny);
                 dest.setSourceBox(&source.src_box);
                 dest.setDestSize(source.dst_width, source.dst_height);
@@ -83,7 +112,6 @@ const Job = struct {
     start: u64,
     duration: u64,
     easing: lua.Easing,
-    active: bool = true,
     waiting: bool = false,
 };
 
@@ -91,6 +119,9 @@ pub const Engine = struct {
     server: *srv.Server = undefined,
     slots: [capacity]?Job = @splat(null),
     generation: u32 = 0,
+    /// Completed non-default transforms retain their registration, but no
+    /// longer occupy a frame-processing slot. Key: animation id; value: view id.
+    completed: std.AutoHashMapUnmanaged(u32, u32) = .empty,
 
     pub fn init(e: *Engine, server: *srv.Server) void {
         e.* = .{ .server = server };
@@ -102,10 +133,14 @@ pub const Engine = struct {
     }
 
     pub fn alive(e: *Engine, id: u32) bool {
-        return e.get(id) != null;
+        return e.get(id) != null or e.completed.contains(id);
     }
 
     pub fn cancel(e: *Engine, id: u32, reset: bool) void {
+        if (e.completed.fetchRemove(id)) |finished| {
+            if (reset) if (e.server.viewById(finished.value)) |v| v.setVisual(.{ 0, 0 }, 1);
+            return;
+        }
         const job = e.get(id) orelse return;
         switch (job.target) {
             .view => |vid| if (reset) {
@@ -118,15 +153,37 @@ pub const Engine = struct {
 
     pub fn clear(e: *Engine) void {
         for (&e.slots) |*slot| if (slot.*) |job| e.cancel(job.id, true);
+        var it = e.completed.valueIterator();
+        while (it.next()) |vid| if (e.server.viewById(vid.*)) |v| v.setVisual(.{ 0, 0 }, 1);
+        e.completed.deinit(srv.gpa);
+        e.completed = .empty;
+    }
+
+    fn forgetCompletedView(e: *Engine, vid: u32) void {
+        var it = e.completed.iterator();
+        while (it.next()) |entry| if (entry.value_ptr.* == vid) {
+            e.completed.removeByPtr(entry.key_ptr);
+        };
     }
 
     pub fn viewGone(e: *Engine, id: u32) void {
         for (&e.slots) |*slot| if (slot.*) |job| if (job.target == .view and job.target.view == id) e.cancel(job.id, false);
+        e.forgetCompletedView(id);
     }
 
     pub fn start(e: *Engine, vid: u32, options: lua.AnimationOptions) lua.ResourceResult {
         const v = e.server.viewById(vid) orelse return .stale;
         if (e.server.session_lock.locked() or !v.visible() or (options.snapshot and !v.revealed)) return .hidden;
+        // Reserve room for every in-flight job to complete. Frame processing
+        // must not allocate or lose an owner when a transform finishes.
+        if (!options.snapshot) e.completed.ensureUnusedCapacity(srv.gpa, capacity) catch return .failed;
+        // A replacement may reuse its own active slot. Do not discard an
+        // existing owner until the new job is certain to have a slot and id.
+        const index = for (e.slots, 0..) |slot, i| {
+            if (slot == null) break i;
+            if (!options.snapshot and slot.?.target == .view and slot.?.target.view == vid) break i;
+        } else return .limit;
+        if (e.generation == std.math.maxInt(u32) >> 8) return .limit;
         const from = [3]f64{ options.from_x orelse v.visual_offset[0], options.from_y orelse v.visual_offset[1], options.from_opacity orelse (if (options.snapshot) @as(f32, 1) else v.visual_alpha) };
         var snap: ?*Snapshot = null;
         if (options.snapshot) {
@@ -141,17 +198,8 @@ pub const Engine = struct {
             }
         } else {
             // Replace, preserving the exact current transform for interruption.
+            e.forgetCompletedView(vid);
             for (&e.slots) |*slot| if (slot.*) |job| if (job.target == .view and job.target.view == vid) e.cancel(job.id, false);
-        }
-        const index = for (e.slots, 0..) |slot, i| {
-            if (slot == null) break i;
-        } else {
-            if (snap) |s| s.destroy();
-            return .limit;
-        };
-        if (e.generation == std.math.maxInt(u32) >> 8) {
-            if (snap) |s| s.destroy();
-            return .limit;
         }
         e.generation += 1;
         const id = (e.generation << 8) | @as(u32, @intCast(index));
@@ -168,6 +216,16 @@ pub const Engine = struct {
         e.apply(&e.slots[index].?, from);
         e.schedule();
         return .{ .ok = id };
+    }
+
+    /// Jobs still animating (diagnostics).
+    pub fn running(e: *const Engine) usize {
+        var n: usize = 0;
+        for (e.slots) |slot| if (slot) |job| {
+            _ = job;
+            n += 1;
+        };
+        return n;
     }
 
     fn schedule(e: *Engine) void {
@@ -191,7 +249,6 @@ pub const Engine = struct {
         var retired = false;
         for (&e.slots) |*slot| {
             const job = if (slot.*) |*j| j else continue;
-            if (!job.active) continue;
             if (job.target == .view and e.server.viewById(job.target.view) == null) {
                 e.cancel(job.id, false);
                 retired = true;
@@ -213,7 +270,12 @@ pub const Engine = struct {
                 if (job.target == .snapshot or std.meta.eql(job.to, [3]f64{ 0, 0, 1 })) {
                     e.cancel(job.id, false);
                     retired = true;
-                } else job.active = false;
+                } else {
+                    // The visual state lives on the View. Keep its owner and
+                    // cancellation id, and return the processing slot.
+                    e.completed.putAssumeCapacityNoClobber(job.id, job.target.view);
+                    slot.* = null;
+                }
             } else active = true;
         }
         if (retired) if (e.server.rt) |rt| rt.collectResources();

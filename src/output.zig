@@ -38,6 +38,8 @@ pub const Output = struct {
     usable: wlr.Box = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
     /// The workspace shown here (see workspace.zig).
     active_ws: ?*Workspace = null,
+    /// A special workspace overlaying `active_ws`, if one is shown.
+    special_ws: ?*Workspace = null,
     /// While the session is locked (see lock.zig): an opaque background,
     /// the commit count when locking started, and whether a frame
     /// committed since then was presented.
@@ -50,9 +52,18 @@ pub const Output = struct {
     /// Where it was in the layout, kept while it is disabled: reported to
     /// output-management clients and used when it is enabled again.
     last_pos: ?[2]i32 = null,
+    /// Most recent geometry observed while this output was in the layout.
+    last_box: ?wlr.Box = null,
     /// Without a backend DRM device there is no scanout target for
     /// linux-dmabuf feedback. Keep renderer import/composition available.
     force_composite: bool = false,
+    /// Opt-in (raywm.output_configure { allow_tearing = true }): a visible
+    /// fullscreen window that asks for async presentation (tearing-control)
+    /// may get tearing page flips. Never on by default.
+    allow_tearing: bool = false,
+    /// Frame diagnostics (raywmctl perf): fixed size, updated once per
+    /// output frame, never per client commit.
+    stats: Stats = .{},
 
     frame: wl.Listener(*wlr.Output) = .init(handleFrame),
     present: wl.Listener(*wlr.Output.event.Present) = .init(handlePresent),
@@ -113,7 +124,8 @@ pub const Output = struct {
         layer_shell.arrange(output);
     }
 
-    pub fn box(output: *Output) wlr.Box {
+    pub fn box(output: *Output) ?wlr.Box {
+        if (!output.inLayout()) return null;
         var b: wlr.Box = undefined;
         output.server.output_layout.getBox(output.wlr_output, &b);
         return b;
@@ -122,33 +134,106 @@ pub const Output = struct {
     pub fn layoutLockBackground(output: *Output) void {
         const r = output.lock_bg orelse return;
         if (!output.inLayout()) return r.node.setEnabled(false);
-        const b = output.box();
+        const b = output.box() orelse return r.node.setEnabled(false);
         r.node.setEnabled(true);
         r.node.setPosition(b.x, b.y);
         r.setSize(b.width, b.height);
     }
 
     /// The usable area in layout coordinates.
-    pub fn usableBox(output: *Output) wlr.Box {
-        const b = output.box();
-        return .{ .x = b.x + output.usable.x, .y = b.y + output.usable.y, .width = output.usable.width, .height = output.usable.height };
+    pub fn usableBox(output: *Output) ?wlr.Box {
+        const b = output.box() orelse return null;
+        return .{ .x = b.x +| output.usable.x, .y = b.y +| output.usable.y, .width = output.usable.width, .height = output.usable.height };
     }
 
     /// wlroots only emits frame when the output needs a repaint (damage or
     /// an explicit schedule), so an idle desktop does no work here.
+    ///
+    /// This is wlr_scene_output_commit() split into its two documented
+    /// halves, build_state and commit_state, so RayWM can see whether the
+    /// scene chose direct scanout, count failures and, when allowed, ask
+    /// for a tearing page flip. The scene still decides everything else
+    /// (damage, scanout eligibility, explicit-sync fences).
     fn handleFrame(listener: *wl.Listener(*wlr.Output), _: *wlr.Output) void {
         const output: *Output = @fieldParentPtr("frame", listener);
         var now = srv.timestamp();
-        const ns = @as(u64, @intCast(now.sec)) * std.time.ns_per_s + @as(u64, @intCast(now.nsec));
+        const ns = nsOf(now);
         const animating = output.server.animations.frame(ns);
-        _ = output.scene_output.commit(null);
+        output.stats.frames += 1;
+        if (output.scene_output.needsFrame()) output.render(ns) else output.stats.idle += 1;
         output.scene_output.sendFrameDone(&now);
         if (animating) output.wlr_output.scheduleFrame();
     }
 
+    fn render(output: *Output, began: u64) void {
+        const st = &output.stats;
+        var state = wlr.Output.State.init();
+        defer state.finish();
+        if (!output.scene_output.buildState(&state, null)) {
+            st.failed += 1;
+            st.path = .none;
+            return;
+        }
+        const path = classify(output, &state);
+        if (output.wantsTearing()) {
+            state.tearing_page_flip = true;
+            if (!output.wlr_output.testState(&state)) {
+                // The backend cannot flip asynchronously now (driver,
+                // kernel, legacy KMS or this buffer): stay synchronized.
+                state.tearing_page_flip = false;
+                st.tearing_rejected += 1;
+            }
+        }
+        if (!output.wlr_output.commitState(&state)) {
+            st.failed += 1;
+            st.path = .none;
+            if (st.failed == 1 or st.failed % 1000 == 0) log.warn("output {s}: commit failed ({d} so far)", .{ output.wlr_output.name, st.failed });
+            return;
+        }
+        st.commits += 1;
+        st.path = path;
+        switch (path) {
+            .scanout => st.scanout += 1,
+            .composited => st.composited += 1,
+            .none => {},
+        }
+        if (state.tearing_page_flip) st.tearing += 1;
+        st.frame_work.push(nsOf(srv.timestamp()) -| began);
+    }
+
+    /// Direct scanout hands the client's buffer to the output; composition
+    /// renders into one of the output's own swapchain buffers.
+    fn classify(output: *Output, state: *const wlr.Output.State) Path {
+        if (!state.committed.buffer) return .none;
+        const buffer = state.buffer orelse return .none;
+        const swapchain = output.wlr_output.swapchain orelse return .scanout;
+        return if (wlr_swapchain_has_buffer(swapchain, buffer)) .composited else .scanout;
+    }
+
+    /// A visible fullscreen window on this output whose surface asked for
+    /// async presentation, on an output where the user allowed tearing.
+    fn wantsTearing(output: *Output) bool {
+        if (!output.allow_tearing) return false;
+        const server = output.server;
+        const manager = server.protocols.tearing orelse return false;
+        if (server.session_lock.locked()) return false;
+        const v = server.fullscreenOn(output) orelse return false;
+        return manager.hintFromSurface(v.surface()) == .async;
+    }
+
     fn handlePresent(listener: *wl.Listener(*wlr.Output.event.Present), event: *wlr.Output.event.Present) void {
         const output: *Output = @fieldParentPtr("present", listener);
-        if (event.presented) output.server.session_lock.presented(output, event.commit_seq);
+        const st = &output.stats;
+        if (!event.presented) {
+            st.discarded += 1;
+            return;
+        }
+        st.presented += 1;
+        if (event.flags.zero_copy) st.zero_copy += 1;
+        const when = nsOf(event.when);
+        if (st.last_present != 0 and when > st.last_present) st.present_interval.push(when - st.last_present);
+        st.last_present = when;
+        output.server.session_lock.presented(output, event.commit_seq);
     }
 
     /// Nested backends (Wayland, X11 windows) ask for new sizes.
@@ -159,6 +244,15 @@ pub const Output = struct {
 
     fn handleDestroy(listener: *wl.Listener(*wlr.Output), _: *wlr.Output) void {
         const output: *Output = @fieldParentPtr("destroy", listener);
+        // First the scene output. It is an addon of the wlr_output, which
+        // wlroots 0.20 only destroys after this signal; until then the scene
+        // still counts the dying output and sends wl_surface.enter for it when
+        // windows move, as they do below (workspaces moving to another output,
+        // layouts re-arranging). Those enters add listeners to the output while
+        // its destroy signal is running, which never get called, and
+        // wlr_output_finish then asserts (the output's bind list is not empty).
+        // Found by tests/stress protocol, case outputs.
+        output.scene_output.destroy();
         if (output.force_composite) output.wlr_output.lockAttachRender(false);
         const server = output.server;
         layer_shell.closeAll(output);
@@ -173,13 +267,75 @@ pub const Output = struct {
     }
 };
 
+extern fn wlr_swapchain_has_buffer(swapchain: *wlr.Swapchain, buffer: *wlr.Buffer) bool;
+
+fn nsOf(ts: std.posix.timespec) u64 {
+    return @as(u64, @intCast(ts.sec)) * std.time.ns_per_s + @as(u64, @intCast(ts.nsec));
+}
+
+pub const Path = enum { none, composited, scanout };
+
+/// The last `len` samples, in microseconds. Fixed storage.
+pub const Ring = struct {
+    pub const len = 256;
+    buf: [len]u32 = undefined,
+    count: u16 = 0,
+    pos: u16 = 0,
+
+    pub fn push(r: *Ring, ns: u64) void {
+        r.buf[r.pos] = @intCast(@min(ns / std.time.ns_per_us, std.math.maxInt(u32)));
+        r.pos = (r.pos + 1) % len;
+        if (r.count < len) r.count += 1;
+    }
+
+    pub const Summary = struct { samples: u16 = 0, p50: u32 = 0, p99: u32 = 0, max: u32 = 0 };
+
+    /// Sorts a copy, so it costs nothing until someone asks.
+    pub fn summary(r: *const Ring) Summary {
+        if (r.count == 0) return .{};
+        var copy: [len]u32 = undefined;
+        const s = copy[0..r.count];
+        @memcpy(s, r.buf[0..r.count]);
+        std.mem.sort(u32, s, {}, std.sort.asc(u32));
+        return .{ .samples = r.count, .p50 = s[s.len / 2], .p99 = s[@min(s.len - 1, (s.len * 99) / 100)], .max = s[s.len - 1] };
+    }
+};
+
+pub const Stats = struct {
+    /// Frame events (wlroots emits them only when a repaint may be needed).
+    frames: u64 = 0,
+    /// Frame events with nothing to draw.
+    idle: u64 = 0,
+    /// Successful output commits, by presentation path.
+    commits: u64 = 0,
+    scanout: u64 = 0,
+    composited: u64 = 0,
+    /// Commits that were tearing (async) page flips, and tearing requests
+    /// the backend rejected (fell back to a synchronized flip).
+    tearing: u64 = 0,
+    tearing_rejected: u64 = 0,
+    /// Failed scene state builds or output commits.
+    failed: u64 = 0,
+    presented: u64 = 0,
+    /// Commits the backend reported as not presented.
+    discarded: u64 = 0,
+    zero_copy: u64 = 0,
+    /// Path of the last successful commit.
+    path: Path = .none,
+    /// Frame handler start to output commit done (build/render + commit).
+    frame_work: Ring = .{},
+    /// Between consecutive presentation timestamps.
+    present_interval: Ring = .{},
+    last_present: u64 = 0,
+};
+
 /// Turns automatically placed outputs (except `skip`) into placed ones at
 /// their current positions.
 fn pinAuto(server: *Server, skip: *Output) void {
     var it = server.outputs.iterator(.forward);
     while (it.next()) |o| {
         if (o == skip or !o.autoPlaced()) continue;
-        const b = o.box();
+        const b = o.box() orelse continue;
         _ = server.output_layout.add(o.wlr_output, b.x, b.y) catch {};
     }
 }
@@ -206,10 +362,27 @@ pub fn handleNew(server: *Server, wlr_output: *wlr.Output) void {
         log.err("failed to enable output {s}", .{wlr_output.name});
         return;
     }
+    hintRefresh(wlr_output);
     Output.create(server, wlr_output) catch {
         log.err("failed to set up output {s}", .{wlr_output.name});
         wlr_output.destroy();
     };
+}
+
+/// Monitors often mark a 60 Hz mode as preferred while also listing a
+/// faster one at the same size. Mode choice stays with the configuration
+/// (outputs.lua, RAYWM_OUTPUT_MODE); this only says that one exists.
+fn hintRefresh(w: *wlr.Output) void {
+    var best: i32 = 0;
+    var it = w.modes.iterator(.forward);
+    while (it.next()) |m| if (m.width == w.width and m.height == w.height) {
+        best = @max(best, m.refresh);
+    };
+    if (best > w.refresh + 1000) log.info("output {s}: running {d}x{d} at {d}.{d:0>3} Hz; the monitor also offers {d}.{d:0>3} Hz (set `mode` in outputs.lua)", .{
+        w.name,                               w.width,                                   w.height,
+        @divTrunc(w.refresh, 1000),           @as(u32, @intCast(@mod(w.refresh, 1000))), @divTrunc(best, 1000),
+        @as(u32, @intCast(@mod(best, 1000))),
+    });
 }
 
 /// After a layout change: output_add / output_remove for outputs that
@@ -243,6 +416,8 @@ pub const Config = struct {
     /// Null: keep; `auto`: next to the others.
     position: ?union(enum) { auto, at: [2]i32 } = null,
     adaptive_sync: ?bool = null,
+    /// RayWM policy, not output state: see Output.allow_tearing.
+    allow_tearing: ?bool = null,
 };
 
 pub const Change = struct { output: *Output, config: Config };
@@ -360,10 +535,11 @@ pub fn configure(server: *Server, changes: []const Change, test_only: bool) Conf
 
     for (changes) |c| {
         const o = c.output;
+        if (c.config.allow_tearing) |on| o.allow_tearing = on;
         const enable = c.config.enabled orelse o.inLayout();
         if (!enable) {
             if (o.inLayout()) {
-                const b = o.box();
+                const b = o.box() orelse continue;
                 o.last_pos = .{ b.x, b.y };
                 server.output_layout.remove(o.wlr_output);
             }
@@ -377,7 +553,7 @@ pub fn configure(server: *Server, changes: []const Change, test_only: bool) Conf
             .auto => o.joinLayout(null) catch return error.OutOfMemory,
             .at => |xy| {
                 const b = o.box();
-                if (!o.inLayout() or o.autoPlaced() or b.x != xy[0] or b.y != xy[1]) o.joinLayout(xy) catch return error.OutOfMemory;
+                if (b == null or o.autoPlaced() or b.?.x != xy[0] or b.?.y != xy[1]) o.joinLayout(xy) catch return error.OutOfMemory;
             },
         } else if (!o.inLayout()) o.joinLayout(null) catch return error.OutOfMemory;
         // Cursor images for this scale.
@@ -430,7 +606,7 @@ pub const Management = struct {
             // output still is).
             head.state.enabled = o.inLayout();
             if (o.inLayout()) {
-                const b = o.box();
+                const b = o.box() orelse continue;
                 head.state.x = b.x;
                 head.state.y = b.y;
             } else if (o.last_pos) |p| {

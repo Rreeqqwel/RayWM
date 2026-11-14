@@ -15,6 +15,7 @@ const Workspace = workspace.Workspace;
 const lock = @import("lock.zig");
 const output_mod = @import("output.zig");
 const inputconfig = @import("inputconfig.zig");
+const conf = @import("conf");
 const protocols = @import("protocols.zig");
 const cabi = @import("cabi.zig");
 const Constraints = @import("constraints.zig").Constraints;
@@ -22,7 +23,7 @@ const Taskbar = @import("taskbar.zig").Taskbar;
 const Data = @import("data.zig").Data;
 const TextInput = @import("textinput.zig").Relay;
 
-pub const gpa = std.heap.c_allocator;
+pub const gpa = @import("alloc").gpa;
 const log = std.log.scoped(.server);
 /// `raywm -d`: also log diagnostics meant for debugging, like key bindings.
 pub var verbose = false;
@@ -31,9 +32,12 @@ pub var verbose = false;
 pub const Tag = enum { view, layer, visual };
 
 /// Scene layers, bottom to top. Windows a layout manages are `tiled`,
-/// others `floating`. `popups` holds popups of layer surfaces, so a dock's
-/// menu is never hidden behind windows.
-pub const Layer = enum { background, bottom, tiled, floating, top, fullscreen, overlay, popups, unmanaged, drag, lock };
+/// others `floating`; sticky windows are visible on every workspace in
+/// `sticky`, a shown special workspace overlays both in `special`, and
+/// pinned windows stay above everything normal in `pinned`.
+/// `popups` holds popups of layer surfaces, so a dock's menu is never
+/// hidden behind windows.
+pub const Layer = enum { background, bottom, tiled, floating, sticky, special, pinned, top, fullscreen, overlay, popups, unmanaged, drag, lock };
 
 pub const Server = struct {
     /// Host functions for the Lua runtime.
@@ -92,6 +96,10 @@ pub const Server = struct {
     /// Scene node of the pointer-focused surface (see input.zig).
     pointer_node: input.PointerNode = .{},
     next_id: u32 = 1,
+    /// ray.conf (src/conf.zig); replaced as a whole on a valid reload.
+    settings: conf.Settings = .{},
+    /// focus_follows_mouse: the view the pointer last moved into (0: none).
+    hover_view: u32 = 0,
     /// Set once the Lua host is running; null during startup and teardown.
     rt: ?*host.Runtime = null,
     /// Single event-loop timer backing all Lua timers.
@@ -114,7 +122,7 @@ pub const Server = struct {
     cursor_axis: wl.Listener(*wlr.Pointer.event.Axis) = .init(input.axis),
     cursor_frame: wl.Listener(*wlr.Cursor) = .init(input.frame),
 
-    pub fn init(server: *Server) !void {
+    pub fn init(server: *Server, settings: conf.Settings) !void {
         const wl_server = try wl.Server.create();
         errdefer wl_server.destroy();
         var session: ?*wlr.Session = null;
@@ -123,6 +131,7 @@ pub const Server = struct {
         const scene = try wlr.Scene.create();
         const output_layout = try wlr.OutputLayout.create(wl_server);
         server.* = .{
+            .settings = settings,
             .wl_server = wl_server,
             .backend = backend,
             .session = session,
@@ -278,6 +287,13 @@ pub const Server = struct {
         const wlr_output = server.output_layout.outputAt(@floatFromInt(x), @floatFromInt(y)) orelse return null;
         var it = server.outputs.iterator(.forward);
         while (it.next()) |o| if (o.wlr_output == wlr_output) return o;
+        return null;
+    }
+
+    /// The visible fullscreen window on `o`, most recently focused first.
+    pub fn fullscreenOn(server: *Server, o: *Output) ?*View {
+        var it = server.views.iterator(.forward);
+        while (it.next()) |v| if (v.fullscreen_output == o.id and v.revealed and v.visible()) return v;
         return null;
     }
 
@@ -476,7 +492,10 @@ pub const Server = struct {
         var outs = server.outputs.iterator(.forward);
         // A dying output is still listed here: wlroots removes it from the
         // layout (firing this event) before our destroy handler runs.
-        while (outs.next()) |o| if (o.inLayout()) o.arrangeLayers();
+        while (outs.next()) |o| if (o.box()) |b| {
+            o.last_box = b;
+            o.arrangeLayers();
+        };
         // Workspaces of an output that left move with their windows first.
         workspace.rescue(server);
         if (server.session_lock.locked()) server.session_lock.arrange();

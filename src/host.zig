@@ -9,6 +9,8 @@ const input = @import("input.zig");
 const ws = @import("workspace.zig");
 const output_mod = @import("output.zig");
 const inputconfig = @import("inputconfig.zig");
+const conf = @import("conf");
+const settings_mod = @import("settings.zig");
 const Server = srv.Server;
 
 pub const Runtime = lua.Runtime(Server);
@@ -63,6 +65,8 @@ pub fn view(server: *Server, id: u32) ?lua.ViewInfo {
         .max_w = hints.max[0],
         .max_h = hints.max[1],
         .floating = v.floating,
+        .sticky = v.sticky,
+        .pinned = v.pinned,
         .fullscreen = v.isFullscreen(),
         .fullscreen_output = v.fullscreen_output,
         .maximized = v.maximized,
@@ -99,6 +103,8 @@ pub fn viewCmd(server: *Server, id: u32, cmd: lua.ViewCmd) bool {
         },
         .border => |b| v.setBorder(b.width, &b.color) catch std.log.err("out of memory", .{}),
         .floating => |on| v.setFloating(on),
+        .sticky => |on| v.setSticky(on),
+        .pinned => |on| v.setPinned(on),
         .fullscreen => |f| {
             v.decisions +%= 1;
             const out = if (f.output != 0) server.outputById(f.output) else null;
@@ -186,7 +192,7 @@ pub fn output(server: *Server, id: u32) ?lua.OutputInfo {
     const o = server.outputById(id) orelse return null;
     const w = o.wlr_output;
     const in_layout = o.inLayout();
-    const b: wlr.Box = if (in_layout) o.box() else .{ .x = 0, .y = 0, .width = 0, .height = 0 };
+    const b: wlr.Box = o.box() orelse .{ .x = 0, .y = 0, .width = 0, .height = 0 };
     const u = o.usable;
     return .{
         .box = .{ .x = b.x, .y = b.y, .w = b.width, .h = b.height },
@@ -204,6 +210,7 @@ pub fn output(server: *Server, id: u32) ?lua.OutputInfo {
         .mode = .{ w.width, w.height, w.refresh },
         .physical = .{ w.phys_width, w.phys_height },
         .adaptive_sync = w.adaptive_sync_status == .enabled,
+        .allow_tearing = o.allow_tearing,
     };
 }
 
@@ -242,7 +249,7 @@ pub fn outputConfigure(server: *Server, target: lua.OutputTarget, cfg: lua.Outpu
             break :blk null;
         },
     } orelse return .stale;
-    var c: output_mod.Config = .{ .enabled = cfg.enabled, .adaptive_sync = cfg.adaptive_sync };
+    var c: output_mod.Config = .{ .enabled = cfg.enabled, .adaptive_sync = cfg.adaptive_sync, .allow_tearing = cfg.allow_tearing };
     if (cfg.mode) |m| c.mode = .{ .size = .{ .width = m[0], .height = m[1], .refresh = m[2] } };
     if (cfg.scale) |sc| c.scale = @floatCast(sc);
     if (cfg.transform) |t| c.transform = output_mod.parseTransform(t) orelse return .bad_transform;
@@ -282,13 +289,14 @@ pub fn workspace(server: *Server, id: u32) ?lua.WorkspaceInfo {
         .active = w.isActive(),
         .urgent = w.urgent,
         .orphan = w.orphan,
+        .special = w.special,
     };
 }
 
-pub fn workspaceCreate(server: *Server, output_id: u32, name: []const u8) lua.CreateResult {
+pub fn workspaceCreate(server: *Server, output_id: u32, name: []const u8, special: bool) lua.CreateResult {
     const o = server.outputById(output_id) orelse return .stale;
     if (!o.inLayout()) return .stale;
-    const w = ws.Workspace.create(server, o, name) catch |err| return switch (err) {
+    const w = ws.Workspace.create(server, o, name, special) catch |err| return switch (err) {
         error.BadName => .bad_name,
         else => .failed,
     };
@@ -310,6 +318,17 @@ pub fn workspaceOrphan(server: *Server, id: u32) void {
 /// After every (re)load of the configuration.
 pub fn workspacesSettled(server: *Server) void {
     ws.settle(server);
+}
+
+/// raywm.workspace_toggle: only special workspaces can be overlays.
+pub fn workspaceToggle(server: *Server, id: u32) lua.ToggleResult {
+    const w = ws.byId(server, id) orelse return .stale;
+    if (!w.special) return .not_special;
+    const on = !w.isActive();
+    _ = w.setShown(on);
+    // A workspace_special/workspace_change handler may have removed it.
+    const after = ws.byId(server, id) orelse return .stale;
+    return if (after.isActive()) .shown else .hidden;
 }
 
 pub fn workspaceCmd(server: *Server, id: u32, cmd: lua.WorkspaceCmd) lua.WorkspaceResult {
@@ -359,6 +378,31 @@ fn eqlAny(s: []const u8, names: []const []const u8) bool {
 
 pub fn spawn(_: *Server, cmd: [*:0]const u8) void {
     srv.spawn(cmd);
+}
+
+// ---- ray.conf (see conf.zig, settings.zig) -----------------------------------
+
+pub fn settings(server: *Server) *const conf.Settings {
+    return &server.settings;
+}
+
+/// Before every reload: re-reads ray.conf. Applied only when every file
+/// is valid; otherwise the previous settings stay, unchanged as a whole.
+pub fn reloadSettings(server: *Server, config_path: []const u8) void {
+    const loaded = settings_mod.load(settings_mod.configDir(config_path));
+    if (!loaded.ok) {
+        std.log.scoped(.conf).err("ray.conf has errors: keeping the previous settings", .{});
+        return;
+    }
+    var names: [8][]const u8 = undefined;
+    for (conf.restartOnlyChanged(&server.settings, &loaded.settings, &names)) |name|
+        std.log.scoped(.conf).warn("{s} changed: takes effect after restarting RayWM", .{name});
+    // Restart-only values stay as they are, so what is reported matches
+    // what runs.
+    var next = loaded.settings;
+    next.general.xwayland = server.settings.general.xwayland;
+    server.settings = next;
+    server.hover_view = 0;
 }
 
 // ---- input devices (see inputconfig.zig) ---------------------------------------

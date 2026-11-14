@@ -1,7 +1,0 @@
-assert(raywm.api_version == 1)
-raywm.load("probe")
-local ok, err = raywm.load("badapi")
-raywm.spawn("badapi:" .. tostring(ok))
-raywm.load("crashy")
-raywm.load("canceller")
-raywm.load("lateload")

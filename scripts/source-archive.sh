@@ -1,0 +1,60 @@
+#!/bin/sh
+# Beta distribution: a reproducible, self-contained source archive.
+# Usage: [ZIG=zig] scripts/source-archive.sh TAG OUT_DIR [REF]
+#   TAG     release tag, e.g. v0.2.1-beta (also names the archive)
+#   REF     commit to archive (default: TAG)
+# Produces OUT_DIR/raywm-TAG.tar.gz and its .sha256. The archive holds the
+# committed sources needed to build (src, protocol, config and plugins,
+# scripts, packaging, build files and LICENSE) plus the pinned Zig package
+# dependencies (zig-pkg/), so it builds without network. It never contains a
+# RayWM binary; docs, tests, CI/agent files and raw measurement data are not
+# in the source-only release tree. Never publishes anything.
+set -eu
+umask 022
+export LC_ALL=C
+tag=${1:?usage: scripts/source-archive.sh TAG OUT_DIR [REF]}
+out=${2:?usage: scripts/source-archive.sh TAG OUT_DIR [REF]}
+ref=${3:-$tag}
+zig=${ZIG:-zig}
+root=$(cd "$(dirname "$0")/.." && pwd)
+cd "$root"
+python3 scripts/release-meta.py parse "$tag" >/dev/null
+commit=$(git rev-parse "$ref^{commit}")
+source_commit=$(git show "$commit:SOURCE-COMMIT" 2>/dev/null | tr -d '[:space:]' || true)
+epoch=$(git log -1 --format=%ct "$commit")
+name="raywm-$tag"
+mkdir -p "$out"
+out=$(cd "$out" && pwd)
+[ ! -e "$out/$name.tar.gz" ] || { echo "source-archive: $out/$name.tar.gz exists; refusing to overwrite"; exit 1; }
+# Keep publication on the output filesystem so the final hard link is atomic.
+work=$(mktemp -d "$out/.source-archive.XXXXXX")
+trap 'rm -rf "$work"' EXIT HUP INT TERM
+stage="$work/$name"
+mkdir -p "$stage"
+git archive -o "$work/source.tar" "$commit" -- . ':(exclude).github' ':(exclude).claude' ':(exclude)CLAUDE.md' \
+    ':(exclude)docs/measurements' ':(exclude).gitignore'
+tar -xf "$work/source.tar" -C "$stage"
+git show "$commit:build.zig.zon" >/dev/null
+python3 scripts/release-meta.py check-zon "$tag" "$stage/build.zig.zon"
+# Pinned dependencies (hashes are checked by Zig against build.zig.zon).
+(cd "$stage" && ZIG_GLOBAL_CACHE_DIR="$work/zig-cache" "$zig" build --fetch >/dev/null)
+[ -d "$stage/zig-pkg" ] || { echo 'source-archive: zig build --fetch produced no zig-pkg/'; exit 1; }
+rm -rf "$stage/.zig-cache"
+{
+    printf 'tag=%s\ncommit=%s\nsource_commit=%s\nsource_date_epoch=%s\n' "$tag" "$commit" "$source_commit" "$epoch"
+    printf 'zig=%s\n' "$("$zig" version)"
+    printf 'build=zig build -Doptimize=ReleaseSafe -Dcpu=baseline (see packaging/arch)\n'
+} >"$stage/SOURCE-INFO"
+if find "$stage" -type f -exec sh -c 'head -c4 "$1" | grep -q "ELF"' _ {} \; -print | grep -q .; then
+    echo 'source-archive: ELF binary in archive'; exit 1
+fi
+# Check tar independently: POSIX sh only reports gzip's status in a pipeline.
+(cd "$work" && tar --sort=name --owner=0 --group=0 --numeric-owner --mode=go-w --mtime="@$epoch" -cf payload.tar "$name")
+gzip -n -9 -c "$work/payload.tar" >"$work/$name.tar.gz"
+(cd "$work" && sha256sum "$name.tar.gz" >"$name.tar.gz.sha256")
+ln "$work/$name.tar.gz" "$out/$name.tar.gz"
+if ! ln "$work/$name.tar.gz.sha256" "$out/$name.tar.gz.sha256"; then
+    rm -f "$out/$name.tar.gz"
+    exit 1
+fi
+cat "$out/$name.tar.gz.sha256"

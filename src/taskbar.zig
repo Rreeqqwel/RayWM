@@ -105,6 +105,9 @@ pub const Taskbar = struct {
         }
         var workspaces = t.server.workspaces.iterator(.forward);
         while (workspaces.next()) |ws| {
+            // A special workspace is an overlay, not a workspace a shell
+            // switches to; it is not advertised through ext-workspace.
+            if (ws.special) continue;
             const result = try t.workspaces.getOrPut(gpa, ws.id);
             if (!result.found_existing) {
                 // Core ids are session-local, so omit the optional persistent id.
@@ -193,8 +196,12 @@ const Toplevel = struct {
 
     fn update(entry: *Toplevel, v: *View) void {
         const handle = entry.foreign;
-        handle.setTitle(v.title() orelse "");
-        handle.setAppId(v.appId() orelse "");
+        // wlroots sends title/app_id (and a done) on every call, even when
+        // unchanged; the other setters below already compare.
+        const title = v.title() orelse "";
+        if (!sameText(handle.title, title)) handle.setTitle(title);
+        const app_id = v.appId() orelse "";
+        if (!sameText(handle.app_id, app_id)) handle.setAppId(app_id);
         cabi.call(v.maximized, wlr.ForeignToplevelHandleV1.setMaximized, .{handle});
         cabi.call(v.minimized, wlr.ForeignToplevelHandleV1.setMinimized, .{handle});
         cabi.call(v.server.focused == v, wlr.ForeignToplevelHandleV1.setActivated, .{handle});
@@ -262,10 +269,15 @@ const Toplevel = struct {
     }
 };
 
+fn sameText(current: ?[*:0]const u8, wanted: [*:0]const u8) bool {
+    const c = current orelse return false;
+    return std.mem.orderZ(u8, c, wanted) == .eq;
+}
+
 fn overlaps(v: *View, o: *srv.Output) bool {
     if (!o.inLayout()) return false;
     const a = v.geometry();
-    const b = o.box();
+    const b = o.box() orelse return false;
     return @as(i64, a.x) < @as(i64, b.x) + b.width and @as(i64, b.x) < @as(i64, a.x) + a.width and
         @as(i64, a.y) < @as(i64, b.y) + b.height and @as(i64, b.y) < @as(i64, a.y) + a.height;
 }

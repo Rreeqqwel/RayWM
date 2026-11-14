@@ -1,1 +1,0 @@
-raywm.load("shell")

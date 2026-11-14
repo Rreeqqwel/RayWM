@@ -295,17 +295,21 @@ const Client = struct {
             for (ids[@min(offset, total)..end]) |id| {
                 const value: Value = if (std.mem.eql(u8, method, "windows")) blk: {
                     const v = host.view(server, id) orelse continue;
-                    break :blk try obj(a, &.{ .{ "id", num(id) }, .{ "x", num(v.box.x) }, .{ "y", num(v.box.y) }, .{ "w", num(v.box.w) }, .{ "h", num(v.box.h) }, .{ "title", text(v.title) }, .{ "app_id", text(v.app_id) }, .{ "workspace", num(v.workspace) }, .{ "output", num(v.output) }, .{ "focused", boolean(v.focused) }, .{ "visible", boolean(v.visible) }, .{ "floating", boolean(v.floating) }, .{ "fullscreen", boolean(v.fullscreen) }, .{ "maximized", boolean(v.maximized) }, .{ "minimized", boolean(v.minimized) }, .{ "urgent", boolean(v.urgent) }, .{ "xwayland", boolean(v.xwayland) }, .{ "pid", num(v.pid) } });
+                    break :blk try obj(a, &.{ .{ "id", num(id) }, .{ "x", num(v.box.x) }, .{ "y", num(v.box.y) }, .{ "w", num(v.box.w) }, .{ "h", num(v.box.h) }, .{ "title", text(v.title) }, .{ "app_id", text(v.app_id) }, .{ "workspace", num(v.workspace) }, .{ "output", num(v.output) }, .{ "focused", boolean(v.focused) }, .{ "visible", boolean(v.visible) }, .{ "floating", boolean(v.floating) }, .{ "sticky", boolean(v.sticky) }, .{ "pinned", boolean(v.pinned) }, .{ "fullscreen", boolean(v.fullscreen) }, .{ "maximized", boolean(v.maximized) }, .{ "minimized", boolean(v.minimized) }, .{ "urgent", boolean(v.urgent) }, .{ "xwayland", boolean(v.xwayland) }, .{ "pid", num(v.pid) } });
                 } else if (std.mem.eql(u8, method, "outputs")) blk: {
                     const o = host.output(server, id) orelse continue;
                     break :blk try obj(a, &.{ .{ "id", num(id) }, .{ "name", text(o.name) }, .{ "x", num(o.box.x) }, .{ "y", num(o.box.y) }, .{ "w", num(o.box.w) }, .{ "h", num(o.box.h) }, .{ "scale", .{ .float = o.scale } }, .{ "transform", text(o.transform) }, .{ "enabled", boolean(o.enabled) }, .{ "power", boolean(o.power) }, .{ "workspace", num(o.workspace) } });
                 } else blk: {
                     const w = host.workspace(server, id) orelse continue;
-                    break :blk try obj(a, &.{ .{ "id", num(id) }, .{ "name", text(w.name) }, .{ "output", num(w.output) }, .{ "active", boolean(w.active) }, .{ "urgent", boolean(w.urgent) } });
+                    break :blk try obj(a, &.{ .{ "id", num(id) }, .{ "name", text(w.name) }, .{ "output", num(w.output) }, .{ "active", boolean(w.active) }, .{ "urgent", boolean(w.urgent) }, .{ "special", boolean(w.special) } });
                 };
                 try items.append(value);
             }
             return obj(a, &.{ .{ "items", .{ .array = items } }, .{ "next", if (end < total) num(end) else .null } });
+        }
+        if (std.mem.eql(u8, method, "perf")) {
+            try allowed(params, &.{});
+            return perf(server, a);
         }
         if (std.mem.eql(u8, method, "subscribe")) {
             try allowed(params, &.{"events"});
@@ -341,6 +345,84 @@ const Client = struct {
         return .null;
     }
 };
+
+extern "c" fn readlink(path: [*:0]const u8, buf: [*]u8, size: usize) isize;
+
+/// Local performance diagnostics (raywmctl perf): renderer, protocol
+/// capabilities and bounded per-output frame counters. No window titles,
+/// application ids or other client data.
+fn perf(server: *srv.Server, a: Allocator) !Value {
+    const r = server.renderer;
+    const renderer_name: []const u8 = if (r.isGles2()) "gles2" else if (r.isPixman()) "pixman" else "other";
+    var node: Value = .null;
+    const fd = r.getDrmFd();
+    if (fd >= 0) {
+        var path: [32:0]u8 = undefined;
+        const p = try std.fmt.bufPrintZ(&path, "/proc/self/fd/{d}", .{fd});
+        var buf: [256]u8 = undefined;
+        const n = readlink(p, &buf, buf.len);
+        if (n > 0) node = .{ .string = try a.dupe(u8, buf[0..@intCast(n)]) };
+    }
+    var outputs: std.array_list.Managed(Value) = .init(a);
+    var it = server.outputs.iterator(.forward);
+    while (it.next()) |o| {
+        const w = o.wlr_output;
+        const st = &o.stats;
+        // The highest refresh the output lists at its current size: a
+        // monitor left at 60 Hz by its preferred mode shows up here.
+        var best: i32 = 0;
+        var modes = w.modes.iterator(.forward);
+        while (modes.next()) |m| if (m.width == w.width and m.height == w.height) {
+            best = @max(best, m.refresh);
+        };
+        const work = st.frame_work.summary();
+        const interval = st.present_interval.summary();
+        const fs = server.fullscreenOn(o);
+        try outputs.append(try obj(a, &.{
+            .{ "id", num(o.id) },
+            .{ "name", text(w.name) },
+            .{ "enabled", boolean(w.enabled) },
+            .{ "width", num(w.width) },
+            .{ "height", num(w.height) },
+            .{ "refresh_mhz", num(w.refresh) },
+            .{ "max_refresh_mhz_at_size", num(best) },
+            .{ "adaptive_sync", .{ .string = @tagName(w.adaptive_sync_status) } },
+            .{ "allow_tearing", boolean(o.allow_tearing) },
+            .{ "scanout_possible", boolean(!o.force_composite) },
+            .{ "fullscreen_window", boolean(fs != null) },
+            .{ "path", .{ .string = @tagName(st.path) } },
+            .{ "frames", num(st.frames) },
+            .{ "idle_frames", num(st.idle) },
+            .{ "commits", num(st.commits) },
+            .{ "scanout_commits", num(st.scanout) },
+            .{ "composited_commits", num(st.composited) },
+            .{ "tearing_commits", num(st.tearing) },
+            .{ "tearing_rejected", num(st.tearing_rejected) },
+            .{ "failed", num(st.failed) },
+            .{ "presented", num(st.presented) },
+            .{ "discarded", num(st.discarded) },
+            .{ "zero_copy", num(st.zero_copy) },
+            .{ "frame_work_us", try summaryValue(a, work) },
+            .{ "present_interval_us", try summaryValue(a, interval) },
+        }));
+    }
+    return obj(a, &.{
+        .{ "renderer", .{ .string = renderer_name } },
+        .{ "render_node", node },
+        .{ "renderer_timeline", boolean(r.features.timeline) },
+        .{ "backend_timeline", boolean(server.backend.features.timeline) },
+        .{ "explicit_sync", boolean(server.protocols.explicit_sync) },
+        .{ "tearing_control", boolean(server.protocols.tearing != null) },
+        .{ "animations_running", num(server.animations.running()) },
+        .{ "session_locked", boolean(server.session_lock.locked()) },
+        .{ "ring_samples", num(@import("output.zig").Ring.len) },
+        .{ "outputs", .{ .array = outputs } },
+    });
+}
+
+fn summaryValue(a: Allocator, s: @import("output.zig").Ring.Summary) !Value {
+    return obj(a, &.{ .{ "samples", num(s.samples) }, .{ "p50", num(s.p50) }, .{ "p99", num(s.p99) }, .{ "max", num(s.max) } });
+}
 
 fn oneOf(s: []const u8, names: []const []const u8) bool {
     for (names) |name| if (std.mem.eql(u8, s, name)) return true;

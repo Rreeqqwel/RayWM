@@ -1,10 +1,10 @@
 #!/bin/sh
 # Build a local, reproducible ReleaseSafe archive; never publish or tag.
-# Usage: [ZIG=/path/to/zig] scripts/package.sh v0.2.0
+# Usage: [ZIG=/path/to/zig] scripts/package.sh v0.2.1
 set -eu
 umask 022
 export LC_ALL=C
-version=${1:?usage: scripts/package.sh v0.2.0}
+version=${1:?usage: scripts/package.sh v0.2.1}
 zig=${ZIG:-zig}
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
@@ -30,12 +30,13 @@ trap 'rm -rf "$work"' EXIT HUP INT TERM
 name="raywm-$version"
 stage="$work/$name"
 mkdir -p "$stage/bin"
-git archive HEAD README.md LICENSE CHANGELOG.md SECURITY.md config docs scripts/install.sh scripts/raywmctl | tar -xf - -C "$stage"
+git archive -o "$work/source.tar" HEAD README.md LICENSE CHANGELOG.md SECURITY.md config docs scripts/install.sh scripts/raywmctl
+tar -xf "$work/source.tar" -C "$stage"
 install -m 0755 "$stage/scripts/install.sh" "$stage/install.sh"
 install -m 0755 "$stage/scripts/raywmctl" "$stage/bin/raywmctl"
 # Remove only the temporary copies; they are not archive paths.
 rm -rf "$stage/scripts"
-"$zig" build -Doptimize=ReleaseSafe -Dtest-input=false -p "$work/build"
+"$zig" build -Doptimize=ReleaseSafe -Dcpu=baseline -Dtest-input=false -p "$work/build"
 bin="$work/build/bin/raywm"
 if nm -D "$bin" | grep -q wlr_virtual_pointer_manager_v1_create || strings "$bin" | grep -q 'TEST BUILD: virtual pointer' || strings "$bin" | grep -q raywm-test-unplug; then
     echo 'package: test-only code in release binary'; exit 1
@@ -55,7 +56,9 @@ printf '%s\n' "$commit" >"$stage/COMMIT"
 (cd "$stage" && find . -type f -print0 | sort -z | xargs -0 sha256sum) >"$work/MANIFEST.sha256"
 install -m 0644 "$work/MANIFEST.sha256" "$stage/MANIFEST.sha256"
 archive="$name-linux-x86_64.tar.gz"
-(cd "$work" && tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$epoch" -cf - "$name" | gzip -n -9) >"$work/$archive"
+# Keep producer failures visible to POSIX sh instead of masking them in a pipe.
+(cd "$work" && tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$epoch" -cf payload.tar "$name")
+gzip -n -9 -c "$work/payload.tar" >"$work/$archive"
 if [ -e "$dist/$archive" ]; then
     cmp -s "$work/$archive" "$dist/$archive" || { echo 'package: different archive already exists; preserve it before rebuilding'; exit 1; }
 else

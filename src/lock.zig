@@ -240,7 +240,7 @@ pub const LockSurface = struct {
     fn place(ls: *LockSurface) void {
         const o = ls.output orelse return;
         if (!o.inLayout()) return;
-        const b = o.box();
+        const b = o.box() orelse return;
         ls.tree.node.setPosition(b.x, b.y);
         if (ls.wlr_ls.pending.width != @as(u32, @intCast(b.width)) or ls.wlr_ls.pending.height != @as(u32, @intCast(b.height)) or !ls.wlr_ls.configured)
             _ = ls.wlr_ls.configure(@intCast(b.width), @intCast(b.height));

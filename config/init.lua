@@ -3,13 +3,14 @@
 raywm.load("outputs") -- monitor modes, scale, positions (empty list)
 raywm.load("input") -- keyboard layout, repeat, touchpad (empty list)
 raywm.load("workspaces") -- Super+1..9; before the layout, which tiles each one
+raywm.load("special") -- Super+S: scratchpad overlay per output
 raywm.load("window-rules") -- dialogs float; your rules are in rules.lua
 raywm.load("dwindle")
 raywm.load("floating") -- Super+Shift+Space: tiled <-> floating
 raywm.load("binds")
 raywm.load("focus") -- Super+H/J/K/L, Super+Tab, focus border
 raywm.load("screenshot") -- Print etc.; needs grim, slurp, wl-clipboard
-raywm.load("autostart") -- programs started with the session (empty list)
+raywm.load("autostart") -- runs [autostart] exec commands from ray.conf
 -- Optional effects (off by default):
 -- raywm.load("animations")
 -- raywm.load("focus-indicator")

@@ -1,0 +1,897 @@
+//! ray.conf: the compositor's central settings (docs/CONFIGURATION.md).
+//!
+//! Format: INI-like. `[section]` headers, `key = value` entries, and
+//! comments starting with `#` or `;` on their own line. Values are booleans
+//! (true/false, yes/no, on/off, 1/0), integers in a fixed range, strings,
+//! `#rrggbb[aa]` colours and a few keywords. Nothing is ever executed.
+//!
+//! Layers, later ones override earlier ones key by key: built-in defaults,
+//! the system file (/usr/share/raywm/config/ray.conf), the user file
+//! (next to init.lua). A file with any error is rejected as a whole, so a
+//! broken file never applies half of its settings. Unknown sections and
+//! keys are reported as warnings and ignored (a newer file still loads).
+//!
+//! Every value is fixed-size, so parsing and reloading allocate nothing and
+//! cannot leak. Depends only on std and libc: unit-testable without wlroots.
+const std = @import("std");
+
+/// An integer setting limited to [lo, hi].
+pub fn Int(comptime lo: i32, comptime hi: i32) type {
+    return struct {
+        value: i32,
+        pub const min = lo;
+        pub const max = hi;
+    };
+}
+
+/// A string setting without control characters, at most `cap` bytes.
+pub fn Text(comptime cap: usize) type {
+    return struct {
+        /// Bytes past `len` are always zero, so two equal strings are equal
+        /// structs (std.meta.eql) whatever was stored before.
+        buf: [cap]u8 = @splat(0),
+        len: u16 = 0,
+        pub const capacity = cap;
+        pub fn slice(t: *const @This()) []const u8 {
+            return t.buf[0..t.len];
+        }
+    };
+}
+
+/// "#rrggbbaa" (normalized), or "none" where `optional`.
+pub fn ColorT(comptime is_optional: bool) type {
+    return struct {
+        text: [9]u8 = "#00000000".*,
+        none: bool = is_optional,
+        pub const optional = is_optional;
+        pub fn of(comptime spec: []const u8) @This() {
+            var c: @This() = .{ .none = false };
+            if (!parseColor(spec, &c.text)) @compileError("bad colour " ++ spec);
+            return c;
+        }
+        pub fn slice(c: *const @This()) []const u8 {
+            return if (c.none) "none" else &c.text;
+        }
+    };
+}
+pub const Color = ColorT(false);
+pub const OptColor = ColorT(true);
+
+/// A list setting: repeated `key = value` lines append. Every entry is a
+/// `Text(item_cap)`; layers append too, so a user file adds to the system
+/// file instead of replacing it. Used by [autostart] exec.
+pub fn List(comptime cap: usize, comptime item_cap: usize) type {
+    return struct {
+        items: [cap]Text(item_cap) = @splat(Text(item_cap){}),
+        len: u16 = 0,
+        pub const is_list = true;
+        pub const capacity = cap;
+
+        pub fn slice(l: *const @This()) []const Text(item_cap) {
+            return l.items[0..l.len];
+        }
+
+        fn append(l: *@This(), value: []const u8) ValueError!void {
+            if (l.len == cap) return error.TooMany;
+            try parseValue(Text(item_cap), &l.items[l.len], value);
+            l.len += 1;
+        }
+    };
+}
+
+/// The modifier for Super+drag (move/resize floating windows).
+pub const Modifier = enum {
+    super,
+    alt,
+    ctrl,
+    shift,
+    pub const aliases = .{ .{ "super", .super }, .{ "logo", .super }, .{ "mod4", .super }, .{ "win", .super }, .{ "alt", .alt }, .{ "mod1", .alt }, .{ "ctrl", .ctrl }, .{ "control", .ctrl }, .{ "shift", .shift } };
+};
+
+pub const Settings = struct {
+    general: General = .{},
+    appearance: Appearance = .{},
+    input: Input = .{},
+    autostart: Autostart = .{},
+
+    pub const General = struct {
+        /// A new window takes keyboard focus when it appears (unless a
+        /// plugin chose focus itself while handling view_map).
+        focus_new_windows: bool = true,
+        /// Command for Super+Return (core fallback key and binds.lua);
+        /// empty: $TERMINAL, else foot. Run through /bin/sh.
+        terminal: Text(256) = .{},
+        /// Start Xwayland lazily for X11 clients. RAYWM_XWAYLAND=0 also
+        /// turns it off. Read at startup only.
+        xwayland: bool = true,
+
+        pub const restart_only = .{"xwayland"};
+    };
+
+    pub const Appearance = struct {
+        /// Pixels between tiled windows (dwindle.lua).
+        inner_gaps: Int(0, 500) = .{ .value = 8 },
+        /// Pixels between tiled windows and the usable area's edge.
+        outer_gaps: Int(0, 500) = .{ .value = 8 },
+        /// Border width in pixels; 0: no borders (focus.lua).
+        border_width: Int(0, 64) = .{ .value = 2 },
+        /// Border colour of the focused window.
+        border_active: Color = Color.of("#5294e2"),
+        /// Border colour of the other windows; none: no border.
+        border_inactive: OptColor = .{},
+
+        pub const restart_only = .{};
+    };
+
+    pub const Input = struct {
+        /// Modifier for dragging floating windows (button 1 moves,
+        /// button 3 resizes).
+        mouse_modifier: Modifier = .super,
+        /// Focus the window the pointer moves into.
+        focus_follows_mouse: bool = false,
+
+        pub const restart_only = .{};
+    };
+
+    pub const Autostart = struct {
+        /// Commands started once per compositor session, in order, through
+        /// /bin/sh (config/plugins/autostart.lua). A reload starts only
+        /// commands that were added since the last load.
+        exec: List(16, 512) = .{},
+        pub const restart_only = .{};
+    };
+};
+
+// ---- diagnostics ------------------------------------------------------------
+
+/// Messages from one parse, with line numbers. Bounded: further messages are
+/// only counted.
+pub const Diag = struct {
+    pub const max = 16;
+    pub const Item = struct {
+        line: u32,
+        is_error: bool,
+        buf: [200]u8 = undefined,
+        len: u8 = 0,
+        pub fn text(i: *const Item) []const u8 {
+            return i.buf[0..i.len];
+        }
+    };
+    items: [max]Item = undefined,
+    n: usize = 0,
+    errors: usize = 0,
+    warnings: usize = 0,
+
+    fn add(d: *Diag, line: u32, is_error: bool, comptime fmt: []const u8, args: anytype) void {
+        if (is_error) d.errors += 1 else d.warnings += 1;
+        if (d.n == max) return;
+        var item: Item = .{ .line = line, .is_error = is_error };
+        const s = std.fmt.bufPrint(&item.buf, fmt, args) catch blk: {
+            const tail = "...";
+            @memcpy(item.buf[item.buf.len - tail.len ..], tail);
+            break :blk item.buf[0..];
+        };
+        item.len = @intCast(s.len);
+        d.items[d.n] = item;
+        d.n += 1;
+    }
+
+    pub fn slice(d: *const Diag) []const Item {
+        return d.items[0..d.n];
+    }
+};
+
+// ---- parsing ----------------------------------------------------------------
+
+/// Largest accepted file: the shipped one is ~2 KiB.
+pub const max_file_size = 64 * 1024;
+
+/// Applies `text` on top of `base`. Returns the result only if the whole
+/// text is valid (diag.errors == 0); otherwise null and `base` is unused.
+pub fn parse(text: []const u8, base: Settings, diag: *Diag) ?Settings {
+    var out = base;
+    var section: ?[]const u8 = null;
+    var section_known = false;
+    var line_no: u32 = 0;
+    if (text.len > max_file_size) {
+        diag.add(0, true, "file larger than {d} bytes", .{max_file_size});
+        return null;
+    }
+    if (!std.unicode.utf8ValidateSlice(text)) {
+        diag.add(0, true, "not valid UTF-8", .{});
+        return null;
+    }
+    var seen: [64]u64 = undefined; // hashes of section.key, for duplicates
+    var n_seen: usize = 0;
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |raw| {
+        line_no += 1;
+        const line = std.mem.trim(u8, std.mem.trimEnd(u8, raw, "\r"), " \t");
+        if (line.len == 0 or line[0] == '#' or line[0] == ';') continue;
+        if (hasControl(line)) {
+            diag.add(line_no, true, "control character in line", .{});
+            continue;
+        }
+        if (line[0] == '[') {
+            if (line[line.len - 1] != ']') {
+                diag.add(line_no, true, "section header must end with ']'", .{});
+                // Its keys are skipped, not reported once more each.
+                section = "";
+                section_known = false;
+                continue;
+            }
+            const name = std.mem.trim(u8, line[1 .. line.len - 1], " \t");
+            section = name;
+            section_known = knownSection(name);
+            if (!section_known) diag.add(line_no, false, "unknown section [{s}] ignored", .{name});
+            continue;
+        }
+        const eq = std.mem.indexOfScalar(u8, line, '=') orelse {
+            diag.add(line_no, true, "expected 'key = value' or '[section]'", .{});
+            continue;
+        };
+        const key = std.mem.trim(u8, line[0..eq], " \t");
+        const value = std.mem.trim(u8, line[eq + 1 ..], " \t");
+        if (key.len == 0) {
+            diag.add(line_no, true, "missing key before '='", .{});
+            continue;
+        }
+        const sec = section orelse {
+            diag.add(line_no, true, "'{s}' outside of a [section]", .{key});
+            continue;
+        };
+        if (!section_known) continue;
+        var h = std.hash.Wyhash.init(0);
+        h.update(sec);
+        h.update("\x00");
+        h.update(key);
+        const hash = h.final();
+        const dup = for (seen[0..n_seen]) |s| {
+            if (s == hash) break true;
+        } else false;
+        // List keys append by design; a repeated scalar keeps the last one.
+        if (dup and !isListKey(sec, key)) diag.add(line_no, false, "[{s}] {s} set again; the last value is used", .{ sec, key });
+        if (!dup and n_seen < seen.len) {
+            seen[n_seen] = hash;
+            n_seen += 1;
+        }
+        setKey(&out, sec, key, value, line_no, diag);
+    }
+    return if (diag.errors == 0) out else null;
+}
+
+fn hasControl(s: []const u8) bool {
+    for (s) |ch| if ((ch < 0x20 and ch != '\t') or ch == 0x7f) return true;
+    return false;
+}
+
+fn knownSection(name: []const u8) bool {
+    inline for (std.meta.fields(Settings)) |f| if (std.mem.eql(u8, f.name, name)) return true;
+    return false;
+}
+
+fn isListKey(sec: []const u8, key: []const u8) bool {
+    inline for (std.meta.fields(Settings)) |sf| if (std.mem.eql(u8, sf.name, sec)) {
+        inline for (std.meta.fields(sf.type)) |kf| if (std.mem.eql(u8, kf.name, key)) return hasDecl(kf.type, "is_list");
+    };
+    return false;
+}
+
+fn setKey(out: *Settings, sec: []const u8, key: []const u8, value: []const u8, line: u32, diag: *Diag) void {
+    inline for (std.meta.fields(Settings)) |sf| if (std.mem.eql(u8, sf.name, sec)) {
+        const s = &@field(out, sf.name);
+        inline for (std.meta.fields(sf.type)) |kf| if (std.mem.eql(u8, kf.name, key)) {
+            if (comptime hasDecl(kf.type, "is_list")) {
+                @field(s, kf.name).append(value) catch |err| {
+                    diag.add(line, true, "[{s}] {s} = {s}: {s}", .{ sec, key, value, explain(kf.type, err) });
+                };
+            } else parseValue(kf.type, &@field(s, kf.name), value) catch |err| {
+                diag.add(line, true, "[{s}] {s} = {s}: {s}", .{ sec, key, value, explain(kf.type, err) });
+            };
+            return;
+        };
+        diag.add(line, false, "unknown key '{s}' in [{s}] ignored", .{ key, sec });
+        return;
+    };
+}
+
+fn hasDecl(comptime T: type, comptime name: []const u8) bool {
+    return switch (@typeInfo(T)) {
+        .@"struct", .@"enum", .@"union", .@"opaque" => @hasDecl(T, name),
+        else => false,
+    };
+}
+
+const ValueError = error{ NotBool, NotInt, OutOfRange, TooLong, BadText, NotColor, NotKeyword, TooMany };
+
+fn explain(comptime T: type, err: ValueError) []const u8 {
+    return switch (err) {
+        error.NotBool => "expected true or false",
+        error.NotInt => "expected a whole number",
+        error.OutOfRange => if (comptime hasDecl(T, "min")) std.fmt.comptimePrint("expected {d}..{d}", .{ T.min, T.max }) else "out of range",
+        error.TooLong => "value too long",
+        error.BadText => "quotes must enclose the whole value",
+        error.NotColor => if (comptime hasDecl(T, "optional") and T.optional) "expected #rrggbb, #rrggbbaa or none" else "expected #rrggbb or #rrggbbaa",
+        error.NotKeyword => if (T == Modifier) "expected super, alt, ctrl or shift" else "unknown keyword",
+        error.TooMany => if (comptime hasDecl(T, "is_list")) std.fmt.comptimePrint("at most {d} entries", .{T.capacity}) else "too many entries",
+    };
+}
+
+fn parseValue(comptime T: type, dst: *T, value: []const u8) ValueError!void {
+    if (T == bool) {
+        dst.* = parseBool(value) orelse return error.NotBool;
+    } else if (T == Modifier) {
+        inline for (Modifier.aliases) |a| if (std.ascii.eqlIgnoreCase(value, a[0])) {
+            dst.* = a[1];
+            return;
+        };
+        return error.NotKeyword;
+    } else if (comptime hasDecl(T, "min")) {
+        const v = std.fmt.parseInt(i32, value, 10) catch |err| return switch (err) {
+            error.Overflow => error.OutOfRange,
+            error.InvalidCharacter => error.NotInt,
+        };
+        if (v < T.min or v > T.max) return error.OutOfRange;
+        dst.value = v;
+    } else if (comptime hasDecl(T, "capacity")) {
+        var s = value;
+        if (s.len > 0 and (s[0] == '"' or s[0] == '\'')) {
+            if (s.len < 2 or s[s.len - 1] != s[0]) return error.BadText;
+            s = s[1 .. s.len - 1];
+        }
+        if (s.len > T.capacity) return error.TooLong;
+        if (hasControl(s)) return error.BadText;
+        @memcpy(dst.buf[0..s.len], s);
+        @memset(dst.buf[s.len..], 0);
+        dst.len = @intCast(s.len);
+    } else if (comptime hasDecl(T, "optional")) {
+        if (T.optional and std.ascii.eqlIgnoreCase(value, "none")) {
+            dst.none = true;
+            return;
+        }
+        if (!parseColor(value, &dst.text)) return error.NotColor;
+        dst.none = false;
+    } else @compileError("unsupported setting type " ++ @typeName(T));
+}
+
+fn parseBool(v: []const u8) ?bool {
+    for ([_][]const u8{ "true", "yes", "on", "1" }) |t| if (std.ascii.eqlIgnoreCase(v, t)) return true;
+    for ([_][]const u8{ "false", "no", "off", "0" }) |f| if (std.ascii.eqlIgnoreCase(v, f)) return false;
+    return null;
+}
+
+/// "#rgb"-style shorthands are not accepted: only #rrggbb and #rrggbbaa.
+/// Writes the normalized lower-case "#rrggbbaa".
+fn parseColor(spec: []const u8, out: *[9]u8) bool {
+    if ((spec.len != 7 and spec.len != 9) or spec[0] != '#') return false;
+    for (spec[1..]) |ch| if (!std.ascii.isHex(ch)) return false;
+    out[0] = '#';
+    for (spec[1..], 1..) |ch, i| out[i] = std.ascii.toLower(ch);
+    if (spec.len == 7) {
+        out[7] = 'f';
+        out[8] = 'f';
+    }
+    return true;
+}
+
+// ---- files ------------------------------------------------------------------
+
+pub const FileResult = enum { applied, missing, rejected };
+
+/// Applies the file at `path` on top of `settings` if it is valid. A
+/// missing file changes nothing. `buf` holds the file while it is parsed.
+pub fn applyFile(path: [*:0]const u8, settings: *Settings, diag: *Diag, buf: *[max_file_size + 1]u8) FileResult {
+    const fd = std.posix.openatZ(std.posix.AT.FDCWD, path, .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0) catch |err| switch (err) {
+        error.FileNotFound, error.NotDir => return .missing,
+        else => {
+            diag.add(0, true, "cannot open: {s}", .{@errorName(err)});
+            return .rejected;
+        },
+    };
+    defer _ = std.c.close(fd);
+    var len: usize = 0;
+    while (len < buf.len) {
+        const n = std.posix.read(fd, buf[len..]) catch |err| {
+            diag.add(0, true, "cannot read: {s}", .{@errorName(err)});
+            return .rejected;
+        };
+        if (n == 0) break;
+        len += n;
+    }
+    const result = parse(buf[0..len], settings.*, diag) orelse return .rejected;
+    settings.* = result;
+    return .applied;
+}
+
+/// Default system file; RAYWM_SYSTEM_CONF overrides it (empty: none), for
+/// tests and for running from a build tree.
+pub const system_path = "/usr/share/raywm/config/ray.conf";
+
+/// Names the restart-only settings that differ between `a` and `b`.
+pub fn restartOnlyChanged(a: *const Settings, b: *const Settings, out: *[8][]const u8) [][]const u8 {
+    var n: usize = 0;
+    inline for (std.meta.fields(Settings)) |sf| {
+        const S = sf.type;
+        inline for (S.restart_only) |name| {
+            const x = @field(@field(a, sf.name), name);
+            const y = @field(@field(b, sf.name), name);
+            if (!std.meta.eql(x, y) and n < out.len) {
+                out[n] = sf.name ++ "." ++ name;
+                n += 1;
+            }
+        }
+    }
+    return out[0..n];
+}
+
+/// Calls `f(ctx, section, key, value_text)` for every setting, in
+/// declaration order. Used to export the settings to Lua and to print them.
+pub fn each(s: *const Settings, ctx: anytype, comptime f: fn (@TypeOf(ctx), []const u8, []const u8, Value) void) void {
+    inline for (std.meta.fields(Settings)) |sf| {
+        const sec = &@field(s, sf.name);
+        inline for (std.meta.fields(sf.type)) |kf| {
+            const v = &@field(sec, kf.name);
+            const T = kf.type;
+            const value: Value = if (T == bool)
+                .{ .boolean = v.* }
+            else if (T == Modifier)
+                .{ .string = @tagName(v.*) }
+            else if (comptime hasDecl(T, "is_list")) blk: {
+                var slices: [T.capacity][]const u8 = undefined;
+                const items = v.slice();
+                for (items, 0..) |*item, i| slices[i] = item.slice();
+                break :blk .{ .list = slices[0..items.len] };
+            } else if (comptime hasDecl(T, "min"))
+                .{ .integer = v.value }
+            else if (comptime hasDecl(T, "capacity"))
+                .{ .text = v.slice() }
+            else
+                .{ .string = v.slice() };
+            f(ctx, sf.name, kf.name, value);
+        }
+    }
+}
+
+/// `string`: a keyword or colour; `text`: a free-form string setting;
+/// `list`: the entries of a repeated-key setting, in order.
+pub const Value = union(enum) { boolean: bool, integer: i32, string: []const u8, text: []const u8, list: []const []const u8 };
+
+// ---- tests ------------------------------------------------------------------
+
+const testing = std.testing;
+
+test "defaults match the behaviour before ray.conf" {
+    const s: Settings = .{};
+    try testing.expect(s.general.focus_new_windows);
+    try testing.expect(s.general.xwayland);
+    try testing.expectEqualStrings("", s.general.terminal.slice());
+    try testing.expectEqual(@as(i32, 8), s.appearance.inner_gaps.value);
+    try testing.expectEqual(@as(i32, 8), s.appearance.outer_gaps.value);
+    try testing.expectEqual(@as(i32, 2), s.appearance.border_width.value);
+    try testing.expectEqualStrings("#5294e2ff", s.appearance.border_active.slice());
+    try testing.expectEqualStrings("none", s.appearance.border_inactive.slice());
+    try testing.expectEqual(Modifier.super, s.input.mouse_modifier);
+    try testing.expect(!s.input.focus_follows_mouse);
+    try testing.expectEqual(@as(usize, 0), s.autostart.exec.len);
+}
+
+test "valid file with comments, sections and every value type" {
+    var d: Diag = .{};
+    const s = parse(
+        \\# RayWM
+        \\; also a comment
+        \\[general]
+        \\focus_new_windows = no
+        \\terminal = "kitty -1"
+        \\
+        \\[appearance]
+        \\  inner_gaps=4
+        \\outer_gaps = 0
+        \\border_active = #FF0000
+        \\border_inactive = #20202080
+        \\[input]
+        \\mouse_modifier = ALT
+        \\focus_follows_mouse = on
+        \\[autostart]
+        \\exec = "waybar"
+        \\exec = swaybg -i ~/wall.png
+    , .{}, &d) orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(@as(usize, 0), d.n);
+    try testing.expect(!s.general.focus_new_windows);
+    try testing.expectEqualStrings("kitty -1", s.general.terminal.slice());
+    try testing.expectEqual(@as(i32, 4), s.appearance.inner_gaps.value);
+    try testing.expectEqual(@as(i32, 0), s.appearance.outer_gaps.value);
+    try testing.expectEqualStrings("#ff0000ff", s.appearance.border_active.slice());
+    try testing.expectEqualStrings("#20202080", s.appearance.border_inactive.slice());
+    try testing.expectEqual(Modifier.alt, s.input.mouse_modifier);
+    try testing.expect(s.input.focus_follows_mouse);
+    try testing.expectEqual(@as(usize, 2), s.autostart.exec.len);
+    try testing.expectEqualStrings("waybar", s.autostart.exec.items[0].slice());
+    try testing.expectEqualStrings("swaybg -i ~/wall.png", s.autostart.exec.items[1].slice());
+}
+
+test "empty file keeps the base" {
+    var d: Diag = .{};
+    var base: Settings = .{};
+    base.appearance.inner_gaps.value = 3;
+    const s = parse("", base, &d).?;
+    try testing.expectEqual(@as(i32, 3), s.appearance.inner_gaps.value);
+}
+
+test "syntax errors carry line numbers and reject the whole file" {
+    var d: Diag = .{};
+    try testing.expect(parse(
+        \\[appearance]
+        \\inner_gaps = 3
+        \\this is not a setting
+        \\[general
+        \\outer = 1
+    , .{}, &d) == null);
+    try testing.expectEqual(@as(usize, 2), d.errors);
+    try testing.expectEqual(@as(u32, 3), d.slice()[0].line);
+    try testing.expectEqual(@as(u32, 4), d.slice()[1].line);
+}
+
+test "key outside a section is an error" {
+    var d: Diag = .{};
+    try testing.expect(parse("inner_gaps = 3\n", .{}, &d) == null);
+    try testing.expectEqual(@as(u32, 1), d.slice()[0].line);
+}
+
+test "unknown keys and sections are warnings; the rest applies" {
+    var d: Diag = .{};
+    const s = parse(
+        \\[general]
+        \\layout = dwindle
+        \\[future]
+        \\anything = 1
+        \\[appearance]
+        \\inner_gaps = 12
+    , .{}, &d).?;
+    try testing.expectEqual(@as(usize, 0), d.errors);
+    try testing.expectEqual(@as(usize, 2), d.warnings);
+    try testing.expectEqual(@as(u32, 2), d.slice()[0].line);
+    try testing.expectEqual(@as(u32, 3), d.slice()[1].line);
+    try testing.expectEqual(@as(i32, 12), s.appearance.inner_gaps.value);
+}
+
+test "invalid values are rejected" {
+    const cases = [_][]const u8{
+        "[general]\nfocus_new_windows = maybe",
+        "[appearance]\ninner_gaps = -1",
+        "[appearance]\ninner_gaps = 501",
+        "[appearance]\ninner_gaps = 99999999999",
+        "[appearance]\ninner_gaps = 8px",
+        "[appearance]\nborder_width = ",
+        "[appearance]\nborder_active = none",
+        "[appearance]\nborder_active = #12345",
+        "[appearance]\nborder_active = #gggggg",
+        "[appearance]\nborder_inactive = red",
+        "[input]\nmouse_modifier = hyper",
+        "[general]\nterminal = \"foot",
+        "[general]\nterminal = a\x01b",
+        "[general]\nxwayland = \x00",
+        "[autostart]\nexec = \"waybar",
+    };
+    for (cases) |c| {
+        var d: Diag = .{};
+        if (parse(c, .{}, &d) != null) {
+            std.debug.print("accepted: {s}\n", .{c});
+            return error.TestUnexpectedResult;
+        }
+        try testing.expect(d.errors > 0);
+        try testing.expectEqual(@as(u32, 2), d.slice()[0].line);
+    }
+}
+
+test "error messages name the expectation" {
+    var d: Diag = .{};
+    _ = parse("[appearance]\nborder_width = 65\n", .{}, &d);
+    try testing.expectEqualStrings("[appearance] border_width = 65: expected 0..64", d.slice()[0].text());
+}
+
+test "string length limit" {
+    var d: Diag = .{};
+    var long: [300]u8 = undefined;
+    @memset(&long, 'a');
+    var text: [400]u8 = undefined;
+    const t = try std.fmt.bufPrint(&text, "[general]\nterminal = {s}\n", .{long});
+    try testing.expect(parse(t, .{}, &d) == null);
+}
+
+test "a shorter string replacing a longer one compares equal to it set alone (fuzz regression)" {
+    var d: Diag = .{};
+    const a = parse("[general]\nterminal=500\nterminal = 0\n", .{}, &d).?;
+    const b = parse("[general]\nterminal = 0\n", .{}, &d).?;
+    try testing.expect(std.meta.eql(a, b));
+}
+
+test "duplicate keys warn and the last value wins" {
+    var d: Diag = .{};
+    const s = parse("[appearance]\ninner_gaps = 1\ninner_gaps = 2\n", .{}, &d).?;
+    try testing.expectEqual(@as(i32, 2), s.appearance.inner_gaps.value);
+    try testing.expectEqual(@as(usize, 1), d.warnings);
+}
+
+test "CRLF line endings and invalid UTF-8" {
+    var d: Diag = .{};
+    const s = parse("[appearance]\r\nouter_gaps = 5\r\n", .{}, &d).?;
+    try testing.expectEqual(@as(i32, 5), s.appearance.outer_gaps.value);
+    try testing.expect(parse("[general]\nterminal = \xff\n", .{}, &d) == null);
+}
+
+test "diagnostics are bounded" {
+    var d: Diag = .{};
+    var text: [2000]u8 = undefined;
+    var n: usize = 0;
+    for (0..40) |_| {
+        @memcpy(text[n..][0..4], "bad\n");
+        n += 4;
+    }
+    try testing.expect(parse(text[0..n], .{}, &d) == null);
+    try testing.expectEqual(@as(usize, 40), d.errors);
+    try testing.expectEqual(@as(usize, Diag.max), d.n);
+}
+
+test "layers: a later file overrides key by key, a broken one changes nothing" {
+    var d: Diag = .{};
+    var s: Settings = .{};
+    s = parse("[appearance]\ninner_gaps = 1\nouter_gaps = 2\n", s, &d).?;
+    s = parse("[appearance]\nouter_gaps = 3\n", s, &d).?;
+    try testing.expectEqual(@as(i32, 1), s.appearance.inner_gaps.value);
+    try testing.expectEqual(@as(i32, 3), s.appearance.outer_gaps.value);
+    try testing.expect(parse("[appearance]\ninner_gaps = 9\nouter_gaps = x\n", s, &d) == null);
+    try testing.expectEqual(@as(i32, 1), s.appearance.inner_gaps.value);
+}
+
+test "list settings append within and across layers" {
+    var d: Diag = .{};
+    var s: Settings = .{};
+    s = parse("[autostart]\nexec = one\nexec = two\n", s, &d).?;
+    s = parse("[autostart]\nexec = three\n", s, &d).?;
+    try testing.expectEqual(@as(usize, 0), d.warnings);
+    try testing.expectEqual(@as(usize, 3), s.autostart.exec.len);
+    try testing.expectEqualStrings("one", s.autostart.exec.items[0].slice());
+    try testing.expectEqualStrings("three", s.autostart.exec.items[2].slice());
+    // The list cap rejects the file as a whole instead of dropping entries.
+    var full: [400]u8 = undefined;
+    var n: usize = 0;
+    const header = "[autostart]\n";
+    @memcpy(full[n..][0..header.len], header);
+    n += header.len;
+    for (0..17) |_| {
+        const line = "exec = x\n";
+        @memcpy(full[n..][0..line.len], line);
+        n += line.len;
+    }
+    try testing.expect(parse(full[0..n], .{}, &d) == null);
+    try testing.expectEqual(@as(usize, 1), d.errors);
+}
+
+test "restart-only settings are detected" {
+    var a: Settings = .{};
+    var b: Settings = .{};
+    var buf: [8][]const u8 = undefined;
+    try testing.expectEqual(@as(usize, 0), restartOnlyChanged(&a, &b, &buf).len);
+    b.general.xwayland = false;
+    b.appearance.inner_gaps.value = 1;
+    const changed = restartOnlyChanged(&a, &b, &buf);
+    try testing.expectEqual(@as(usize, 1), changed.len);
+    try testing.expectEqualStrings("general.xwayland", changed[0]);
+    a = b;
+}
+
+test "the shipped config/ray.conf is valid and equals the defaults" {
+    var d: Diag = .{};
+    var buf: [max_file_size + 1]u8 = undefined;
+    var s: Settings = .{};
+    try testing.expectEqual(FileResult.applied, applyFile("config/ray.conf", &s, &d, &buf));
+    try testing.expectEqual(@as(usize, 0), d.n);
+    try testing.expect(std.meta.eql(s, Settings{}));
+}
+
+test "missing file" {
+    var d: Diag = .{};
+    var buf: [max_file_size + 1]u8 = undefined;
+    var s: Settings = .{};
+    try testing.expectEqual(FileResult.missing, applyFile("tests/config/does-not-exist.conf", &s, &d, &buf));
+    try testing.expectEqual(FileResult.missing, applyFile("config/init.lua/ray.conf", &s, &d, &buf));
+    try testing.expectEqual(@as(usize, 0), d.n);
+}
+
+test "each visits every setting" {
+    const Counter = struct {
+        n: usize = 0,
+        fn visit(c: *@This(), _: []const u8, _: []const u8, _: Value) void {
+            c.n += 1;
+        }
+    };
+    var c: Counter = .{};
+    const s: Settings = .{};
+    each(&s, &c, Counter.visit);
+    try testing.expectEqual(@as(usize, 11), c.n);
+}
+
+// ---- fuzzing (tests/stress, docs/TORTURE.md) ----------------------------------
+
+/// Writes `s` as ray.conf text that parses back to exactly `s`.
+fn serialize(s: *const Settings, buf: []u8) ![]const u8 {
+    var w: std.Io.Writer = .fixed(buf);
+    const Emit = struct {
+        w: *std.Io.Writer,
+        section: []const u8 = "",
+        failed: bool = false,
+        fn f(e: *@This(), section: []const u8, key: []const u8, v: Value) void {
+            if (!std.mem.eql(u8, e.section, section)) {
+                e.w.print("[{s}]\n", .{section}) catch {
+                    e.failed = true;
+                };
+                e.section = section;
+            }
+            switch (v) {
+                .boolean => |b| e.w.print("{s} = {}\n", .{ key, b }) catch {
+                    e.failed = true;
+                },
+                .integer => |i| e.w.print("{s} = {d}\n", .{ key, i }) catch {
+                    e.failed = true;
+                },
+                .string => |str| e.w.print("{s} = {s}\n", .{ key, str }) catch {
+                    e.failed = true;
+                },
+                // Quoted: keeps leading/trailing blanks and quotes inside.
+                .text => |str| e.w.print("{s} = \"{s}\"\n", .{ key, str }) catch {
+                    e.failed = true;
+                },
+                .list => |items| for (items) |item| e.w.print("{s} = \"{s}\"\n", .{ key, item }) catch {
+                    e.failed = true;
+                },
+            }
+        }
+    };
+    var e: Emit = .{ .w = &w };
+    each(s, &e, Emit.f);
+    if (e.failed) return error.NoSpaceLeft;
+    return w.buffered();
+}
+
+/// Every value of an accepted configuration is in its documented domain.
+fn checkDomain(s: *const Settings) !void {
+    inline for (std.meta.fields(Settings)) |sf| {
+        const sec = &@field(s, sf.name);
+        inline for (std.meta.fields(sf.type)) |kf| {
+            const v = &@field(sec, kf.name);
+            const T = kf.type;
+            if (comptime hasDecl(T, "is_list")) {
+                if (v.len > T.capacity) return error.OutOfDomain;
+                for (v.slice()) |item| {
+                    const Item = @TypeOf(item);
+                    if (item.len > Item.capacity or hasControl(item.slice()) or !std.unicode.utf8ValidateSlice(item.slice())) return error.OutOfDomain;
+                }
+            } else if (comptime hasDecl(T, "min")) {
+                if (v.value < T.min or v.value > T.max) return error.OutOfDomain;
+            } else if (comptime hasDecl(T, "capacity")) {
+                if (v.len > T.capacity or hasControl(v.slice()) or !std.unicode.utf8ValidateSlice(v.slice())) return error.OutOfDomain;
+            } else if (comptime hasDecl(T, "optional")) {
+                if (!v.none) {
+                    if (v.text[0] != '#') return error.OutOfDomain;
+                    for (v.text[1..]) |ch| if (!std.ascii.isHex(ch) or std.ascii.isUpper(ch)) return error.OutOfDomain;
+                } else if (!T.optional) return error.OutOfDomain;
+            }
+        }
+    }
+}
+
+/// The invariants every input must keep (also the std.testing.fuzz target).
+fn fuzzOne(input: []const u8) !void {
+    var base: Settings = .{};
+    base.appearance.inner_gaps.value = 17; // a non-default base
+    const before = base;
+    var d: Diag = .{};
+    const result = parse(input, base, &d);
+    // Transactional: the base is a value and must never change.
+    if (!std.meta.eql(base, before)) return error.BaseChanged;
+    if (d.n > Diag.max or d.n > d.errors + d.warnings) return error.DiagCount;
+    for (d.slice()) |item| if (item.len == 0) return error.EmptyMessage;
+    const s = result orelse {
+        if (d.errors == 0) return error.RejectedWithoutError;
+        return;
+    };
+    if (d.errors != 0) return error.AcceptedWithErrors;
+    try checkDomain(&s);
+    // Round trip: what was accepted can be written and read back exactly.
+    var buf: [32768]u8 = undefined;
+    const text = try serialize(&s, &buf);
+    var d2: Diag = .{};
+    const again = parse(text, .{}, &d2) orelse {
+        for (d2.slice()) |item| std.debug.print("round trip: line {d}: {s}\n{s}\n", .{ item.line, item.text(), text });
+        return error.RoundTripRejected;
+    };
+    if (d2.n != 0 or !std.meta.eql(again, s)) return error.RoundTripDiffers;
+}
+
+const fuzz_corpus = [_][]const u8{
+    "",
+    "[general]\nfocus_new_windows = no\nterminal = \"kitty -1\"\n",
+    "[appearance]\ninner_gaps = 500\nouter_gaps = 0\nborder_active = #FFffFF80\nborder_inactive = none\n",
+    "[input]\nmouse_modifier = MOD1\nfocus_follows_mouse = 1\n",
+    "[autostart]\nexec = \"waybar\"\nexec = swaybg -i ~/wall.png\n",
+    "[general\nxwayland = true\n",
+    "[appearance]\nborder_width = 65\n",
+    "\xff\xfe",
+    "[general]\nterminal = a\x00b\n",
+    @embedFile("fuzz/ray.conf"),
+};
+
+// A std.testing.fuzz target: in normal test runs it checks the corpus.
+// Coverage-guided fuzzing (`zig test -ffuzz`) does not build with Zig 0.16.0
+// itself (lib/compiler/test_runner.zig:566 passes a builtin.StackTrace where
+// std.debug.StackTrace is expected), so the seeded generator below is the
+// fuzzer that runs; this target is ready for a fixed Zig.
+test "fuzz target: ray.conf parser invariants" {
+    try std.testing.fuzz({}, struct {
+        fn one(_: void, smith: *std.testing.Smith) anyerror!void {
+            var buf: [8192]u8 = undefined;
+            const n = smith.sliceWithHash(&buf, 0x5ea7c0f);
+            try fuzzOne(buf[0..n]);
+        }
+    }.one, .{ .corpus = &fuzz_corpus });
+}
+
+/// Seeded structured inputs: valid lines, damaged lines, random bytes,
+/// boundary values. Deterministic; the seed of a failing input is printed.
+fn generate(r: std.Random, buf: []u8) []const u8 {
+    var w: std.Io.Writer = .fixed(buf);
+    const sections = [_][]const u8{ "general", "appearance", "input", "autostart", "future", "" };
+    const keys = [_][]const u8{ "focus_new_windows", "terminal", "xwayland", "inner_gaps", "outer_gaps", "border_width", "border_active", "border_inactive", "mouse_modifier", "focus_follows_mouse", "exec", "unknown", "" };
+    const values = [_][]const u8{ "true", "false", "yes", "OFF", "1", "0", "maybe", "", "8", "-1", "500", "501", "64", "65", "2147483647", "2147483648", "-2147483649", "99999999999999999999", "0x10", "1e3", "#5294e2", "#5294E2FF", "#12345", "#gggggg", "none", "NONE", "super", "Alt", "ctrl", "hyper", "\"quoted\"", "'single'", "\"open", "a\x01b", "\xc3\x28", "Ω日本", "=", "==", "[x]", "#", ";" };
+    const n_lines = r.uintLessThan(usize, 30);
+    var i: usize = 0;
+    while (i < n_lines) : (i += 1) {
+        const k = r.uintLessThan(u32, 100);
+        (if (k < 15)
+            w.print("[{s}]", .{sections[r.uintLessThan(usize, sections.len)]})
+        else if (k < 80)
+            w.print("{s}{s}{s}", .{ keys[r.uintLessThan(usize, keys.len)], ([_][]const u8{ "=", " = ", "\t=\t", " " })[r.uintLessThan(usize, 4)], values[r.uintLessThan(usize, values.len)] })
+        else if (k < 85)
+            w.print("# {s}", .{values[r.uintLessThan(usize, values.len)]})
+        else if (k < 90) blk: {
+            // Random bytes (any value, including NUL and invalid UTF-8).
+            var junk: [64]u8 = undefined;
+            r.bytes(junk[0..r.uintLessThan(usize, junk.len)]);
+            break :blk w.writeAll(junk[0..r.uintLessThan(usize, junk.len)]);
+        } else if (k < 93) blk: {
+            // A long value (around the 256-byte string limit).
+            w.writeAll("terminal = ") catch {};
+            const len = ([_]usize{ 255, 256, 257, 1000 })[r.uintLessThan(usize, 4)];
+            var j: usize = 0;
+            while (j < len) : (j += 1) w.writeByte('x') catch break;
+            break :blk {};
+        } else w.writeAll("")) catch break;
+        w.writeAll(if (r.uintLessThan(u32, 10) == 0) "\r\n" else "\n") catch break;
+    }
+    return w.buffered();
+}
+
+test "fuzz: 20000 seeded ray.conf inputs keep the parser invariants" {
+    var prng: std.Random.DefaultPrng = .init(0x7a5c_2026);
+    var buf: [16384]u8 = undefined;
+    var accepted: usize = 0;
+    var i: usize = 0;
+    while (i < 20000) : (i += 1) {
+        const seed = prng.random().int(u64);
+        var case: std.Random.DefaultPrng = .init(seed);
+        const input = generate(case.random(), &buf);
+        fuzzOne(input) catch |err| {
+            std.debug.print("conf fuzz: seed {d} failed with {s}; input:\n{s}\n", .{ seed, @errorName(err), input });
+            return err;
+        };
+        var d: Diag = .{};
+        if (parse(input, .{}, &d) != null) accepted += 1;
+    }
+    // Both outcomes must actually be exercised.
+    try testing.expect(accepted > 500 and accepted < 19500);
+}
+
+test "fuzz regression corpus (tests/stress/conf-corpus via src/fuzz)" {
+    for (fuzz_corpus) |input| try fuzzOne(input);
+}

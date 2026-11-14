@@ -251,7 +251,7 @@ const Popup = struct {
         var px = x +| rect.x;
         var py = y +| rect.y +| rect.height;
         if (r.server.outputAt(x +| rect.x, y +| rect.y)) |output| {
-            const box = output.box();
+            const box = output.box() orelse return;
             const width = p.native.surface.current.width;
             const height = p.native.surface.current.height;
             px = std.math.clamp(px, box.x, @max(box.x, box.x +| box.width -| width));

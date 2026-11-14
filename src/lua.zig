@@ -5,6 +5,7 @@
 //! Lua never sees native pointers: windows, outputs and timers are integer
 //! ids, and the host validates every id on use.
 const std = @import("std");
+const conf = @import("conf");
 pub const c = @cImport({
     @cInclude("lua.h");
     @cInclude("lualib.h");
@@ -12,11 +13,11 @@ pub const c = @cImport({
 });
 
 const log = std.log.scoped(.lua);
-const gpa = std.heap.c_allocator;
+const gpa = @import("alloc").gpa;
 
 pub const api_version = 1;
 /// RayWM release this host belongs to (raywm.version).
-pub const version = "0.2.0";
+pub const version = "0.2.3";
 pub const Event = enum {
     view_map,
     view_unmap,
@@ -41,6 +42,9 @@ pub const Event = enum {
     workspace_remove,
     /// A workspace is shown on its output: (id, previously shown id or 0).
     workspace_activate,
+    /// A special workspace was shown (true) or hidden (false): (id, shown).
+    /// It overlays the output's active workspace; at most one is shown.
+    workspace_special,
     /// Renamed, moved to another output, or its urgency changed.
     workspace_change,
     /// A window moved to another workspace: (view, workspace or 0, old or 0).
@@ -83,6 +87,8 @@ pub const ViewInfo = struct {
     max_w: i32 = 0,
     max_h: i32 = 0,
     floating: bool = false,
+    sticky: bool = false,
+    pinned: bool = false,
     fullscreen: bool = false,
     fullscreen_output: u32 = 0,
     maximized: bool = false,
@@ -119,6 +125,8 @@ pub const OutputInfo = struct {
     mode: [3]i32 = .{ 0, 0, 0 },
     physical: [2]i32 = .{ 0, 0 },
     adaptive_sync: bool = false,
+    /// raywm.output_configure { allow_tearing } (RayWM 0.2.1).
+    allow_tearing: bool = false,
 };
 pub const ModeInfo = struct { w: i32, h: i32, refresh: i32, preferred: bool, current: bool };
 /// raywm.output_configure options; null: unchanged.
@@ -131,6 +139,8 @@ pub const OutputConfig = struct {
     /// null: unchanged; auto: next to the other outputs.
     position: ?union(enum) { auto, at: [2]i32 } = null,
     adaptive_sync: ?bool = null,
+    /// Tearing page flips for fullscreen windows that ask for them.
+    allow_tearing: ?bool = null,
 };
 pub const OutputTarget = union(enum) { id: u32, name: []const u8 };
 /// raywm.input_configure settings (see src/inputconfig.zig); strings are
@@ -165,12 +175,15 @@ pub const WorkspaceInfo = struct {
     /// Name of the output it was created on.
     home: [*:0]const u8,
     output: u32,
+    /// The output's active workspace, or a special workspace currently shown.
     active: bool,
     urgent: bool,
     orphan: bool,
+    special: bool,
 };
 pub const WorkspaceCmd = union(enum) { activate, rename: []const u8, set_output: u32, remove };
 pub const WorkspaceResult = enum { ok, stale, no_output, bad_name };
+pub const ToggleResult = enum { shown, hidden, stale, not_special };
 pub const AdoptResult = enum { ok, stale, owned };
 pub const OutputResult = enum { ok, stale, no_output_left, bad_mode, bad_scale, bad_transform, rejected, failed };
 pub const CreateResult = union(enum) { ok: u32, stale, bad_name, failed };
@@ -188,6 +201,8 @@ pub const ViewCmd = union(enum) {
     show: bool,
     border: Border,
     floating: bool,
+    sticky: bool,
+    pinned: bool,
     /// `output` 0: the output the window is on.
     fullscreen: struct { on: bool, output: u32 },
     maximize: bool,
@@ -230,7 +245,7 @@ pub const RectOptions = struct {
 pub const ResourceResult = union(enum) { ok: u32, stale, hidden, failed, limit };
 pub const Limits = struct {
     memory: usize = 64 << 20,
-    instructions: u64 = 200_000_000,
+    instructions: u64 = 10_000_000,
     /// Receives plugin/config errors ("init.lua" for the config itself).
     report: *const fn (source: []const u8, msg: []const u8) void = logError,
     /// Receives non-fatal warnings (missing config, ignored reload, ...).
@@ -283,6 +298,70 @@ pub fn parseColor(spec: []const u8) ?[4]f32 {
         v[i] = @as(f32, @floatFromInt(byte)) / 255.0;
     }
     return .{ v[0] * v[3], v[1] * v[3], v[2] * v[3], v[3] };
+}
+
+/// Lua runs precompiled (binary) chunks without checking them, and a
+/// damaged one can crash the interpreter, i.e. the compositor (Lua 5.4
+/// manual, `load`). init.lua and plugins are therefore loaded as text, and
+/// this makes every other way to load code text-only too: load, loadfile,
+/// dofile and require's Lua searcher. Found by tests/stress (lua bytecode):
+/// 7 of 40 randomly corrupted plugin files crashed RayWM before.
+const text_only =
+    \\local load, loadfile, searchpath, select, error = load, loadfile, package.searchpath, select, error
+    \\_G.load = function(chunk, name, _, ...)
+    \\  if select("#", ...) > 0 then return load(chunk, name, "t", ...) end
+    \\  return load(chunk, name, "t")
+    \\end
+    \\_G.loadfile = function(file, _, ...)
+    \\  if select("#", ...) > 0 then return loadfile(file, "t", ...) end
+    \\  return loadfile(file, "t")
+    \\end
+    \\_G.dofile = function(file)
+    \\  local fn, err = loadfile(file, "t")
+    \\  if not fn then error(err, 2) end
+    \\  return fn()
+    \\end
+    \\package.searchers[2] = function(name)
+    \\  local path, err = searchpath(name, package.path)
+    \\  if not path then return "\n\t" .. err end
+    \\  local fn, lerr = loadfile(path, "t")
+    \\  if not fn then error(("error loading module '%s' from file '%s':\n\t%s"):format(name, path, lerr), 2) end
+    \\  return fn, path
+    \\end
+;
+
+/// raywm.settings: { general = {...}, appearance = {...}, input = {...} }.
+fn pushSettings(L: ?*c.lua_State, s: *const conf.Settings) void {
+    c.lua_createtable(L, 0, 4);
+    const Push = struct {
+        fn field(l: ?*c.lua_State, section: []const u8, key: []const u8, v: conf.Value) void {
+            var sec: [32]u8 = undefined;
+            var k: [64]u8 = undefined;
+            const sec_z = std.fmt.bufPrintZ(&sec, "{s}", .{section}) catch unreachable;
+            const key_z = std.fmt.bufPrintZ(&k, "{s}", .{key}) catch unreachable;
+            if (c.lua_getfield(l, -1, sec_z.ptr) != c.LUA_TTABLE) {
+                c.lua_settop(l, -2);
+                c.lua_createtable(l, 0, 8);
+                c.lua_pushvalue(l, -1);
+                c.lua_setfield(l, -3, sec_z.ptr);
+            }
+            switch (v) {
+                .boolean => |b| c.lua_pushboolean(l, @intFromBool(b)),
+                .integer => |i| c.lua_pushinteger(l, i),
+                .string, .text => |str_v| _ = c.lua_pushlstring(l, str_v.ptr, str_v.len),
+                .list => |items| {
+                    c.lua_createtable(l, @intCast(items.len), 0);
+                    for (items, 1..) |item, i| {
+                        _ = c.lua_pushlstring(l, item.ptr, item.len);
+                        c.lua_rawseti(l, -2, @intCast(i));
+                    }
+                },
+            }
+            c.lua_setfield(l, -2, key_z.ptr);
+            c.lua_settop(l, -2);
+        }
+    };
+    conf.each(s, L, Push.field);
 }
 
 /// `H.Api` must provide the host functions called below (see host.zig).
@@ -390,7 +469,8 @@ pub fn Runtime(comptime H: type) type {
             self.in_config = true;
             // Settings that belong to the configuration start afresh.
             if (@hasDecl(Api, "configBegin")) Api.configBegin(self.host);
-            const rc = c.luaL_loadfilex(L, self.config_path.ptr, null);
+            // Text only: see text_only below.
+            const rc = c.luaL_loadfilex(L, self.config_path.ptr, "t");
             if (rc != c.LUA_OK) {
                 const msg = str(L, -1, "?");
                 // A missing config is normal on first start: fallback bindings apply.
@@ -461,12 +541,21 @@ pub fn Runtime(comptime H: type) type {
             const dir = std.fs.path.dirname(self.config_path) orelse ".";
             _ = c.lua_pushlstring(L, dir.ptr, dir.len);
             c.lua_setfield(L, -2, "config_dir");
+            // ray.conf, read-only by convention: a fresh copy per Lua state,
+            // so a reload always sees the settings that reload validated.
+            if (@hasDecl(Api, "settings")) {
+                pushSettings(L, Api.settings(self.host));
+                c.lua_setfield(L, -2, "settings");
+            }
             inline for (globals) |g| {
                 c.lua_pushlightuserdata(L, self);
                 c.lua_pushcclosure(L, g[1], 1);
                 c.lua_setfield(L, -2, g[0]);
             }
             c.lua_setglobal(L, "raywm");
+            // Runs before any configuration code, with the libraries intact.
+            if (c.luaL_loadbufferx(L, text_only, text_only.len, "=raywm", "t") != c.LUA_OK) return c.lua_error(L);
+            c.lua_callk(L, 0, 0, 0, null);
             return 0;
         }
 
@@ -510,6 +599,9 @@ pub fn Runtime(comptime H: type) type {
             if (self.reload_requested) {
                 self.reload_requested = false;
                 log.info("reloading {s}", .{self.config_path});
+                // ray.conf first: plugins set up again with the new values
+                // (or the previous ones, if the file has errors).
+                if (@hasDecl(Api, "reloadSettings")) Api.reloadSettings(self.host, self.config_path);
                 self.stop();
                 self.start() catch {
                     self.limits.report("raywm", "reload failed: out of memory; Lua is disabled until the next reload");
@@ -870,6 +962,13 @@ pub fn Runtime(comptime H: type) type {
             .{ "input_devices", lInputDevices },
             .{ "keyboard_layout", lKeyboardLayout },
             .{ "keyboard_set_layout", lKeyboardSetLayout },
+        } ++ globals_later;
+
+        /// Added after v0.2.2 (api = 1 still: additions only).
+        const globals_later = .{
+            .{ "workspace_toggle", lWorkspaceToggle },
+            .{ "view_sticky", viewCmd(.sticky) },
+            .{ "view_pinned", viewCmd(.pinned) },
         };
 
         const ctx_fns = .{
@@ -902,7 +1001,16 @@ pub fn Runtime(comptime H: type) type {
             var buf: [std.fs.max_path_bytes]u8 = undefined;
             const path = std.fmt.bufPrintZ(&buf, "{s}/plugins/{s}.lua", .{ dir, name }) catch
                 return c.luaL_error(L, "plugin path too long");
-            if (c.luaL_loadfilex(L, path.ptr, null) != c.LUA_OK) return fail(L, name);
+            if (c.luaL_loadfilex(L, path.ptr, "t") != c.LUA_OK) return fail(L, name);
+            // Loading a plugin (its chunk and setup) gets a budget of its own,
+            // like a top-level callback: a plugin that runs away while loading
+            // fails alone, and init.lua goes on with what it had left.
+            // Before, the exhausted budget kept failing every instruction after
+            // the plugin's error, so the rest of init.lua was lost (found by
+            // tests/stress lua failure-modes, load_spin).
+            const saved_budget = self.budget;
+            self.budget = self.limits.instructions;
+            defer self.endPluginBudget(saved_budget);
             if (c.lua_pcallk(L, 0, 1, 0, 0, null) != c.LUA_OK) return fail(L, name);
             if (c.lua_type(L, -1) != c.LUA_TTABLE) return failMsg(L, name, "must return a table");
             _ = c.lua_getfield(L, -1, "api");
@@ -942,6 +1050,16 @@ pub fn Runtime(comptime H: type) type {
             log.info("loaded plugin {s} ({d} key bindings)", .{ name, binds });
             c.lua_pushboolean(L, 1);
             return 1;
+        }
+
+        /// After a plugin load: clear an exhausted budget and give init.lua
+        /// back what it had left.
+        fn endPluginBudget(self: *Self, saved: u64) void {
+            if (self.exhausted) {
+                self.exhausted = false;
+                c.lua_sethook(self.L, hook, c.LUA_MASKCOUNT, hook_step);
+            }
+            self.budget = saved;
         }
 
         fn fail(L: ?*c.lua_State, name: []const u8) c_int {
@@ -1007,6 +1125,7 @@ pub fn Runtime(comptime H: type) type {
                 setInt(L, "h", info.physical[1]);
                 c.lua_setfield(L, -2, "physical");
                 setBool(L, "adaptive_sync", info.adaptive_sync);
+                setBool(L, "allow_tearing", info.allow_tearing);
                 n += 1;
                 c.lua_rawseti(L, -2, n);
             }
@@ -1135,7 +1254,8 @@ pub fn Runtime(comptime H: type) type {
         }
 
         /// raywm.output_configure(name or id, { enabled, mode, scale,
-        /// transform, position, adaptive_sync }) -> true, or nil + reason.
+        /// transform, position, adaptive_sync, allow_tearing }) -> true,
+        /// or nil + reason.
         /// Tested before it is applied; refuses to disable the last output.
         fn lOutputConfigure(L: ?*c.lua_State) callconv(.c) c_int {
             const self = get(L);
@@ -1191,6 +1311,8 @@ pub fn Runtime(comptime H: type) type {
             c.lua_settop(L, -2);
             if (c.lua_getfield(L, 2, "adaptive_sync") != c.LUA_TNIL) cfg.adaptive_sync = c.lua_toboolean(L, -1) != 0;
             c.lua_settop(L, -2);
+            if (c.lua_getfield(L, 2, "allow_tearing") != c.LUA_TNIL) cfg.allow_tearing = c.lua_toboolean(L, -1) != 0;
+            c.lua_settop(L, -2);
             const r = Api.outputConfigure(self.host, target, cfg);
             if (r == .ok) {
                 c.lua_pushboolean(L, 1);
@@ -1225,6 +1347,8 @@ pub fn Runtime(comptime H: type) type {
             setInt(L, "max_w", info.max_w);
             setInt(L, "max_h", info.max_h);
             setBool(L, "floating", info.floating);
+            setBool(L, "sticky", info.sticky);
+            setBool(L, "pinned", info.pinned);
             setBool(L, "fullscreen", info.fullscreen);
             setInt(L, "fullscreen_output", info.fullscreen_output);
             setBool(L, "maximized", info.maximized);
@@ -1252,9 +1376,10 @@ pub fn Runtime(comptime H: type) type {
             setBool(L, "active", w.active);
             setBool(L, "urgent", w.urgent);
             setBool(L, "orphan", w.orphan);
+            setBool(L, "special", w.special);
         }
 
-        /// raywm.workspaces() -> { {id, name, home, output, active, urgent, orphan}, ... }
+        /// raywm.workspaces() -> { {id, name, home, output, active, urgent, orphan, special}, ... }
         fn lWorkspaces(L: ?*c.lua_State) callconv(.c) c_int {
             const self = get(L);
             var buf: [max_list]u32 = undefined;
@@ -1302,6 +1427,21 @@ pub fn Runtime(comptime H: type) type {
                     return 1;
                 }
             }.f;
+        }
+
+        /// raywm.workspace_toggle(id) -> true (shown), false (hidden), or
+        /// nil + "stale" | "not_special". A special workspace overlays its
+        /// output's active workspace.
+        fn lWorkspaceToggle(L: ?*c.lua_State) callconv(.c) c_int {
+            const self = get(L);
+            const r = Api.workspaceToggle(self.host, checkId(L, 1));
+            switch (r) {
+                .shown => c.lua_pushboolean(L, 1),
+                .hidden => c.lua_pushboolean(L, 0),
+                .stale => return stale(L),
+                .not_special => return failWith(L, "not_special"),
+            }
+            return 1;
         }
 
         /// raywm.pointer() -> { x, y, busy }
@@ -1352,6 +1492,8 @@ pub fn Runtime(comptime H: type) type {
                         .opacity => .{ .opacity = @floatCast(std.math.clamp(number(L, 2), 0, 1)) },
                         .show => .{ .show = c.lua_toboolean(L, 2) != 0 },
                         .floating => .{ .floating = c.lua_toboolean(L, 2) != 0 },
+                        .sticky => .{ .sticky = c.lua_toboolean(L, 2) != 0 },
+                        .pinned => .{ .pinned = c.lua_toboolean(L, 2) != 0 },
                         .fullscreen => .{ .fullscreen = .{
                             .on = c.lua_toboolean(L, 2) != 0,
                             .output = if (c.lua_type(L, 3) <= c.LUA_TNIL) 0 else checkId(L, 3),
@@ -1638,14 +1780,16 @@ pub fn Runtime(comptime H: type) type {
             return stale(L);
         }
 
-        /// ctx.workspace_create(output, name) -> id, or nil + "stale" | "bad_name" | "failed".
-        /// The workspace belongs to this plugin (see workspace.zig).
+        /// ctx.workspace_create(output, name[, special]) -> id, or nil +
+        /// "stale" | "bad_name" | "failed". The workspace belongs to this
+        /// plugin (see workspace.zig). A special workspace is an overlay.
         fn ctxWorkspaceCreate(L: ?*c.lua_State) callconv(.c) c_int {
             const self = get(L);
             const oid = checkId(L, 1);
             const name = std.mem.span(c.luaL_checklstring(L, 2, null));
+            const special = c.lua_toboolean(L, 3) != 0;
             checkRegister(L);
-            const wid = switch (Api.workspaceCreate(self.host, oid, name)) {
+            const wid = switch (Api.workspaceCreate(self.host, oid, name, special)) {
                 .ok => |w| w,
                 .stale => return stale(L),
                 .bad_name => return failWith(L, "bad_name"),

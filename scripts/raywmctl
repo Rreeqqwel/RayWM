@@ -10,7 +10,7 @@ import sys
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--socket", default=os.environ.get("RAYWM_SOCKET"))
-    parser.add_argument("method", choices=("windows", "outputs", "workspaces", "focus", "workspace_activate", "window_workspace", "subscribe"))
+    parser.add_argument("method", choices=("windows", "outputs", "workspaces", "perf", "focus", "workspace_activate", "window_workspace", "subscribe"))
     parser.add_argument("arguments", nargs="*")
     args = parser.parse_args()
     if not args.socket:
@@ -65,6 +65,8 @@ def main():
                     if not line or len(line) > 131072:
                         return
                     print(json.dumps(json.loads(line), ensure_ascii=False), flush=True)
+            elif args.method == "perf":
+                print(json.dumps(response["result"], indent=2))
             else:
                 print(json.dumps(response["result"]))
             break
