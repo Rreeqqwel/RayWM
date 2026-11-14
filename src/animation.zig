@@ -112,7 +112,6 @@ const Job = struct {
     start: u64,
     duration: u64,
     easing: lua.Easing,
-    active: bool = true,
     waiting: bool = false,
 };
 
@@ -120,6 +119,9 @@ pub const Engine = struct {
     server: *srv.Server = undefined,
     slots: [capacity]?Job = @splat(null),
     generation: u32 = 0,
+    /// Completed non-default transforms retain their registration, but no
+    /// longer occupy a frame-processing slot. Key: animation id; value: view id.
+    completed: std.AutoHashMapUnmanaged(u32, u32) = .empty,
 
     pub fn init(e: *Engine, server: *srv.Server) void {
         e.* = .{ .server = server };
@@ -131,10 +133,14 @@ pub const Engine = struct {
     }
 
     pub fn alive(e: *Engine, id: u32) bool {
-        return e.get(id) != null;
+        return e.get(id) != null or e.completed.contains(id);
     }
 
     pub fn cancel(e: *Engine, id: u32, reset: bool) void {
+        if (e.completed.fetchRemove(id)) |finished| {
+            if (reset) if (e.server.viewById(finished.value)) |v| v.setVisual(.{ 0, 0 }, 1);
+            return;
+        }
         const job = e.get(id) orelse return;
         switch (job.target) {
             .view => |vid| if (reset) {
@@ -147,15 +153,37 @@ pub const Engine = struct {
 
     pub fn clear(e: *Engine) void {
         for (&e.slots) |*slot| if (slot.*) |job| e.cancel(job.id, true);
+        var it = e.completed.valueIterator();
+        while (it.next()) |vid| if (e.server.viewById(vid.*)) |v| v.setVisual(.{ 0, 0 }, 1);
+        e.completed.deinit(srv.gpa);
+        e.completed = .empty;
+    }
+
+    fn forgetCompletedView(e: *Engine, vid: u32) void {
+        var it = e.completed.iterator();
+        while (it.next()) |entry| if (entry.value_ptr.* == vid) {
+            e.completed.removeByPtr(entry.key_ptr);
+        };
     }
 
     pub fn viewGone(e: *Engine, id: u32) void {
         for (&e.slots) |*slot| if (slot.*) |job| if (job.target == .view and job.target.view == id) e.cancel(job.id, false);
+        e.forgetCompletedView(id);
     }
 
     pub fn start(e: *Engine, vid: u32, options: lua.AnimationOptions) lua.ResourceResult {
         const v = e.server.viewById(vid) orelse return .stale;
         if (e.server.session_lock.locked() or !v.visible() or (options.snapshot and !v.revealed)) return .hidden;
+        // Reserve room for every in-flight job to complete. Frame processing
+        // must not allocate or lose an owner when a transform finishes.
+        if (!options.snapshot) e.completed.ensureUnusedCapacity(srv.gpa, capacity) catch return .failed;
+        // A replacement may reuse its own active slot. Do not discard an
+        // existing owner until the new job is certain to have a slot and id.
+        const index = for (e.slots, 0..) |slot, i| {
+            if (slot == null) break i;
+            if (!options.snapshot and slot.?.target == .view and slot.?.target.view == vid) break i;
+        } else return .limit;
+        if (e.generation == std.math.maxInt(u32) >> 8) return .limit;
         const from = [3]f64{ options.from_x orelse v.visual_offset[0], options.from_y orelse v.visual_offset[1], options.from_opacity orelse (if (options.snapshot) @as(f32, 1) else v.visual_alpha) };
         var snap: ?*Snapshot = null;
         if (options.snapshot) {
@@ -170,17 +198,8 @@ pub const Engine = struct {
             }
         } else {
             // Replace, preserving the exact current transform for interruption.
+            e.forgetCompletedView(vid);
             for (&e.slots) |*slot| if (slot.*) |job| if (job.target == .view and job.target.view == vid) e.cancel(job.id, false);
-        }
-        const index = for (e.slots, 0..) |slot, i| {
-            if (slot == null) break i;
-        } else {
-            if (snap) |s| s.destroy();
-            return .limit;
-        };
-        if (e.generation == std.math.maxInt(u32) >> 8) {
-            if (snap) |s| s.destroy();
-            return .limit;
         }
         e.generation += 1;
         const id = (e.generation << 8) | @as(u32, @intCast(index));
@@ -203,7 +222,8 @@ pub const Engine = struct {
     pub fn running(e: *const Engine) usize {
         var n: usize = 0;
         for (e.slots) |slot| if (slot) |job| {
-            n += @intFromBool(job.active);
+            _ = job;
+            n += 1;
         };
         return n;
     }
@@ -229,7 +249,6 @@ pub const Engine = struct {
         var retired = false;
         for (&e.slots) |*slot| {
             const job = if (slot.*) |*j| j else continue;
-            if (!job.active) continue;
             if (job.target == .view and e.server.viewById(job.target.view) == null) {
                 e.cancel(job.id, false);
                 retired = true;
@@ -251,7 +270,12 @@ pub const Engine = struct {
                 if (job.target == .snapshot or std.meta.eql(job.to, [3]f64{ 0, 0, 1 })) {
                     e.cancel(job.id, false);
                     retired = true;
-                } else job.active = false;
+                } else {
+                    // The visual state lives on the View. Keep its owner and
+                    // cancellation id, and return the processing slot.
+                    e.completed.putAssumeCapacityNoClobber(job.id, job.target.view);
+                    slot.* = null;
+                }
             } else active = true;
         }
         if (retired) if (e.server.rt) |rt| rt.collectResources();

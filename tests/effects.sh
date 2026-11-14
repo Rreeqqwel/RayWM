@@ -139,4 +139,46 @@ e7() {
     pixel opacity 100,100,800000
     stop
 }
-run_scenarios effects e1 e2 e3 e4 e5 e6 e7
+e8() {
+    name="more than 256 completed animations on distinct windows retain ownership"
+    WIN=$plain PLUGINS=$plugins start "$root/tests/effects/slot-lifecycle.lua" 0
+    clients=""
+    for i in $(seq 1 260); do
+        env -i PATH="$PATH" XDG_RUNTIME_DIR="$tmp" WAYLAND_DISPLAY="$(cat "$tmp/display")" \
+            RAYWM_TEST_HOLD=1 RAYWM_TEST_ROUNDS=1 "$bin/raywm-test-client" > /dev/null 2>&1 &
+        clients="$clients $!"
+    done
+    i=0
+    while [ ! -f "$tmp/animation-slots.log" ] && [ "$i" -lt 600 ]; do
+        i=$((i + 1)); sleep 0.05
+    done
+    [ -f "$tmp/animation-slots.log" ] || fail "animation completion test timed out"
+    grep -qx 'ok' "$tmp/animation-slots.log" || fail "$(cat "$tmp/animation-slots.log")"
+    stop
+    for client in $clients; do wait "$client" 2>/dev/null || true; done
+}
+e9() {
+    name="unloading a plugin resets its completed non-default animation"
+    WIN=$plain PLUGINS=$plugins start "$cfg" 1
+    super_key f8
+    capture before
+    super_key f9
+    sleep 0.9
+    capture completed
+    pixel completed 640,360,000000
+    printf 'raywm.load("probe")\nraywm.load("binds")\n' >"$tmp/config/raywm/init.lua"
+    drive key ctrl down key alt down key r down key r up key alt up key ctrl up sleep 200
+    capture restored
+    python3 - "$root/tests/support" "$tmp/before.png" "$tmp/restored.png" <<'PYCODE'
+import sys
+sys.path.insert(0, sys.argv[1])
+from png_check import decode
+a, b = decode(sys.argv[2]), decode(sys.argv[3])
+# The plugin-owned marker at x=530 is also removed on reload; compare the
+# window itself to verify that its final animation transform was reset.
+for y in range(285, 435):
+    assert a[3][y][540*a[2]:740*a[2]] == b[3][y][540*b[2]:740*b[2]]
+PYCODE
+    stop
+}
+run_scenarios effects e1 e2 e3 e4 e5 e6 e7 e8 e9

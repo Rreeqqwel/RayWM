@@ -34,7 +34,8 @@ Native output frames advance monotonic time; Lua does not run per frame.
 Map animations wait for the initial configure/reveal. Completed
 animations ending at `(0,0,1)` retire automatically. Other final
 transforms retain their registration until cancelled, replaced, unloaded
-or the view unmaps. Snapshot animations always retire at completion.
+or the view unmaps, but release their animation slot at completion. Snapshot
+animations always retire at completion.
 
 `view_will_unmap(id)` runs before native view state is cleared, allowing
 a close snapshot. `workspace_will_activate(new, old)` runs before
