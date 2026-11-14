@@ -183,19 +183,16 @@ s6() {
 }
 
 s7() {
-    name="autostart: once per start, not again on reload; new commands at the next reload"
-    start "$root/tests/session/autostart.lua" 0
-    # The shipped plugin with two commands (and later a third).
-    sed 's|^  commands = {$|  commands = { "echo a >>'"'$tmp/auto'"'", "echo b >>'"'$tmp/auto'"'",|' \
-        "$root/config/plugins/autostart.lua" >"$tmp/config/raywm/plugins/autostart.lua"
+    name="autostart: ray.conf commands once per start; new commands at the next reload"
+    CONF="$root/tests/session/ray.conf" start "$root/tests/session/autostart.lua" 0
     reload() { drive key super down key shift down key r down key r up key shift up key super up sleep 500; }
-    reload
     # spawn_once starts asynchronous processes; completion order is not
     # the order of the synchronous Lua startup callbacks.
+    reload
     [ "$(sort "$tmp/auto" 2>/dev/null)" = "$(printf 'a\nb')" ] || fail "commands did not run once: $(cat "$tmp/auto" 2>/dev/null)"
     reload
     [ "$(wc -l <"$tmp/auto")" -eq 2 ] || fail "a reload started them again"
-    sed -i 's|^  commands = { |  commands = { "echo c >>'"'$tmp/auto'"'", |' "$tmp/config/raywm/plugins/autostart.lua"
+    printf 'exec = echo c >>"$XDG_RUNTIME_DIR/auto"\n' >>"$tmp/config/raywm/ray.conf"
     reload
     [ "$(sort "$tmp/auto")" = "$(printf 'a\nb\nc')" ] || fail "the new command did not start once: $(cat "$tmp/auto")"
     stop

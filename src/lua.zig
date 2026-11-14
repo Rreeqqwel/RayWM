@@ -349,6 +349,13 @@ fn pushSettings(L: ?*c.lua_State, s: *const conf.Settings) void {
                 .boolean => |b| c.lua_pushboolean(l, @intFromBool(b)),
                 .integer => |i| c.lua_pushinteger(l, i),
                 .string, .text => |str_v| _ = c.lua_pushlstring(l, str_v.ptr, str_v.len),
+                .list => |items| {
+                    c.lua_createtable(l, @intCast(items.len), 0);
+                    for (items, 1..) |item, i| {
+                        _ = c.lua_pushlstring(l, item.ptr, item.len);
+                        c.lua_rawseti(l, -2, @intCast(i));
+                    }
+                },
             }
             c.lua_setfield(l, -2, key_z.ptr);
             c.lua_settop(l, -2);

@@ -57,6 +57,28 @@ pub fn ColorT(comptime is_optional: bool) type {
 pub const Color = ColorT(false);
 pub const OptColor = ColorT(true);
 
+/// A list setting: repeated `key = value` lines append. Every entry is a
+/// `Text(item_cap)`; layers append too, so a user file adds to the system
+/// file instead of replacing it. Used by [autostart] exec.
+pub fn List(comptime cap: usize, comptime item_cap: usize) type {
+    return struct {
+        items: [cap]Text(item_cap) = @splat(Text(item_cap){}),
+        len: u16 = 0,
+        pub const is_list = true;
+        pub const capacity = cap;
+
+        pub fn slice(l: *const @This()) []const Text(item_cap) {
+            return l.items[0..l.len];
+        }
+
+        fn append(l: *@This(), value: []const u8) ValueError!void {
+            if (l.len == cap) return error.TooMany;
+            try parseValue(Text(item_cap), &l.items[l.len], value);
+            l.len += 1;
+        }
+    };
+}
+
 /// The modifier for Super+drag (move/resize floating windows).
 pub const Modifier = enum {
     super,
@@ -70,6 +92,7 @@ pub const Settings = struct {
     general: General = .{},
     appearance: Appearance = .{},
     input: Input = .{},
+    autostart: Autostart = .{},
 
     pub const General = struct {
         /// A new window takes keyboard focus when it appears (unless a
@@ -107,6 +130,14 @@ pub const Settings = struct {
         /// Focus the window the pointer moves into.
         focus_follows_mouse: bool = false,
 
+        pub const restart_only = .{};
+    };
+
+    pub const Autostart = struct {
+        /// Commands started once per compositor session, in order, through
+        /// /bin/sh (config/plugins/autostart.lua). A reload starts only
+        /// commands that were added since the last load.
+        exec: List(16, 512) = .{},
         pub const restart_only = .{};
     };
 };
@@ -218,7 +249,8 @@ pub fn parse(text: []const u8, base: Settings, diag: *Diag) ?Settings {
         const dup = for (seen[0..n_seen]) |s| {
             if (s == hash) break true;
         } else false;
-        if (dup) diag.add(line_no, false, "[{s}] {s} set again; the last value is used", .{ sec, key });
+        // List keys append by design; a repeated scalar keeps the last one.
+        if (dup and !isListKey(sec, key)) diag.add(line_no, false, "[{s}] {s} set again; the last value is used", .{ sec, key });
         if (!dup and n_seen < seen.len) {
             seen[n_seen] = hash;
             n_seen += 1;
@@ -238,11 +270,22 @@ fn knownSection(name: []const u8) bool {
     return false;
 }
 
+fn isListKey(sec: []const u8, key: []const u8) bool {
+    inline for (std.meta.fields(Settings)) |sf| if (std.mem.eql(u8, sf.name, sec)) {
+        inline for (std.meta.fields(sf.type)) |kf| if (std.mem.eql(u8, kf.name, key)) return hasDecl(kf.type, "is_list");
+    };
+    return false;
+}
+
 fn setKey(out: *Settings, sec: []const u8, key: []const u8, value: []const u8, line: u32, diag: *Diag) void {
     inline for (std.meta.fields(Settings)) |sf| if (std.mem.eql(u8, sf.name, sec)) {
         const s = &@field(out, sf.name);
         inline for (std.meta.fields(sf.type)) |kf| if (std.mem.eql(u8, kf.name, key)) {
-            parseValue(kf.type, &@field(s, kf.name), value) catch |err| {
+            if (comptime hasDecl(kf.type, "is_list")) {
+                @field(s, kf.name).append(value) catch |err| {
+                    diag.add(line, true, "[{s}] {s} = {s}: {s}", .{ sec, key, value, explain(kf.type, err) });
+                };
+            } else parseValue(kf.type, &@field(s, kf.name), value) catch |err| {
                 diag.add(line, true, "[{s}] {s} = {s}: {s}", .{ sec, key, value, explain(kf.type, err) });
             };
             return;
@@ -259,7 +302,7 @@ fn hasDecl(comptime T: type, comptime name: []const u8) bool {
     };
 }
 
-const ValueError = error{ NotBool, NotInt, OutOfRange, TooLong, BadText, NotColor, NotKeyword };
+const ValueError = error{ NotBool, NotInt, OutOfRange, TooLong, BadText, NotColor, NotKeyword, TooMany };
 
 fn explain(comptime T: type, err: ValueError) []const u8 {
     return switch (err) {
@@ -270,6 +313,7 @@ fn explain(comptime T: type, err: ValueError) []const u8 {
         error.BadText => "quotes must enclose the whole value",
         error.NotColor => if (comptime hasDecl(T, "optional") and T.optional) "expected #rrggbb, #rrggbbaa or none" else "expected #rrggbb or #rrggbbaa",
         error.NotKeyword => if (T == Modifier) "expected super, alt, ctrl or shift" else "unknown keyword",
+        error.TooMany => if (comptime hasDecl(T, "is_list")) std.fmt.comptimePrint("at most {d} entries", .{T.capacity}) else "too many entries",
     };
 }
 
@@ -392,7 +436,12 @@ pub fn each(s: *const Settings, ctx: anytype, comptime f: fn (@TypeOf(ctx), []co
                 .{ .boolean = v.* }
             else if (T == Modifier)
                 .{ .string = @tagName(v.*) }
-            else if (comptime hasDecl(T, "min"))
+            else if (comptime hasDecl(T, "is_list")) blk: {
+                var slices: [T.capacity][]const u8 = undefined;
+                const items = v.slice();
+                for (items, 0..) |*item, i| slices[i] = item.slice();
+                break :blk .{ .list = slices[0..items.len] };
+            } else if (comptime hasDecl(T, "min"))
                 .{ .integer = v.value }
             else if (comptime hasDecl(T, "capacity"))
                 .{ .text = v.slice() }
@@ -403,8 +452,9 @@ pub fn each(s: *const Settings, ctx: anytype, comptime f: fn (@TypeOf(ctx), []co
     }
 }
 
-/// `string`: a keyword or colour; `text`: a free-form string setting.
-pub const Value = union(enum) { boolean: bool, integer: i32, string: []const u8, text: []const u8 };
+/// `string`: a keyword or colour; `text`: a free-form string setting;
+/// `list`: the entries of a repeated-key setting, in order.
+pub const Value = union(enum) { boolean: bool, integer: i32, string: []const u8, text: []const u8, list: []const []const u8 };
 
 // ---- tests ------------------------------------------------------------------
 
@@ -422,6 +472,7 @@ test "defaults match the behaviour before ray.conf" {
     try testing.expectEqualStrings("none", s.appearance.border_inactive.slice());
     try testing.expectEqual(Modifier.super, s.input.mouse_modifier);
     try testing.expect(!s.input.focus_follows_mouse);
+    try testing.expectEqual(@as(usize, 0), s.autostart.exec.len);
 }
 
 test "valid file with comments, sections and every value type" {
@@ -441,6 +492,9 @@ test "valid file with comments, sections and every value type" {
         \\[input]
         \\mouse_modifier = ALT
         \\focus_follows_mouse = on
+        \\[autostart]
+        \\exec = "waybar"
+        \\exec = swaybg -i ~/wall.png
     , .{}, &d) orelse return error.TestUnexpectedResult;
     try testing.expectEqual(@as(usize, 0), d.n);
     try testing.expect(!s.general.focus_new_windows);
@@ -451,6 +505,9 @@ test "valid file with comments, sections and every value type" {
     try testing.expectEqualStrings("#20202080", s.appearance.border_inactive.slice());
     try testing.expectEqual(Modifier.alt, s.input.mouse_modifier);
     try testing.expect(s.input.focus_follows_mouse);
+    try testing.expectEqual(@as(usize, 2), s.autostart.exec.len);
+    try testing.expectEqualStrings("waybar", s.autostart.exec.items[0].slice());
+    try testing.expectEqualStrings("swaybg -i ~/wall.png", s.autostart.exec.items[1].slice());
 }
 
 test "empty file keeps the base" {
@@ -514,6 +571,7 @@ test "invalid values are rejected" {
         "[general]\nterminal = \"foot",
         "[general]\nterminal = a\x01b",
         "[general]\nxwayland = \x00",
+        "[autostart]\nexec = \"waybar",
     };
     for (cases) |c| {
         var d: Diag = .{};
@@ -586,6 +644,30 @@ test "layers: a later file overrides key by key, a broken one changes nothing" {
     try testing.expectEqual(@as(i32, 1), s.appearance.inner_gaps.value);
 }
 
+test "list settings append within and across layers" {
+    var d: Diag = .{};
+    var s: Settings = .{};
+    s = parse("[autostart]\nexec = one\nexec = two\n", s, &d).?;
+    s = parse("[autostart]\nexec = three\n", s, &d).?;
+    try testing.expectEqual(@as(usize, 0), d.warnings);
+    try testing.expectEqual(@as(usize, 3), s.autostart.exec.len);
+    try testing.expectEqualStrings("one", s.autostart.exec.items[0].slice());
+    try testing.expectEqualStrings("three", s.autostart.exec.items[2].slice());
+    // The list cap rejects the file as a whole instead of dropping entries.
+    var full: [400]u8 = undefined;
+    var n: usize = 0;
+    const header = "[autostart]\n";
+    @memcpy(full[n..][0..header.len], header);
+    n += header.len;
+    for (0..17) |_| {
+        const line = "exec = x\n";
+        @memcpy(full[n..][0..line.len], line);
+        n += line.len;
+    }
+    try testing.expect(parse(full[0..n], .{}, &d) == null);
+    try testing.expectEqual(@as(usize, 1), d.errors);
+}
+
 test "restart-only settings are detected" {
     var a: Settings = .{};
     var b: Settings = .{};
@@ -627,7 +709,7 @@ test "each visits every setting" {
     var c: Counter = .{};
     const s: Settings = .{};
     each(&s, &c, Counter.visit);
-    try testing.expectEqual(@as(usize, 10), c.n);
+    try testing.expectEqual(@as(usize, 11), c.n);
 }
 
 // ---- fuzzing (tests/stress, docs/TORTURE.md) ----------------------------------
@@ -646,15 +728,24 @@ fn serialize(s: *const Settings, buf: []u8) ![]const u8 {
                 };
                 e.section = section;
             }
-            (switch (v) {
-                .boolean => |b| e.w.print("{s} = {}\n", .{ key, b }),
-                .integer => |i| e.w.print("{s} = {d}\n", .{ key, i }),
-                .string => |str| e.w.print("{s} = {s}\n", .{ key, str }),
+            switch (v) {
+                .boolean => |b| e.w.print("{s} = {}\n", .{ key, b }) catch {
+                    e.failed = true;
+                },
+                .integer => |i| e.w.print("{s} = {d}\n", .{ key, i }) catch {
+                    e.failed = true;
+                },
+                .string => |str| e.w.print("{s} = {s}\n", .{ key, str }) catch {
+                    e.failed = true;
+                },
                 // Quoted: keeps leading/trailing blanks and quotes inside.
-                .text => |str| e.w.print("{s} = \"{s}\"\n", .{ key, str }),
-            }) catch {
-                e.failed = true;
-            };
+                .text => |str| e.w.print("{s} = \"{s}\"\n", .{ key, str }) catch {
+                    e.failed = true;
+                },
+                .list => |items| for (items) |item| e.w.print("{s} = \"{s}\"\n", .{ key, item }) catch {
+                    e.failed = true;
+                },
+            }
         }
     };
     var e: Emit = .{ .w = &w };
@@ -670,7 +761,13 @@ fn checkDomain(s: *const Settings) !void {
         inline for (std.meta.fields(sf.type)) |kf| {
             const v = &@field(sec, kf.name);
             const T = kf.type;
-            if (comptime hasDecl(T, "min")) {
+            if (comptime hasDecl(T, "is_list")) {
+                if (v.len > T.capacity) return error.OutOfDomain;
+                for (v.slice()) |item| {
+                    const Item = @TypeOf(item);
+                    if (item.len > Item.capacity or hasControl(item.slice()) or !std.unicode.utf8ValidateSlice(item.slice())) return error.OutOfDomain;
+                }
+            } else if (comptime hasDecl(T, "min")) {
                 if (v.value < T.min or v.value > T.max) return error.OutOfDomain;
             } else if (comptime hasDecl(T, "capacity")) {
                 if (v.len > T.capacity or hasControl(v.slice()) or !std.unicode.utf8ValidateSlice(v.slice())) return error.OutOfDomain;
@@ -702,7 +799,7 @@ fn fuzzOne(input: []const u8) !void {
     if (d.errors != 0) return error.AcceptedWithErrors;
     try checkDomain(&s);
     // Round trip: what was accepted can be written and read back exactly.
-    var buf: [4096]u8 = undefined;
+    var buf: [32768]u8 = undefined;
     const text = try serialize(&s, &buf);
     var d2: Diag = .{};
     const again = parse(text, .{}, &d2) orelse {
@@ -717,6 +814,7 @@ const fuzz_corpus = [_][]const u8{
     "[general]\nfocus_new_windows = no\nterminal = \"kitty -1\"\n",
     "[appearance]\ninner_gaps = 500\nouter_gaps = 0\nborder_active = #FFffFF80\nborder_inactive = none\n",
     "[input]\nmouse_modifier = MOD1\nfocus_follows_mouse = 1\n",
+    "[autostart]\nexec = \"waybar\"\nexec = swaybg -i ~/wall.png\n",
     "[general\nxwayland = true\n",
     "[appearance]\nborder_width = 65\n",
     "\xff\xfe",
@@ -743,8 +841,8 @@ test "fuzz target: ray.conf parser invariants" {
 /// boundary values. Deterministic; the seed of a failing input is printed.
 fn generate(r: std.Random, buf: []u8) []const u8 {
     var w: std.Io.Writer = .fixed(buf);
-    const sections = [_][]const u8{ "general", "appearance", "input", "future", "" };
-    const keys = [_][]const u8{ "focus_new_windows", "terminal", "xwayland", "inner_gaps", "outer_gaps", "border_width", "border_active", "border_inactive", "mouse_modifier", "focus_follows_mouse", "unknown", "" };
+    const sections = [_][]const u8{ "general", "appearance", "input", "autostart", "future", "" };
+    const keys = [_][]const u8{ "focus_new_windows", "terminal", "xwayland", "inner_gaps", "outer_gaps", "border_width", "border_active", "border_inactive", "mouse_modifier", "focus_follows_mouse", "exec", "unknown", "" };
     const values = [_][]const u8{ "true", "false", "yes", "OFF", "1", "0", "maybe", "", "8", "-1", "500", "501", "64", "65", "2147483647", "2147483648", "-2147483649", "99999999999999999999", "0x10", "1e3", "#5294e2", "#5294E2FF", "#12345", "#gggggg", "none", "NONE", "super", "Alt", "ctrl", "hyper", "\"quoted\"", "'single'", "\"open", "a\x01b", "\xc3\x28", "Ω日本", "=", "==", "[x]", "#", ";" };
     const n_lines = r.uintLessThan(usize, 30);
     var i: usize = 0;

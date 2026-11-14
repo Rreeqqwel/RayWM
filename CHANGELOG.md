@@ -45,6 +45,10 @@ Reliability hardening from the first torture-suite run
 - **Pinned windows:** `raywm.view_pinned(id, on)` and `Super+Ctrl+P` keep a
   window above every normal window. Pinning makes it floating in place so
   layouts leave it alone; unpinning leaves it floating.
+- **Autostart in `ray.conf`:** repeated `[autostart] exec` lines replace
+  `plugins/autostart.lua`'s `options.commands`. Commands run once per
+  session through `/bin/sh`, in file order; a reload starts only commands
+  added since the last load. Entries from system and user files append.
 - **Special workspaces** (scratchpad overlays): `config/plugins/special.lua`
   creates one hidden workspace per output and `Super+S` shows it above the
   current workspace without hiding it (`Super+Shift+S` moves the focused

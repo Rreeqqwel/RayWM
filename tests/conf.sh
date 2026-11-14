@@ -47,6 +47,8 @@ t1() {
     check_t 0 "^appearance.border_active = #ff0000ff$" "$fx/gaps.conf"
     check_t 0 "^appearance.border_inactive = #202020ff$" "$fx/gaps.conf"
     check_t 0 "^configuration OK$" "$root/config/ray.conf"
+    check_t 0 "^autostart.exec = waybar$" "$fx/autostart.conf"
+    check_t 0 "^autostart.exec = swaybg -i ~/wall.png -m fill$" "$fx/autostart.conf"
     check_t 0 "ray.conf:3: unknown key 'corner_radius' in \[appearance\] ignored" "$fx/unknown.conf"
     check_t 0 "ray.conf:4: unknown section \[plugins\] ignored" "$fx/unknown.conf"
     check_t 0 "^appearance.outer_gaps = 4$" "$fx/unknown.conf"

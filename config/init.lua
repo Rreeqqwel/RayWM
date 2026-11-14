@@ -10,7 +10,7 @@ raywm.load("floating") -- Super+Shift+Space: tiled <-> floating
 raywm.load("binds")
 raywm.load("focus") -- Super+H/J/K/L, Super+Tab, focus border
 raywm.load("screenshot") -- Print etc.; needs grim, slurp, wl-clipboard
-raywm.load("autostart") -- programs started with the session (empty list)
+raywm.load("autostart") -- runs [autostart] exec commands from ray.conf
 -- Optional effects (off by default):
 -- raywm.load("animations")
 -- raywm.load("focus-indicator")

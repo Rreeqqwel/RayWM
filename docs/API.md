@@ -307,6 +307,7 @@ as a table of sections. Every key is always present:
 | `appearance.border_inactive` | string | `"none"` or `"#rrggbbaa"` |
 | `input.mouse_modifier` | string | `"super"`, `"alt"`, `"ctrl"` or `"shift"` |
 | `input.focus_follows_mouse` | boolean | `false` |
+| `autostart.exec` | array of strings | `{"waybar", "swaybg -i ~/wall.png"}`; `[autostart] exec` lines, in order |
 
 It is a copy made for each Lua state: a reload re-reads ray.conf first
 and the plugins get the new table. Changing it changes nothing in the

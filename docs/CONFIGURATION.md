@@ -41,9 +41,10 @@ The complete example with every setting and its default is
 - Booleans: `true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0`.
 - Integers: decimal, each setting has a range.
 - Strings: the rest of the line; optional `"..."` or `'...'` quotes;
-  no control characters; at most 256 bytes.
+  no control characters; at most 256 bytes (512 for `[autostart] exec`).
 - Colours: `#rrggbb` or `#rrggbbaa` (alpha; `ff` is opaque).
-- The same key twice: the last one wins (with a warning).
+- The same key twice: the last one wins (with a warning), except for
+  list settings such as `[autostart] exec`, where repeated lines append.
 
 ### Settings
 
@@ -59,6 +60,7 @@ The complete example with every setting and its default is
 | `appearance` | `border_inactive` | `none` | colour or `none` | Border of the other windows. | yes |
 | `input` | `mouse_modifier` | `super` | `super`, `alt`, `ctrl`, `shift` | Hold it and drag a floating window: left button moves, right button resizes. | yes |
 | `input` | `focus_follows_mouse` | `false` | boolean | Moving the pointer into a window focuses (and raises) it, once per entry: keyboard focus moved elsewhere is not taken back while the pointer stays in the same window. Never while a button is held, during a drag, with a lock screen or a launcher holding the keyboard, or when the window is covered by a fullscreen one. Only real pointer motion counts, not windows moving under a still pointer. | yes |
+| `autostart` | `exec` | empty | string, repeatable | Command started once with the session, in order, through `/bin/sh`. Commands from all layers append (system first). A reload starts only commands that were added since the last load. Replaces the old `plugins/autostart.lua` `options.commands` list. | new commands |
 
 Defaults are the behaviour of v0.2.1, so a missing file changes nothing.
 `[plugins]` and layout selection are deliberately not here: `init.lua`
@@ -445,6 +447,18 @@ focus border shows it). If the key does not appear at all, RayWM never
 got it: in a nested session the outer compositor may keep it (many
 desktops bind Super+letter combinations). Try it from a TTY, or change
 the binding.
+
+## Upgrading to v0.2.3
+
+- `raywm.conf` is now `ray.conf`, in the same directory next to
+  `init.lua` and at `/usr/share/raywm/config/ray.conf`. There is no
+  fallback: rename your file (`mv ~/.config/raywm/raywm.conf
+  ~/.config/raywm/ray.conf`) or copy the shipped one.
+- Autostart moved from `plugins/autostart.lua`'s `options.commands` list
+  to `[autostart] exec` in `ray.conf`; repeat `exec` for each command.
+  Update the plugin from the shipped configuration, then move the list.
+- The shipped `binds.lua` adds Super+Ctrl+S (sticky) and Super+Ctrl+P
+  (pinned); older copies keep working without those keys.
 
 ## Upgrading to v0.2.2
 

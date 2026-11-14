@@ -74,10 +74,11 @@ correctness ahead of artificial code reduction.
   [GAMING.md](docs/GAMING.md).
 - **Interactive move/resize** for floating windows (Super + drag, or the
   client's own title bar; the modifier is configurable).
-- **`ray.conf`** (v0.2.2): one validated INI-like file for the basic
-  settings, layered (defaults, system, user), with line-numbered errors,
-  `raywm -t`, and reload that never applies a broken file. Optional
-  focus-follows-mouse and inactive borders.
+- **`ray.conf`** (v0.2.2; renamed in v0.2.3): one validated INI-like file
+  for the basic settings, layered (defaults, system, user), with
+  line-numbered errors, `raywm -t`, and reload that never applies a broken
+  file. Optional focus-follows-mouse, inactive borders and session
+  autostart commands.
 - **`raywm-update`** (v0.2.2): checks GitHub Releases for your persistent
   Beta or Stable subscription, verifies SHA256, builds Betas into a pacman
   package as your user and installs through `pacman -U`.
@@ -317,6 +318,10 @@ border_inactive = #3b4252
 [input]
 mouse_modifier = alt
 focus_follows_mouse = false
+
+[autostart]
+exec = waybar
+exec = swaybg -i ~/Pictures/wallpaper.png -m fill
 ```
 
 `raywm -t` checks it and prints the effective settings; a file with an
