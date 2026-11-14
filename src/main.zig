@@ -15,10 +15,10 @@ const alloc = @import("alloc");
 const usage =
     \\Usage: raywm [-c config.lua] [-s startup-command] [-d] [-t]
     \\  -c  config file (default: $XDG_CONFIG_HOME/raywm/init.lua);
-    \\      raywm.conf is read from the same directory
+    \\      ray.conf is read from the same directory
     \\  -s  command run via /bin/sh once the compositor is ready
     \\  -d  verbose logging (wlroots, and key presses with Super/Ctrl/Alt)
-    \\  -t  check raywm.conf, print the effective settings and exit
+    \\  -t  check ray.conf, print the effective settings and exit
     \\
 ;
 

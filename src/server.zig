@@ -96,7 +96,7 @@ pub const Server = struct {
     /// Scene node of the pointer-focused surface (see input.zig).
     pointer_node: input.PointerNode = .{},
     next_id: u32 = 1,
-    /// raywm.conf (src/conf.zig); replaced as a whole on a valid reload.
+    /// ray.conf (src/conf.zig); replaced as a whole on a valid reload.
     settings: conf.Settings = .{},
     /// focus_follows_mouse: the view the pointer last moved into (0: none).
     hover_view: u32 = 0,

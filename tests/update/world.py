@@ -45,7 +45,7 @@ def pkgver(tag):
 
 def fake_package(version, evil=False):
     files = ['/usr/', '/usr/bin/', '/usr/bin/raywm', '/usr/bin/raywmctl', '/usr/bin/raywm-update',
-             '/usr/share/', '/usr/share/raywm/', '/usr/share/raywm/config/raywm.conf']
+             '/usr/share/', '/usr/share/raywm/', '/usr/share/raywm/config/ray.conf']
     if evil:
         files.append('/etc/raywm/update.conf')
     return ('Name            : raywm\nVersion         : %s\nArchitecture    : x86_64\n--files\n' % version

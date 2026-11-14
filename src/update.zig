@@ -2,7 +2,7 @@
 //! (docs/INSTALL.md, docs/RELEASE-WORKFLOW.md).
 //!
 //! The subscription (beta or stable) lives in /etc/raywm/update.conf, apart
-//! from the installed version and from raywm.conf: installing a Stable
+//! from the installed version and from ray.conf: installing a Stable
 //! release from the beta channel keeps the beta channel.
 //!
 //! Network input is untrusted. Releases are chosen from the tag scheme of
@@ -489,7 +489,7 @@ fn writeChannel(path: []const u8, dir: []const u8, ch: Channel) !void {
         _ = std.c.unlink(tmp.ptr);
     };
     var text_buf: [256]u8 = undefined;
-    const text = try std.fmt.bufPrint(&text_buf, "# RayWM update channel (raywm-update --set-channel beta|stable).\n# Kept across package upgrades; not part of raywm.conf.\nchannel={s}\n", .{@tagName(ch)});
+    const text = try std.fmt.bufPrint(&text_buf, "# RayWM update channel (raywm-update --set-channel beta|stable).\n# Kept across package upgrades; not part of ray.conf.\nchannel={s}\n", .{@tagName(ch)});
     const written = std.c.write(fd, text.ptr, text.len);
     const synced = std.c.fsync(fd) == 0;
     _ = std.c.fchmod(fd, 0o644);

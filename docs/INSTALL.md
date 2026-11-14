@@ -30,7 +30,7 @@ cp -r /usr/share/raywm/config ~/.config/raywm   # first install only
 ```
 
 The package installs `/usr/bin/raywm`, `/usr/bin/raywmctl`,
-`/usr/bin/raywm-update`, the default configuration (`raywm.conf`, `init.lua`)
+`/usr/bin/raywm-update`, the default configuration (`ray.conf`, `init.lua`)
 and plugins in `/usr/share/raywm/config`, a session entry for display
 managers (`/usr/share/wayland-sessions/raywm.desktop`) and the
 documentation; it never changes `~/.config/raywm`. On the first install it
@@ -108,7 +108,7 @@ sudo raywm-update --set-channel beta    # Beta and Stable releases
 
 The channel is a setting of the installation, stored in
 `/etc/raywm/update.conf` (`channel=beta` or `channel=stable`), separately from
-`raywm.conf` and from the installed version:
+`ray.conf` and from the installed version:
 
 - **beta** receives Beta *and* Stable releases. Installing
   `v0.2.2-stable` from the beta channel keeps you on beta, so `v0.2.3-beta`

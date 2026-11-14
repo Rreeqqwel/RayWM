@@ -305,7 +305,7 @@ test("border: the bordered window closing is harmless", function()
   eq(borders[2], "#5294e2")
 end)
 
-test("raywm.settings (raywm.conf) sets the borders, inactive ones too", function()
+test("raywm.settings (ray.conf) sets the borders, inactive ones too", function()
   reset(); dwindle(3)
   raywm.settings = { appearance = { border_width = 3, border_active = "#ff0000ff", border_inactive = "#20202080" } }
   load_plugin()

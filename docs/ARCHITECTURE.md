@@ -316,7 +316,7 @@ IDs and values, never arbitrary object access or code evaluation.
 
 ## v0.2.2: settings and updates
 
-**raywm.conf** (`src/conf.zig`, loaded by `src/settings.zig`). One
+**ray.conf** (`src/conf.zig`, loaded by `src/settings.zig`). One
 `conf.Settings` value lives in the server; it is built from fixed-size
 fields (bounded integers, colours as `#rrggbbaa`, strings of at most 256
 bytes), so parsing allocates nothing and a reload cannot leak. The schema

@@ -70,7 +70,7 @@ regular suites (see the report).
 |---|---|---|
 | `lifecycle` | `mixed-round` | 4–8 chaos clients (random xdg/layer/subsurface/popup operations, crashes, one protocol violation), the chaos plugin (random focus, float, fullscreen, maximize, minimize, hide, workspaces, place, close, animations, reloads) and random real input on two outputs. After every round: alive and answering IPC, IPC windows equal the clients' windows (no stale or lost window), focus valid, tiles requested by the layout neither overlap nor leave the usable area, real geometry equals the request (allowing the client's size hints), one workspace per output; after all clients leave: no window, no focus, no descriptor left except bounded wlroots state |
 | `lua` | `failure-modes`, `churn`, `overlap`, `reload-storm`, `bytecode` | 51 plugins failing in every way and place; registration churn; two layouts fighting; reloads every few ms with clients; corrupted precompiled chunks |
-| `config` | `raywm-t`, `live-reload` | generated raywm.conf files through `raywm -t` and through live reloads: a valid file is applied exactly as `raywm -t` reports, a rejected one changes nothing |
+| `config` | `raywm-t`, `live-reload` | generated ray.conf files through `raywm -t` and through live reloads: a valid file is applied exactly as `raywm -t` reports, a rejected one changes nothing |
 | `protocol` | `profiles`, `taskbar-flood`, `invalid-storm`, `kill-pending`, `outputs`, `xwayland` | per-area protocol pressure, taskbar traffic under uncapped clients, dozens of violators, SIGKILL mid-sequence, output hotplug under load, X11 clients and the X server killed |
 | `update` | `deep-json`, `http-errors`, `redirects`, `truncated`, `endless`, `stall`, `disk-full`, `traversal`, `metadata-fuzz`, `channel-file`, `downgrade`, `pagination` | raywm-update against a misbehaving HTTPS server (`tests/stress/update/server.py`), crafted archives, mutated metadata; nothing is installed on the host (fake pacman), never as root |
 | `recovery` | `start-stop`, `shutdown-busy`, `init-failures`, `ipc-abuse` | start/stop cycles, shutdown under load, broken environments, IPC garbage and floods |
@@ -83,7 +83,7 @@ regular suites (see the report).
   devices and monitors are not exercised; frame-rate claims cannot be
   derived from these numbers. The osu! report from v0.2.1 stays unverified.
 - Coverage-guided fuzzing (`zig test -ffuzz`) does not build with Zig
-  0.16.0's own test runner; the raywm.conf fuzzer is a seeded generator
+  0.16.0's own test runner; the ray.conf fuzzer is a seeded generator
   (20000 inputs per `zig build test`) plus a `std.testing.fuzz` target kept
   for a fixed Zig.
 - No sanitizer for the C libraries (no Valgrind/ASan in the toolchain);

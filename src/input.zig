@@ -288,7 +288,7 @@ fn handleBinding(server: *Server, mods: u32, sym: u32) bool {
     return true;
 }
 
-/// general.terminal from raywm.conf, else $TERMINAL, else foot.
+/// general.terminal from ray.conf, else $TERMINAL, else foot.
 fn spawnTerminal(server: *Server) void {
     const t = server.settings.general.terminal.slice();
     if (t.len == 0) return srv.spawn("${TERMINAL:-foot}");
@@ -296,7 +296,7 @@ fn spawnTerminal(server: *Server) void {
     srv.spawn(std.fmt.bufPrintZ(&buf, "{s}", .{t}) catch return);
 }
 
-/// True if input.mouse_modifier (raywm.conf) is held.
+/// True if input.mouse_modifier (ray.conf) is held.
 fn dragModifierHeld(server: *Server, mods: wlr.Keyboard.ModifierMask) bool {
     return switch (server.settings.input.mouse_modifier) {
         .super => mods.logo,

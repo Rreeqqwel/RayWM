@@ -26,9 +26,9 @@ setup() {
     shift 2
     python3 "$root/tests/update/world.py" "$tmp/world" "$@"
     # A user configuration that no step may touch.
-    printf '[appearance]\ninner_gaps = 3\n' >"$tmp/home/.config/raywm/raywm.conf"
+    printf '[appearance]\ninner_gaps = 3\n' >"$tmp/home/.config/raywm/ray.conf"
     echo 'raywm.load("dwindle")' >"$tmp/home/.config/raywm/init.lua"
-    (cd "$tmp/home/.config/raywm" && sha256sum raywm.conf init.lua) >"$tmp/user.sha256"
+    (cd "$tmp/home/.config/raywm" && sha256sum ray.conf init.lua) >"$tmp/user.sha256"
 }
 # upd <args...>: raywm-update in the fixture world; output in $tmp/out, status in $st.
 upd() {

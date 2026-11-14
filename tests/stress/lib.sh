@@ -83,7 +83,7 @@ case_end() {
 start() {
     cp "$root/config/plugins/"*.lua "$stress_root/plugins/"*.lua "$dir/config/raywm/plugins/"
     cp "$1" "$dir/config/raywm/init.lua"
-    [ -n "${3:-}" ] && cp "$3" "$dir/config/raywm/raywm.conf"
+    [ -n "${3:-}" ] && cp "$3" "$dir/config/raywm/ray.conf"
     outputs=${2:-1}
     # shellcheck disable=SC2086 # COMPOSITOR_ENV is a list of VAR=value words
     env -i PATH="$PATH" HOME="$dir" XDG_RUNTIME_DIR="$dir" XDG_CONFIG_HOME="$dir/config" \

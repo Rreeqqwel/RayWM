@@ -96,8 +96,8 @@ c_init_failures() {
     try unknown-backend fail WLR_BACKENDS=nosuchbackend
     PREP='rm -rf "$t/config/raywm"' try no-config run WLR_HEADLESS_OUTPUTS=1
     PREP='rm -rf "$t/config/raywm"; mkdir -p "$t/config"; echo x >"$t/config/raywm"' try config-is-file run WLR_HEADLESS_OUTPUTS=1
-    PREP='printf "[general]\nxwayland=true\n" >"$t/config/raywm/raywm.conf"; chmod 000 "$t/config/raywm/raywm.conf"' try unreadable-conf run WLR_HEADLESS_OUTPUTS=1
-    PREP='mkdir -p "$t/config/raywm/raywm.conf"' try conf-is-directory run WLR_HEADLESS_OUTPUTS=1
+    PREP='printf "[general]\nxwayland=true\n" >"$t/config/raywm/ray.conf"; chmod 000 "$t/config/raywm/ray.conf"' try unreadable-conf run WLR_HEADLESS_OUTPUTS=1
+    PREP='mkdir -p "$t/config/raywm/ray.conf"' try conf-is-directory run WLR_HEADLESS_OUTPUTS=1
     PREP='chmod 000 "$t/config/raywm/plugins"' try unreadable-plugins run WLR_HEADLESS_OUTPUTS=1
     PREP='printf "\\033Lua\\x54\\x00garbage" >"$t/config/raywm/init.lua"' try binary-init run WLR_HEADLESS_OUTPUTS=1
     # The runtime directory: missing, then not writable.

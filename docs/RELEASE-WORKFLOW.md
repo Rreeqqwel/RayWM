@@ -84,7 +84,7 @@ the rules below are about the uploaded assets.
   `packaging/arch/PKGBUILD.in` and the same kind of source archive. It
   installs `/usr/bin/raywm` (ReleaseSafe, `-Dcpu=baseline`, no test-only
   code), `/usr/bin/raywmctl`, `/usr/bin/raywm-update`, the default
-  configuration (`raywm.conf`, `init.lua`) and plugins in
+  configuration (`ray.conf`, `init.lua`) and plugins in
   `/usr/share/raywm/config`, `/usr/share/wayland-sessions/raywm.desktop`,
   documentation and the license. It never touches `~/.config/raywm`.
 - `….pkg.tar.zst.sha256`, `SHA256SUMS`, `raywm-release.json`.
@@ -164,7 +164,7 @@ then builds the pacman package from that archive with
 `scripts/arch-package.sh` (as an unprivileged user, as `raywm-update` does
 on users' machines for a Beta) and runs `tests/release-package.sh`
 (pacman metadata, dependencies, file list including `raywm-update` and
-`raywm.conf`, nothing in `/etc`, baseline-CPU binary without test code,
+`ray.conf`, nothing in `/etc`, baseline-CPU binary without test code,
 headless start with the packaged configuration) and
 `tests/release-install.sh` (real `pacman -U`, reinstall and `-R` in the
 container: `/etc/raywm/update.conf` created once with the package's

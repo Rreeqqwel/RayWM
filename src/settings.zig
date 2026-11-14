@@ -1,4 +1,4 @@
-//! Loads raywm.conf for the compositor (layers and parsing: conf.zig).
+//! Loads ray.conf for the compositor (layers and parsing: conf.zig).
 //! Logs every diagnostic with its file and line.
 const std = @import("std");
 const conf = @import("conf");
@@ -11,7 +11,7 @@ pub const Loaded = struct {
     ok: bool,
 };
 
-/// Built-in defaults, then the system file, then `<dir>/raywm.conf`.
+/// Built-in defaults, then the system file, then `<dir>/ray.conf`.
 pub fn load(dir: []const u8) Loaded {
     var buf: [conf.max_file_size + 1]u8 = undefined;
     var s: conf.Settings = .{};
@@ -19,7 +19,7 @@ pub fn load(dir: []const u8) Loaded {
     var sys_buf: [std.fs.max_path_bytes]u8 = undefined;
     if (systemPath(&sys_buf)) |path| ok = layer(path, &s, &buf) and ok;
     var user_buf: [std.fs.max_path_bytes]u8 = undefined;
-    if (std.fmt.bufPrintZ(&user_buf, "{s}/raywm.conf", .{dir})) |path| {
+    if (std.fmt.bufPrintZ(&user_buf, "{s}/ray.conf", .{dir})) |path| {
         ok = layer(path, &s, &buf) and ok;
     } else |_| {
         log.err("configuration directory path too long: {s}", .{dir});
@@ -54,7 +54,7 @@ fn layer(path: [:0]const u8, s: *conf.Settings, buf: *[conf.max_file_size + 1]u8
     return result != .rejected;
 }
 
-/// Directory of the configuration (where init.lua and raywm.conf live).
+/// Directory of the configuration (where init.lua and ray.conf live).
 pub fn configDir(init_lua: []const u8) []const u8 {
     return std.fs.path.dirname(init_lua) orelse ".";
 }

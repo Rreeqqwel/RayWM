@@ -37,7 +37,7 @@ pub const Manager = struct {
         const env_off = if (std.c.getenv("RAYWM_XWAYLAND")) |value| std.mem.eql(u8, std.mem.span(value), "0") else false;
         if (env_off or !server.settings.general.xwayland) {
             _ = unsetenv("DISPLAY");
-            log.info("Xwayland disabled ({s})", .{if (env_off) "RAYWM_XWAYLAND=0" else "raywm.conf general.xwayland"});
+            log.info("Xwayland disabled ({s})", .{if (env_off) "RAYWM_XWAYLAND=0" else "ray.conf general.xwayland"});
             return;
         }
         m.timer = try server.wl_server.getEventLoop().addTimer(*Manager, recover, m);

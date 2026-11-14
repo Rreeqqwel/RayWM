@@ -8,7 +8,7 @@
       minimize, workspaces, close; reload when SEED's stream says so).
       Never Super+Shift+E (quit), Super+Return (spawns a terminal) or Print.
   gen.py conf SEED OUT_DIR COUNT
-      COUNT raywm.conf files (fuzz-NNNN.conf) mixing valid lines with every
+      COUNT ray.conf files (fuzz-NNNN.conf) mixing valid lines with every
       class of damage; prints one line per file: name and expectation
       ("valid", "invalid" or "any").
 
@@ -76,7 +76,7 @@ def gen_input(seed, count, width, height=720):
     print("\n".join(args))
 
 
-# ---- raywm.conf fuzzing ---------------------------------------------------------
+# ---- ray.conf fuzzing ---------------------------------------------------------
 
 KEYS = {
     "general": {"focus_new_windows": "bool", "terminal": "str", "xwayland": "bool"},

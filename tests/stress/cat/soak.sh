@@ -2,7 +2,7 @@
 # Long-running soak: one compositor (two outputs, the desktop plugins plus
 # chaos and audit) for STRESS_DURATION seconds (run.sh --duration; e.g. 300
 # smoke, 1800 extended, 7200 soak, longer by hand), in rounds that mix every
-# subsystem at once: chaos clients, random input, IPC queries, raywm.conf
+# subsystem at once: chaos clients, random input, IPC queries, ray.conf
 # rewrites with reloads, output unplug/plug, uncapped clients with a
 # taskbar, and compositor-side chaos. After every round: alive, IPC answers
 # in time, no stale windows (audit with 0 expected views, valid focus).
@@ -32,9 +32,9 @@ while [ "$(date +%s)" -lt "$t_end" ]; do
     drive $(cat "$dir/input.args") || fail "round $r: input driver failed"
     ipc windows >/dev/null 2>&1 || true; ipc workspaces >/dev/null 2>&1 || true; ipc perf >/dev/null 2>&1 || true
     if [ $((r % 3)) -eq 2 ]; then
-        # A random valid raywm.conf (or a broken one now and then), then reload.
+        # A random valid ray.conf (or a broken one now and then), then reload.
         python3 "$stress_root/gen.py" conf "$rs" "$dir/confs" 1 >/dev/null
-        cp "$dir/confs/fuzz-0000.conf" "$dir/config/raywm/raywm.conf"
+        cp "$dir/confs/fuzz-0000.conf" "$dir/config/raywm/ray.conf"
         drive key ctrl down key alt down key r down key r up key alt up key ctrl up || true
     fi
     # At most 12 hotplug cycles: each new headless output has a new name

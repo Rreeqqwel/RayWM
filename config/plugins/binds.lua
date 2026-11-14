@@ -1,6 +1,6 @@
 -- Basic key bindings. Keys use the unshifted keysym name, so the binding
 -- for Shift+1 is written "Super+Shift+1".
--- raywm.conf [general] terminal (RayWM 0.2.2), else $TERMINAL, else foot.
+-- ray.conf [general] terminal (RayWM 0.2.2), else $TERMINAL, else foot.
 local configured = raywm.settings and raywm.settings.general.terminal
 local terminal = (configured and configured ~= "" and configured) or os.getenv("TERMINAL") or "foot"
 

@@ -534,7 +534,7 @@ pub fn Runtime(comptime H: type) type {
             const dir = std.fs.path.dirname(self.config_path) orelse ".";
             _ = c.lua_pushlstring(L, dir.ptr, dir.len);
             c.lua_setfield(L, -2, "config_dir");
-            // raywm.conf, read-only by convention: a fresh copy per Lua state,
+            // ray.conf, read-only by convention: a fresh copy per Lua state,
             // so a reload always sees the settings that reload validated.
             if (@hasDecl(Api, "settings")) {
                 pushSettings(L, Api.settings(self.host));
@@ -592,7 +592,7 @@ pub fn Runtime(comptime H: type) type {
             if (self.reload_requested) {
                 self.reload_requested = false;
                 log.info("reloading {s}", .{self.config_path});
-                // raywm.conf first: plugins set up again with the new values
+                // ray.conf first: plugins set up again with the new values
                 // (or the previous ones, if the file has errors).
                 if (@hasDecl(Api, "reloadSettings")) Api.reloadSettings(self.host, self.config_path);
                 self.stop();

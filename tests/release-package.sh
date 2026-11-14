@@ -27,7 +27,7 @@ for dep in wlroots0.20 wayland libxkbcommon pixman lua54 libinput python curl ta
     field 'Depends On' | tr ' ' '\n' | grep -qx "$dep" && ok || fail "Depends On lacks $dep"
 done
 files=$(pacman -Qlp "$pkg" | cut -d' ' -f2-)
-for f in /usr/bin/raywm /usr/bin/raywmctl /usr/bin/raywm-update /usr/share/raywm/config/raywm.conf \
+for f in /usr/bin/raywm /usr/bin/raywmctl /usr/bin/raywm-update /usr/share/raywm/config/ray.conf \
     /usr/share/raywm/config/init.lua /usr/share/raywm/config/rules.lua \
     /usr/share/raywm/config/plugins/dwindle.lua /usr/share/raywm/config/plugins/outputs.lua \
     /usr/share/wayland-sessions/raywm.desktop /usr/share/licenses/raywm/LICENSE \
@@ -53,8 +53,8 @@ strings "$bin" | grep -q 'TEST BUILD: virtual pointer\|raywm-test-unplug' && fai
 "$bin" -h >/dev/null 2>&1 && ok || fail "raywm -h"
 "$tmp/usr/bin/raywm-update" --help >/dev/null 2>&1 && ok || fail "raywm-update --help"
 grep -q '_raywm_channel_init' "$tmp/.INSTALL" && ok || fail ".INSTALL does not initialize the update channel"
-# The packaged raywm.conf as the system layer is valid and equals the defaults.
-RAYWM_SYSTEM_CONF="$tmp/usr/share/raywm/config/raywm.conf" "$bin" -t -c /nonexistent/init.lua >"$tmp/conf-check" 2>&1 && ok || fail "packaged raywm.conf: $(cat "$tmp/conf-check")"
+# The packaged ray.conf as the system layer is valid and equals the defaults.
+RAYWM_SYSTEM_CONF="$tmp/usr/share/raywm/config/ray.conf" "$bin" -t -c /nonexistent/init.lua >"$tmp/conf-check" 2>&1 && ok || fail "packaged ray.conf: $(cat "$tmp/conf-check")"
 # Headless start with the packaged default configuration and raywmctl.
 run="$tmp/run"; mkdir -p "$run/config"; chmod 700 "$run"
 cp -r "$tmp/usr/share/raywm/config" "$run/config/raywm"

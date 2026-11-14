@@ -1,5 +1,5 @@
 #!/bin/sh
-# raywm.conf fuzzing against the real binary (the parser's own invariants
+# ray.conf fuzzing against the real binary (the parser's own invariants
 # are unit-tested in src/conf.zig with 20000 seeded inputs):
 #   1. `raywm -t` on every generated file (tests/stress/gen.py conf): the
 #      status matches the generator's expectation (valid 0, invalid 1), it
@@ -17,7 +17,7 @@ case_begin "raywm-t" "$seed"
 python3 "$stress_root/gen.py" conf "$seed" "$dir/fuzz" "$count" >"$dir/expect.txt"
 bad=0
 while read -r name expect; do
-    t="$dir/t-$name"; mkdir -p "$t"; cp "$dir/fuzz/$name" "$t/raywm.conf"
+    t="$dir/t-$name"; mkdir -p "$t"; cp "$dir/fuzz/$name" "$t/ray.conf"
     st=0
     env -i PATH="$PATH" HOME="$t" RAYWM_SYSTEM_CONF= timeout 10 "$BIN/raywm" -t -c "$t/init.lua" >"$t/out" 2>&1 || st=$?
     case "$st/$expect" in
@@ -50,7 +50,7 @@ reload() {
     audit_n=0
 }
 oracle() { # FILE -> expected settings (raywm -t), "rejected" if it is rejected
-    t="$dir/oracle"; rm -rf "$t"; mkdir -p "$t"; cp "$1" "$t/raywm.conf"
+    t="$dir/oracle"; rm -rf "$t"; mkdir -p "$t"; cp "$1" "$t/ray.conf"
     if env -i PATH="$PATH" HOME="$t" RAYWM_SYSTEM_CONF= timeout 10 "$BIN/raywm" -t -c "$t/init.lua" >"$t/out" 2>&1; then
         grep -E '^[a-z_]+\.[a-z_]+ = ' "$t/out" | sed 's/ = /=/' | sort
     else echo rejected; fi
@@ -59,7 +59,7 @@ audit; cp "$dir/live.txt" "$dir/current.txt"
 accepted=0; rejected=0; n=0
 for f in "$dir"/../"$category-raywm-t-$seed"/fuzz/*.conf; do
     n=$((n + 1))
-    cp "$f" "$dir/config/raywm/raywm.conf"
+    cp "$f" "$dir/config/raywm/ray.conf"
     # general.xwayland is restart-only: a reload keeps the running value.
     oracle "$f" | sed "s/^general.xwayland=.*/$(grep '^general.xwayland=' "$dir/current.txt")/" >"$dir/expected.txt"
     reload || break

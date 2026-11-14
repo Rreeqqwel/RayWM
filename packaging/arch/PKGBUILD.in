@@ -54,7 +54,7 @@ check() {
   ! strings "${bin}" | grep -q 'TEST BUILD: virtual pointer'
   ! strings "${bin}" | grep -q raywm-test-unplug
   for f in config/init.lua config/plugins/*.lua; do luac5.4 -p "$f"; done
-  # The shipped raywm.conf is valid on its own (no system file involved).
+  # The shipped ray.conf is valid on its own (no system file involved).
   RAYWM_SYSTEM_CONF= "${bin}" -t -c config/init.lua >/dev/null
   "${srcdir}/out/bin/raywm-update" --help >/dev/null
 }
@@ -64,7 +64,7 @@ package() {
   install -Dm755 "${srcdir}/out/bin/raywm" "${pkgdir}/usr/bin/raywm"
   install -Dm755 scripts/raywmctl "${pkgdir}/usr/bin/raywmctl"
   install -Dm755 "${srcdir}/out/bin/raywm-update" "${pkgdir}/usr/bin/raywm-update"
-  # Default configuration (raywm.conf, read as the system layer) and Lua
+  # Default configuration (ray.conf, read as the system layer) and Lua
   # plugins; copied to ~/.config/raywm by the user (see raywm.install), never
   # overwritten by the package. /etc/raywm/update.conf is not packaged: the
   # scriptlet creates it once, so upgrades never reset the update channel.

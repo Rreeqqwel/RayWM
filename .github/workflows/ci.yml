@@ -133,7 +133,7 @@ jobs:
           tests/release-meta.sh
           sh tests/archive-errors.sh
 
-      - name: raywm.conf (raywm -t, layers, settings with real input, reload)
+      - name: ray.conf (raywm -t, layers, settings with real input, reload)
         run: tests/conf.sh zig-out/test-input/bin
 
       - name: raywm-update (local release fixtures; as a user, and as root)

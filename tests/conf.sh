@@ -1,8 +1,8 @@
 #!/bin/sh
-# raywm.conf (src/conf.zig): `raywm -t`, the loading order (defaults,
+# ray.conf (src/conf.zig): `raywm -t`, the loading order (defaults,
 # system file, user file), every setting taking effect in a headless
 # session with real input events, reload (valid, invalid, repeated) and
-# compatibility with plugins written before raywm.conf.
+# compatibility with plugins written before ray.conf.
 #
 # Requires the test build:  zig build -Dtest-input -p zig-out/test-input
 #   usage: [RENDERER=pixman|gles2] [KEEP=1] [ONLY=substring] tests/conf.sh [test-bin-dir]
@@ -29,7 +29,7 @@ rss_kb() { awk '/^VmRSS:/ {print $2}' "/proc/$(raywm_pid)/status"; }
 check_t() {
     want=$1; pattern=$2; user=$3; system=${4:-}
     d=$(mktemp -d)
-    [ -n "$user" ] && cp "$user" "$d/raywm.conf"
+    [ -n "$user" ] && cp "$user" "$d/ray.conf"
     st=0
     env -i PATH="$PATH" HOME="$d" RAYWM_SYSTEM_CONF="$system" "$bin/raywm" -t -c "$d/init.lua" >"$d/out" 2>&1 || st=$?
     if [ "$st" -ne "$want" ] || ! grep -qE "$pattern" "$d/out"; then
@@ -46,11 +46,11 @@ t1() {
     check_t 0 "^configuration OK$" ""
     check_t 0 "^appearance.border_active = #ff0000ff$" "$fx/gaps.conf"
     check_t 0 "^appearance.border_inactive = #202020ff$" "$fx/gaps.conf"
-    check_t 0 "^configuration OK$" "$root/config/raywm.conf"
-    check_t 0 "raywm.conf:3: unknown key 'corner_radius' in \[appearance\] ignored" "$fx/unknown.conf"
-    check_t 0 "raywm.conf:4: unknown section \[plugins\] ignored" "$fx/unknown.conf"
+    check_t 0 "^configuration OK$" "$root/config/ray.conf"
+    check_t 0 "ray.conf:3: unknown key 'corner_radius' in \[appearance\] ignored" "$fx/unknown.conf"
+    check_t 0 "ray.conf:4: unknown section \[plugins\] ignored" "$fx/unknown.conf"
     check_t 0 "^appearance.outer_gaps = 4$" "$fx/unknown.conf"
-    check_t 1 "raywm.conf:3: \[appearance\] outer_gaps = fifty: expected a whole number" "$fx/broken.conf"
+    check_t 1 "ray.conf:3: \[appearance\] outer_gaps = fifty: expected a whole number" "$fx/broken.conf"
     # The rejected file changes nothing at all (inner_gaps = 50 on line 2 too).
     check_t 1 "^appearance.inner_gaps = 8$" "$fx/broken.conf"
     check_t 1 "configuration has errors" "$fx/broken.conf"
@@ -60,42 +60,42 @@ t1() {
     check_t 0 "^appearance.border_inactive = #101010ff$" "$fx/user-over-system.conf" "$fx/system.conf"
     # A broken system file is reported; the user file still applies.
     check_t 1 "^appearance.outer_gaps = 30$" "$fx/user-over-system.conf" "$fx/broken.conf"
-    check_t 0 "^appearance.inner_gaps = 8$" "" "/nonexistent/raywm.conf"
+    check_t 0 "^appearance.inner_gaps = 8$" "" "/nonexistent/ray.conf"
     if [ "$failures" -eq "$before" ]; then echo "ok   [$name]"; fi
 }
 
 t2() {
-    name="gaps from raywm.conf reach dwindle (borders: tests/focus_test.lua)"
+    name="gaps from ray.conf reach dwindle (borders: tests/focus_test.lua)"
     CONF="$fx/gaps.conf" WIN=$plain start "$tiled" 2
     dump                                                                      # 1
     expect 1 "view 2 20,20 619x680 focused=false"
     expect 1 "view 3 641,20 619x680 focused=true"
-    grep -q "info(conf): loaded .*/raywm.conf" "$tmp/raywm.log" || fail "raywm.conf load not logged"
+    grep -q "info(conf): loaded .*/ray.conf" "$tmp/raywm.log" || fail "ray.conf load not logged"
     stop
 }
 
 t3() {
-    name="reload applies a changed raywm.conf, keeps the previous one when it is broken"
+    name="reload applies a changed ray.conf, keeps the previous one when it is broken"
     EXPECTED_LOG_ERRORS=$conf_errors # read by stop()
     CONF="$fx/gaps.conf" WIN=$plain start "$tiled" 2
-    cp "$fx/nogaps.conf" "$tmp/config/raywm/raywm.conf"
+    cp "$fx/nogaps.conf" "$tmp/config/raywm/ray.conf"
     reload
     dump                                                                      # 1
     expect 1 "view 2 0,0 640x720 focused=false"
     expect 1 "view 3 640,0 640x720 focused=true"
-    cp "$fx/broken.conf" "$tmp/config/raywm/raywm.conf"
+    cp "$fx/broken.conf" "$tmp/config/raywm/ray.conf"
     reload
     dump                                                                      # 2
     expect 2 "view 2 0,0 640x720 focused=false"
     expect 2 "view 3 640,0 640x720 focused=true"
-    grep -q "raywm.conf:3: \[appearance\] outer_gaps = fifty: expected a whole number" "$tmp/raywm.log" ||
+    grep -q "ray.conf:3: \[appearance\] outer_gaps = fifty: expected a whole number" "$tmp/raywm.log" ||
         fail "no line-numbered diagnostic for the broken file"
     grep -q "keeping the previous settings" "$tmp/raywm.log" || fail "broken file was not reported as ignored"
     # Lua was reloaded once per reload, with the plugins loaded once each.
     [ "$(grep -c 'loaded plugin dwindle' "$tmp/raywm.log")" -eq 3 ] || fail "dwindle loaded $(grep -c 'loaded plugin dwindle' "$tmp/raywm.log") times, expected 3"
     lacks raywm "already bound"
     # Recovery: the fixed file applies on the next reload.
-    cp "$fx/gaps.conf" "$tmp/config/raywm/raywm.conf"
+    cp "$fx/gaps.conf" "$tmp/config/raywm/ray.conf"
     reload
     dump                                                                      # 3
     expect 3 "view 2 20,20 619x680 focused=false"
@@ -126,7 +126,7 @@ t4() {
     [ "$growth" -lt 512 ] || fail "RSS grew by $growth kB over ${RELOADS:-31} reloads"
     loads=$((1 + 10 + ${RELOADS:-31}))
     [ "$(grep -c 'loaded plugin dwindle' "$tmp/raywm.log")" -eq $loads ] || fail "dwindle loaded $(grep -c 'loaded plugin dwindle' "$tmp/raywm.log") times, expected $loads"
-    [ "$(grep -c 'info(conf): loaded .*/raywm.conf' "$tmp/raywm.log")" -eq $loads ] || fail "raywm.conf not read once per load"
+    [ "$(grep -c 'info(conf): loaded .*/ray.conf' "$tmp/raywm.log")" -eq $loads ] || fail "ray.conf not read once per load"
     dump                                                                      # 1
     expect 1 "view 2 20,20 619x680 focused=false"
     expect 1 "view 3 641,20 619x680 focused=true"
@@ -202,9 +202,9 @@ t9() {
 t10() {
     name="xwayland = false: Xwayland is not started; changing it needs a restart"
     CONF="$fx/noxwayland.conf" WIN=$plain start "$floating" 0
-    grep -q "Xwayland disabled (raywm.conf general.xwayland)" "$tmp/raywm.log" || fail "Xwayland not disabled"
+    grep -q "Xwayland disabled (ray.conf general.xwayland)" "$tmp/raywm.log" || fail "Xwayland not disabled"
     lacks raywm "lazy Xwayland display"
-    rm "$tmp/config/raywm/raywm.conf"
+    rm "$tmp/config/raywm/ray.conf"
     reload
     grep -q "general.xwayland changed: takes effect after restarting RayWM" "$tmp/raywm.log" || fail "restart-only change not reported"
     lacks raywm "lazy Xwayland display"
@@ -212,7 +212,7 @@ t10() {
 }
 
 t11() {
-    name="system raywm.conf below the user's, key by key"
+    name="system ray.conf below the user's, key by key"
     COMPOSITOR_ENV="RAYWM_SYSTEM_CONF=$fx/system.conf" CONF="$fx/user-over-system.conf" WIN=$plain start "$tiled" 2
     dump                                                                      # 1
     expect 1 "view 2 30,30 607x660 focused=false"
@@ -221,10 +221,10 @@ t11() {
 }
 
 t12() {
-    name="v0.2.1 plugins (no raywm.settings) keep working next to raywm.conf"
+    name="v0.2.1 plugins (no raywm.settings) keep working next to ray.conf"
     CONF="$fx/gaps.conf" PLUGINS="$root/tests/compat/v0.2.1/plugins" WIN=$plain start "$tiled" 2
     dump                                                                      # 1
-    # Their own option tables (8 px) apply; raywm.conf's gaps do not.
+    # Their own option tables (8 px) apply; ray.conf's gaps do not.
     expect 1 "view 2 8,8 628x704 focused=false"
     expect 1 "view 3 644,8 628x704 focused=true"
     super_l
@@ -235,7 +235,7 @@ t12() {
 }
 
 t13() {
-    name="no raywm.conf at all: built-in defaults (the v0.2.1 behaviour)"
+    name="no ray.conf at all: built-in defaults (the v0.2.1 behaviour)"
     WIN=$plain start "$tiled" 2
     dump                                                                      # 1
     expect 1 "view 2 8,8 628x704 focused=false"

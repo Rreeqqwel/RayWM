@@ -1,4 +1,4 @@
-//! raywm.conf: the compositor's central settings (docs/CONFIGURATION.md).
+//! ray.conf: the compositor's central settings (docs/CONFIGURATION.md).
 //!
 //! Format: INI-like. `[section]` headers, `key = value` entries, and
 //! comments starting with `#` or `;` on their own line. Values are booleans
@@ -6,7 +6,7 @@
 //! `#rrggbb[aa]` colours and a few keywords. Nothing is ever executed.
 //!
 //! Layers, later ones override earlier ones key by key: built-in defaults,
-//! the system file (/usr/share/raywm/config/raywm.conf), the user file
+//! the system file (/usr/share/raywm/config/ray.conf), the user file
 //! (next to init.lua). A file with any error is rejected as a whole, so a
 //! broken file never applies half of its settings. Unknown sections and
 //! keys are reported as warnings and ignored (a newer file still loads).
@@ -361,7 +361,7 @@ pub fn applyFile(path: [*:0]const u8, settings: *Settings, diag: *Diag, buf: *[m
 
 /// Default system file; RAYWM_SYSTEM_CONF overrides it (empty: none), for
 /// tests and for running from a build tree.
-pub const system_path = "/usr/share/raywm/config/raywm.conf";
+pub const system_path = "/usr/share/raywm/config/ray.conf";
 
 /// Names the restart-only settings that differ between `a` and `b`.
 pub fn restartOnlyChanged(a: *const Settings, b: *const Settings, out: *[8][]const u8) [][]const u8 {
@@ -410,7 +410,7 @@ pub const Value = union(enum) { boolean: bool, integer: i32, string: []const u8,
 
 const testing = std.testing;
 
-test "defaults match the behaviour before raywm.conf" {
+test "defaults match the behaviour before ray.conf" {
     const s: Settings = .{};
     try testing.expect(s.general.focus_new_windows);
     try testing.expect(s.general.xwayland);
@@ -599,11 +599,11 @@ test "restart-only settings are detected" {
     a = b;
 }
 
-test "the shipped config/raywm.conf is valid and equals the defaults" {
+test "the shipped config/ray.conf is valid and equals the defaults" {
     var d: Diag = .{};
     var buf: [max_file_size + 1]u8 = undefined;
     var s: Settings = .{};
-    try testing.expectEqual(FileResult.applied, applyFile("config/raywm.conf", &s, &d, &buf));
+    try testing.expectEqual(FileResult.applied, applyFile("config/ray.conf", &s, &d, &buf));
     try testing.expectEqual(@as(usize, 0), d.n);
     try testing.expect(std.meta.eql(s, Settings{}));
 }
@@ -613,7 +613,7 @@ test "missing file" {
     var buf: [max_file_size + 1]u8 = undefined;
     var s: Settings = .{};
     try testing.expectEqual(FileResult.missing, applyFile("tests/config/does-not-exist.conf", &s, &d, &buf));
-    try testing.expectEqual(FileResult.missing, applyFile("config/init.lua/raywm.conf", &s, &d, &buf));
+    try testing.expectEqual(FileResult.missing, applyFile("config/init.lua/ray.conf", &s, &d, &buf));
     try testing.expectEqual(@as(usize, 0), d.n);
 }
 
@@ -632,7 +632,7 @@ test "each visits every setting" {
 
 // ---- fuzzing (tests/stress, docs/TORTURE.md) ----------------------------------
 
-/// Writes `s` as raywm.conf text that parses back to exactly `s`.
+/// Writes `s` as ray.conf text that parses back to exactly `s`.
 fn serialize(s: *const Settings, buf: []u8) ![]const u8 {
     var w: std.Io.Writer = .fixed(buf);
     const Emit = struct {
@@ -721,7 +721,7 @@ const fuzz_corpus = [_][]const u8{
     "[appearance]\nborder_width = 65\n",
     "\xff\xfe",
     "[general]\nterminal = a\x00b\n",
-    @embedFile("fuzz/raywm.conf"),
+    @embedFile("fuzz/ray.conf"),
 };
 
 // A std.testing.fuzz target: in normal test runs it checks the corpus.
@@ -729,7 +729,7 @@ const fuzz_corpus = [_][]const u8{
 // itself (lib/compiler/test_runner.zig:566 passes a builtin.StackTrace where
 // std.debug.StackTrace is expected), so the seeded generator below is the
 // fuzzer that runs; this target is ready for a fixed Zig.
-test "fuzz target: raywm.conf parser invariants" {
+test "fuzz target: ray.conf parser invariants" {
     try std.testing.fuzz({}, struct {
         fn one(_: void, smith: *std.testing.Smith) anyerror!void {
             var buf: [8192]u8 = undefined;
@@ -774,7 +774,7 @@ fn generate(r: std.Random, buf: []u8) []const u8 {
     return w.buffered();
 }
 
-test "fuzz: 20000 seeded raywm.conf inputs keep the parser invariants" {
+test "fuzz: 20000 seeded ray.conf inputs keep the parser invariants" {
     var prng: std.Random.DefaultPrng = .init(0x7a5c_2026);
     var buf: [16384]u8 = undefined;
     var accepted: usize = 0;

@@ -2,17 +2,17 @@
 
 RayWM has two configuration files, each the only authority for its part:
 
-- **`raywm.conf`** (since v0.2.2): the compositor's basic settings: focus,
+- **`ray.conf`** (since v0.2.2): the compositor's basic settings: focus,
   gaps, borders, the drag modifier, Xwayland. A small INI-like file, read
   and validated by the core; it never runs code.
 - **`init.lua` and plugins** (Lua): which plugins are loaded, and
   everything they do: tiling, key bindings, window rules, outputs, input
   devices, autostart. The plugin API is described in [API.md](API.md).
 
-## raywm.conf
+## ray.conf
 
 ```ini
-# ~/.config/raywm/raywm.conf
+# ~/.config/raywm/ray.conf
 [general]
 focus_new_windows = true
 terminal = kitty
@@ -30,8 +30,8 @@ focus_follows_mouse = true
 ```
 
 The complete example with every setting and its default is
-[config/raywm.conf](../config/raywm.conf) (installed as
-`/usr/share/raywm/config/raywm.conf`).
+[config/ray.conf](../config/ray.conf) (installed as
+`/usr/share/raywm/config/ray.conf`).
 
 ### Format
 
@@ -67,11 +67,11 @@ decides which plugins run (one authority for plugin loading).
 ### Where it is read, and in which order
 
 1. Built-in defaults.
-2. The system file `/usr/share/raywm/config/raywm.conf` (installed by the
+2. The system file `/usr/share/raywm/config/ray.conf` (installed by the
    package; replaced by upgrades, so do not edit it).
-3. Your file `raywm.conf` **next to `init.lua`**: `~/.config/raywm/raywm.conf`
-   (`$XDG_CONFIG_HOME/raywm/raywm.conf`), or, with `raywm -c DIR/init.lua`,
-   `DIR/raywm.conf`.
+3. Your file `ray.conf` **next to `init.lua`**: `~/.config/raywm/ray.conf`
+   (`$XDG_CONFIG_HOME/raywm/ray.conf`), or, with `raywm -c DIR/init.lua`,
+   `DIR/ray.conf`.
 4. Then Lua: `init.lua` and the plugins, which read the result as
    `raywm.settings` (see [API.md](API.md#raywmsettings)).
 
@@ -84,42 +84,42 @@ A file with a syntax error or an invalid value is **ignored as a whole**,
 never applied in part, and the log says where:
 
 ```
-error(conf): /home/me/.config/raywm/raywm.conf:7: [appearance] outer_gaps = fifty: expected a whole number
-error(conf): /home/me/.config/raywm/raywm.conf ignored: fix the errors above (raywm -t checks it)
+error(conf): /home/me/.config/raywm/ray.conf:7: [appearance] outer_gaps = fifty: expected a whole number
+error(conf): /home/me/.config/raywm/ray.conf ignored: fix the errors above (raywm -t checks it)
 ```
 
 At startup RayWM then runs with the defaults and the system file; on a
-reload it keeps the settings it had (`raywm.conf has errors: keeping the
+reload it keeps the settings it had (`ray.conf has errors: keeping the
 previous settings`). Unknown sections and keys are only warnings, so a file
 written for a newer RayWM still loads.
 
 Check a file without starting RayWM (exit status 1 if a file is rejected):
 
 ```sh
-raywm -t                                # ~/.config/raywm/raywm.conf
-raywm -t -c /path/to/test/init.lua      # /path/to/test/raywm.conf
+raywm -t                                # ~/.config/raywm/ray.conf
+raywm -t -c /path/to/test/init.lua      # /path/to/test/ray.conf
 ```
 
 `raywm -t` prints every effective setting, then `configuration OK` or the
 errors. **Recovering from an invalid configuration:** run `raywm -t`, fix the
-line it names (or move the file away: `mv ~/.config/raywm/raywm.conf{,.broken}`
+line it names (or move the file away: `mv ~/.config/raywm/ray.conf{,.broken}`
 gives you the defaults), then reload with Ctrl+Alt+R.
 
 ### Reloading
 
-Ctrl+Alt+R (or Super+Shift+R, `raywm.reload()`) re-reads `raywm.conf`
+Ctrl+Alt+R (or Super+Shift+R, `raywm.reload()`) re-reads `ray.conf`
 before the Lua plugins are set up again, so the plugins see the new values
 at once. Everything marked "yes" above changes on reload; `xwayland` needs a
 restart (the log says so when it changed).
 
-### Plugins and raywm.conf
+### Plugins and ray.conf
 
 The shipped `dwindle.lua`, `focus.lua` and `binds.lua` take their defaults
-from `raywm.conf`. A plain number written into a plugin's option table
+from `ray.conf`. A plain number written into a plugin's option table
 instead (for example `gaps_in = 4` at the top of `dwindle.lua`) overrides
-`raywm.conf` for that plugin. Plugins copied from v0.2.1 or older do not
-read `raywm.conf` at all and keep their own values; everything else keeps
-working. To use `raywm.conf` for gaps and borders, update those plugin
+`ray.conf` for that plugin. Plugins copied from v0.2.1 or older do not
+read `ray.conf` at all and keep their own values; everything else keeps
+working. To use `ray.conf` for gaps and borders, update those plugin
 files from `/usr/share/raywm/config/plugins/`.
 
 ## Where the configuration lives
@@ -254,9 +254,9 @@ Edit the `options` table at the top of `plugins/focus.lua`:
 | `keys.next` / `keys.prev` | `{ "Super+Tab" }` / `{ "Super+Shift+Tab" }` | focus cycle |
 | `cross_output` | `true` | continue onto the next output in that direction when the current output has no window there |
 | `warp` | `false` | move the pointer to the centre of the window chosen with these keys (see below) |
-| `border.width` | `raywm.conf` `border_width` (2) | border width in pixels; `0` disables borders |
-| `border.color` | `raywm.conf` `border_active` (`"#5294e2"`) | focused window: `"#rrggbb"` or `"#rrggbbaa"` |
-| `border.inactive` | `raywm.conf` `border_inactive` (`nil`) | other windows; `nil`: no border |
+| `border.width` | `ray.conf` `border_width` (2) | border width in pixels; `0` disables borders |
+| `border.color` | `ray.conf` `border_active` (`"#5294e2"`) | focused window: `"#rrggbb"` or `"#rrggbbaa"` |
+| `border.inactive` | `ray.conf` `border_inactive` (`nil`) | other windows; `nil`: no border |
 
 An empty key list disables an action.
 
@@ -275,7 +275,7 @@ Edit the top of `plugins/dwindle.lua`:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `gaps_in` / `gaps_out` | `raywm.conf` `inner_gaps` / `outer_gaps` (8) | pixels between windows / around the edge of the usable area |
+| `gaps_in` / `gaps_out` | `ray.conf` `inner_gaps` / `outer_gaps` (8) | pixels between windows / around the edge of the usable area |
 | `min_size` | `1` | smallest width/height ever requested |
 | `keys.focus_next` / `keys.focus_prev` | `{}` / `{}` | cycle focus in tree order (the v0.1.1 Super+J/K). To use it, bind keys here and remove them from `focus.lua`, e.g. `focus_next = { "Super+Tab" }` |
 
@@ -391,7 +391,7 @@ would have to skip them. Floating rules are not part of v0.1.
 
 Ctrl+Alt+R (example config), Super+Shift+R (fallback), or
 `raywm.reload()` from Lua. A reload:
-1. re-reads `raywm.conf` (kept unchanged if it has errors);
+1. re-reads `ray.conf` (kept unchanged if it has errors);
 2. calls every plugin's `teardown`;
 3. releases all plugin registrations (bindings, handlers, timers,
    managed windows);
@@ -448,10 +448,10 @@ the binding.
 
 ## Upgrading to v0.2.2
 
-No change is required: without `raywm.conf` RayWM behaves as v0.2.1. To use
-it, copy the example and edit it: `cp /usr/share/raywm/config/raywm.conf
+No change is required: without `ray.conf` RayWM behaves as v0.2.1. To use
+it, copy the example and edit it: `cp /usr/share/raywm/config/ray.conf
 ~/.config/raywm/` (or from the source archive's `config/`). Gaps and borders
-from `raywm.conf` need the v0.2.2 `dwindle.lua` and `focus.lua`; your older
+from `ray.conf` need the v0.2.2 `dwindle.lua` and `focus.lua`; your older
 copies keep their own option values. Updates now come through
 `raywm-update` (see [INSTALL.md](INSTALL.md#updates-raywm-update)).
 

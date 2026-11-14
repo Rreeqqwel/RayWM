@@ -155,7 +155,7 @@ pub fn build(b: *std.Build) void {
     const alloc_mod = b.createModule(.{ .root_source_file = b.path("src/alloc.zig"), .target = target, .optimize = optimize, .link_libc = true });
     alloc_mod.addOptions("alloc_options", alloc_options);
 
-    // raywm.conf parser: std and libc only, unit-testable on its own.
+    // ray.conf parser: std and libc only, unit-testable on its own.
     const conf = b.createModule(.{
         .root_source_file = b.path("src/conf.zig"),
         .target = target,
@@ -377,7 +377,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests (core, Lua host and the shipped plugins)");
     test_step.dependOn(&unit_run.step);
 
-    // raywm.conf parser; reads the shipped config/raywm.conf.
+    // ray.conf parser; reads the shipped config/ray.conf.
     const conf_tests = b.addTest(.{ .root_module = conf, .use_llvm = use_llvm, .use_lld = use_llvm });
     const conf_run = b.addRunArtifact(conf_tests);
     conf_run.setCwd(b.path("."));

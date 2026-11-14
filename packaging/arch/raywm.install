@@ -22,7 +22,7 @@ _raywm_channel_init() {
   dir=$(dirname "$conf")
   mkdir -p "$dir" || return 0
   tmp="$dir/.update.conf.$$"
-  if printf '# RayWM update channel (raywm-update --set-channel beta|stable).\n# Kept across package upgrades; not part of raywm.conf.\nchannel=%s\n' "$channel" >"$tmp" &&
+  if printf '# RayWM update channel (raywm-update --set-channel beta|stable).\n# Kept across package upgrades; not part of ray.conf.\nchannel=%s\n' "$channel" >"$tmp" &&
     chmod 644 "$tmp" && mv -f "$tmp" "$conf"; then
     echo "==> RayWM: update channel set to '$channel' ($conf)."
     echo "==> Change it with:  sudo raywm-update --set-channel beta|stable"
@@ -37,7 +37,7 @@ post_install() {
   echo '==> RayWM: the default configuration is in /usr/share/raywm/config.'
   echo '==> Start from it with:  cp -r /usr/share/raywm/config ~/.config/raywm'
   echo '==> (an existing ~/.config/raywm is never changed by the package).'
-  echo '==> Settings: ~/.config/raywm/raywm.conf; check it with  raywm -t'
+  echo '==> Settings: ~/.config/raywm/ray.conf; check it with  raywm -t'
 }
 
 post_upgrade() {

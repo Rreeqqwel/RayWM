@@ -14,10 +14,10 @@ correctness ahead of artificial code reduction.
 - Everything that is policy is a Lua plugin: tiling, key bindings and
   window rules.
 - Basic settings (focus, gaps, borders, drag modifier) live in one small,
-  validated file, `raywm.conf`.
+  validated file, `ray.conf`.
 
 > **Status: v0.2.2 (Configuration & Update System), Beta, experimental.**
-> v0.2.2 adds the central `raywm.conf` and the `raywm-update` manager with
+> v0.2.2 adds the central `ray.conf` and the `raywm-update` manager with
 > persistent Beta/Stable channels; see [CHANGELOG.md](CHANGELOG.md).
 > Earlier implementation and validation are recorded in [the development
 > ledger](docs/DEVELOPMENT.md) and [candidate acceptance](docs/RELEASE-STATUS.md).
@@ -74,7 +74,7 @@ correctness ahead of artificial code reduction.
   [GAMING.md](docs/GAMING.md).
 - **Interactive move/resize** for floating windows (Super + drag, or the
   client's own title bar; the modifier is configurable).
-- **`raywm.conf`** (v0.2.2): one validated INI-like file for the basic
+- **`ray.conf`** (v0.2.2): one validated INI-like file for the basic
   settings, layered (defaults, system, user), with line-numbered errors,
   `raywm -t`, and reload that never applies a broken file. Optional
   focus-follows-mouse and inactive borders.
@@ -299,8 +299,8 @@ socket. See [SECURITY.md](SECURITY.md).
 
 ## Configuration
 
-`~/.config/raywm/raywm.conf` holds the basic settings; every key is
-optional (defaults: [config/raywm.conf](config/raywm.conf)):
+`~/.config/raywm/ray.conf` holds the basic settings; every key is
+optional (defaults: [config/ray.conf](config/ray.conf)):
 
 ```ini
 [general]
@@ -323,7 +323,7 @@ focus_follows_mouse = false
 error is ignored as a whole (the log names the line) and a reload keeps
 the previous settings. Ctrl+Alt+R applies changes. Everything else
 (which plugins run, key bindings, rules, monitors, input devices) stays
-in Lua. Reference: [docs/CONFIGURATION.md](docs/CONFIGURATION.md#raywmconf).
+in Lua. Reference: [docs/CONFIGURATION.md](docs/CONFIGURATION.md#rayconf).
 
 ## Lua plugins
 
@@ -380,7 +380,7 @@ All tests are headless and isolated from your session. The input tests
 use test-only virtual input inside a private compositor.
 
 ```sh
-zig build test                      # Zig unit tests (core, Lua host, raywm.conf, raywm-update), Lua plugin tests
+zig build test                      # Zig unit tests (core, Lua host, ray.conf, raywm-update), Lua plugin tests
 tests/smoke.sh && tests/focus.sh && tests/docs.sh
 tests/update.sh                     # raywm-update and the channel scriptlet against local release fixtures
 zig build -Dtest-input -p zig-out/test-input
@@ -388,7 +388,7 @@ tests/input.sh && tests/stress.sh   # real pointer/keyboard events, stress
 tests/pointer.sh                    # implicit pointer grab: exact wl_pointer event streams
 tests/navigation.sh                 # focus keys, layouts (us/ru), two outputs, warp, border
 tests/screenshot.sh                 # real grim/slurp/wl-clipboard, PNGs checked pixel by pixel
-tests/conf.sh                       # raywm.conf: layers, every setting, reload
+tests/conf.sh                       # ray.conf: layers, every setting, reload
 ```
 
 See [docs/TESTING.md](docs/TESTING.md) for every suite, CI, and the
@@ -405,7 +405,7 @@ src/            Zig core
   input.zig       keyboard, bindings, pointer focus and grabs, move/resize
   layer.zig       wlr-layer-shell
   lua.zig         Lua 5.4 host: plugins, isolation, limits
-  conf.zig        raywm.conf parser (settings.zig loads the layers)
+  conf.zig        ray.conf parser (settings.zig loads the layers)
   update.zig      raywm-update: release selection, verification, pacman
   host.zig        compositor functions exposed to Lua (id-based)
 config/         example ~/.config/raywm (layout, state, workspaces, rules, devices, autostart)

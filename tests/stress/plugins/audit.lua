@@ -148,7 +148,7 @@ local function audit()
     ef:close()
     if want and want ~= #views then violation("expected " .. want .. " mapped views, compositor has " .. #views) end
   end
-  -- raywm.settings (raywm.conf as this Lua state sees it), sorted.
+  -- raywm.settings (ray.conf as this Lua state sees it), sorted.
   if raywm.settings then
     local lines = {}
     for sec, t in pairs(raywm.settings) do

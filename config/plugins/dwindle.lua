@@ -17,8 +17,8 @@
 -- place. Across raywm.reload() the tree shape is kept in a small file in
 -- $XDG_RUNTIME_DIR (Lua state does not survive a reload).
 
--- Defaults come from raywm.conf [appearance] (RayWM 0.2.2); a number
--- written here instead overrides raywm.conf for this plugin.
+-- Defaults come from ray.conf [appearance] (RayWM 0.2.2); a number
+-- written here instead overrides ray.conf for this plugin.
 local conf = raywm.settings and raywm.settings.appearance or {}
 
 local options = {

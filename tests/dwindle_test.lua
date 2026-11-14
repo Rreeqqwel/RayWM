@@ -605,15 +605,15 @@ tests["inner and outer gaps are separate options"] = function()
   plugin.options.gaps_in, plugin.options.gaps_out = 8, 8
 end
 
-tests["raywm.settings (raywm.conf) sets the default gaps"] = function()
+tests["raywm.settings (ray.conf) sets the default gaps"] = function()
   plugin.teardown()
   raywm.settings = { appearance = { inner_gaps = 2, outer_gaps = 20 } }
   load_plugin()
   raywm.settings = nil
   assert(plugin.options.gaps_in == 2 and plugin.options.gaps_out == 20, "gaps from raywm.settings")
   local a, b = map(), map()
-  expect(a, "20,20 619x680", "outer 20, inner 2 from raywm.conf")
-  expect(b, "641,20 619x680", "outer 20, inner 2 from raywm.conf")
+  expect(a, "20,20 619x680", "outer 20, inner 2 from ray.conf")
+  expect(b, "641,20 619x680", "outer 20, inner 2 from ray.conf")
   plugin.options.gaps_in, plugin.options.gaps_out = 8, 8
 end
 

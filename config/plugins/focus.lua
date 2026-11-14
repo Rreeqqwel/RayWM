@@ -25,8 +25,8 @@
 -- left to right (then top to bottom), and on each output the windows in
 -- the order they were opened. It wraps around.
 
--- Border defaults come from raywm.conf [appearance] (RayWM 0.2.2); values
--- written here instead override raywm.conf for this plugin.
+-- Border defaults come from ray.conf [appearance] (RayWM 0.2.2); values
+-- written here instead override ray.conf for this plugin.
 local conf = raywm.settings and raywm.settings.appearance or {}
 
 local options = {
