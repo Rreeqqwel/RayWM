@@ -57,7 +57,8 @@ zig build -Doptimize=ReleaseSafe -p zig-out/release && tests/smoke.sh zig-out/re
 Useful variables: `KEEP=1` keeps the temporary directory with all logs;
 `ONLY=<substring>` runs only matching scenarios of `tests/input.sh`,
 `tests/pointer.sh`, `tests/navigation.sh` and `tests/screenshot.sh`.
-`tests/run.sh BIN_DIR LOG_DIR` runs all integration suites and preserves
+`tests/run.sh BIN_DIR LOG_DIR` runs all integration suites (and the
+`docs-sync` check) and preserves
 complete logs plus numeric exit statuses. `SUITES="data effects"` selects a
 subset; existing logs are never overwritten. The interaction suites share
 their session helpers in
