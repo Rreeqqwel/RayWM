@@ -228,12 +228,12 @@ branches.
 
 `master` already held the development tree; `beta` and `release` held full
 copies of it. They now hold generated source-only trees, and `beta` is the
-default branch. The first cleanup commits were generated from the old
-`beta` and `release` heads (so the already published `v0.2.3-beta` tag
-still points to its full development commit) and appended as fast-forwards;
-no history was rewritten. From the next candidate on, every release commit
-is generated from the tested `master` commit and records it in
-`SOURCE-COMMIT`. The required `build + tests (pixman)` check was removed
+default branch. The first cleanup commits were generated from the tested
+`master` tree and appended to the old `beta` and `release` heads as
+fast-forwards, so no history was rewritten. The already published
+`v0.2.3-beta` tag still points to its full development commit; the cleaned
+`release` tree is a staging tree until the next Stable tag. Every release
+commit records its `master` source in `SOURCE-COMMIT`. The required `build + tests (pixman)` check was removed
 from the `beta`/`release` rulesets because the filtered tree has no tests;
 the Release workflow now runs that suite on `SOURCE-COMMIT` instead.
 
