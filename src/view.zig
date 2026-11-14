@@ -550,7 +550,7 @@ pub const View = struct {
     pub fn setWorkspace(view: *View, ws: ?*Workspace) void {
         const old = view.workspace;
         if (old == ws) return;
-        if (ws) |w| if (w.output) |to| if (view.output()) |from| if (from != to) view.moveToOutput(from, to);
+        if (ws) |w| if (w.output) |to| if (view.output()) |from| if (from != to) view.moveToOutput(from.box() orelse from.last_box, to);
         view.workspace = ws;
         if (view.urgent) {
             if (old) |w| w.updateUrgent();
@@ -563,25 +563,27 @@ pub const View = struct {
 
     /// Same place relative to the output, on another output (kept inside
     /// it); fullscreen and maximized windows take the new output's size.
-    pub fn moveToOutput(view: *View, from: *srv.Output, to: *srv.Output) void {
+    pub fn moveToOutput(view: *View, source: ?wlr.Box, to: *srv.Output) void {
+        const b = to.box() orelse return;
+        const t = view.targetBox();
+        // With no previous geometry, retain the current coordinates and clamp
+        // them to the destination rather than inventing an origin.
+        const dx: i32 = if (source) |a| b.x -| a.x else 0;
+        const dy: i32 = if (source) |a| b.y -| a.y else 0;
+        if (view.normal) |*n| {
+            n.x = std.math.clamp(n.x +| dx, b.x, @max(b.x, b.x +| b.width -| @min(n.width, b.width)));
+            n.y = std.math.clamp(n.y +| dy, b.y, @max(b.y, b.y +| b.height -| @min(n.height, b.height)));
+        }
         if (view.isFullscreen()) {
             view.fullscreen_output = to.id;
             return view.refit();
         }
-        const a = from.box();
-        const b = to.box();
-        const t = view.targetBox();
         if (view.maximized) {
-            if (view.normal) |*n| {
-                n.x += b.x - a.x;
-                n.y += b.y - a.y;
-            }
-            view.x += b.x - a.x;
-            view.y += b.y - a.y;
-            return view.refit();
+            const u = to.usableBox() orelse return;
+            return view.place(u.x, u.y, u.width, u.height);
         }
-        const x = std.math.clamp(t.x +| (b.x - a.x), b.x, @max(b.x, b.x +| b.width -| @min(t.width, b.width)));
-        const y = std.math.clamp(t.y +| (b.y - a.y), b.y, @max(b.y, b.y +| b.height -| @min(t.height, b.height)));
+        const x = std.math.clamp(t.x +| dx, b.x, @max(b.x, b.x +| b.width -| @min(t.width, b.width)));
+        const y = std.math.clamp(t.y +| dy, b.y, @max(b.y, b.y +| b.height -| @min(t.height, b.height)));
         if (view.pending) |*p| {
             p.x = x;
             p.y = y;
@@ -748,12 +750,12 @@ pub const View = struct {
     /// `out` null: the output the window is on (else under the pointer).
     pub fn setFullscreen(view: *View, on: bool, out: ?*srv.Output) void {
         if (on) {
-            const o = out orelse view.output() orelse view.server.activeOutput() orelse return;
+            const o = if (out != null and out.?.inLayout()) out.? else view.output() orelse view.server.activeOutput() orelse return;
             if (view.fullscreen_output == o.id) return;
+            const b = o.box() orelse return;
             if (!view.isFullscreen() and !view.maximized) view.normal = view.targetBox();
             view.fullscreen_output = o.id;
             view.setFullscreenState(true);
-            const b = o.box();
             view.place(b.x, b.y, b.width, b.height);
             if (view.pending == null) view.fitFullscreen();
         } else {
@@ -795,7 +797,7 @@ pub const View = struct {
     /// Fills the usable area (without panels) of the window's output.
     fn applyMaximized(view: *View) void {
         const o = view.output() orelse view.server.activeOutput() orelse return;
-        const u = o.usableBox();
+        const u = o.usableBox() orelse return;
         view.place(u.x, u.y, u.width, u.height);
     }
 
@@ -809,7 +811,7 @@ pub const View = struct {
         // no such request (0x0 would become 1x1): use its size at map.
         if (view.impl == .xwayland and view.natural[0] > 0 and view.natural[1] > 0) {
             const o = view.output() orelse view.server.activeOutput() orelse return;
-            const u = o.usableBox();
+            const u = o.usableBox() orelse return;
             const w = view.natural[0];
             const h = view.natural[1];
             return view.place(u.x +| @divTrunc(u.width -| w, 2), u.y +| @divTrunc(u.height -| h, 2), w, h);
@@ -825,14 +827,14 @@ pub const View = struct {
         if (view.isFullscreen()) {
             const o = view.server.outputById(view.fullscreen_output);
             const target = if (o != null and o.?.inLayout()) o.? else view.output() orelse view.server.activeOutput() orelse return;
-            const b = target.box();
+            const b = target.box() orelse return;
             view.fullscreen_output = target.id;
             const t = view.targetBox();
             if (!std.meta.eql(t, b)) view.place(b.x, b.y, b.width, b.height);
             if (view.pending == null) view.fitFullscreen();
         } else if (view.maximized) {
             const o = view.output() orelse return;
-            const u = o.usableBox();
+            const u = o.usableBox() orelse return;
             if (!std.meta.eql(view.targetBox(), u)) view.place(u.x, u.y, u.width, u.height);
         }
     }
@@ -841,7 +843,7 @@ pub const View = struct {
     /// than it) and keeps the backdrop over the whole output.
     fn fitFullscreen(view: *View) void {
         const o = view.server.outputById(view.fullscreen_output) orelse return;
-        const b = o.box();
+        const b = o.box() orelse return;
         const g = view.windowBox();
         view.x = b.x +| @max(0, @divTrunc(b.width -| g.width, 2));
         view.y = b.y +| @max(0, @divTrunc(b.height -| g.height, 2));
@@ -886,7 +888,7 @@ pub const View = struct {
         const g = view.geometry();
         const out = view.server.outputAt(g.x +| @divTrunc(g.width, 2), g.y +| @divTrunc(g.height, 2)) orelse
             return g;
-        const b = out.box();
+        const b = out.box() orelse return g;
         const u: wlr.Box = .{ .x = b.x + out.usable.x, .y = b.y + out.usable.y, .width = out.usable.width, .height = out.usable.height };
         const w = std.math.clamp(if (view.natural[0] > 0) view.natural[0] else g.width, 1, @max(1, @divTrunc(u.width * 9, 10)));
         const h = std.math.clamp(if (view.natural[1] > 0) view.natural[1] else g.height, 1, @max(1, @divTrunc(u.height * 9, 10)));
@@ -1055,18 +1057,18 @@ pub const View = struct {
                 view.applyDecoration();
                 if (t.requested.fullscreen) {
                     const asked = if (t.requested.fullscreen_output) |o| server.outputByWlr(o) else null;
-                    if (asked orelse server.activeOutput()) |o| {
+                    const target = if (asked != null and asked.?.inLayout()) asked else server.activeOutput();
+                    if (target) |o| if (o.box()) |b| {
                         view.fullscreen_output = o.id;
                         _ = t.setFullscreen(true);
-                        const b = o.box();
                         _ = t.setSize(b.width, b.height);
                         return;
-                    }
+                    };
                 }
                 if (t.requested.maximized) if (server.activeOutput()) |o| {
                     view.maximized = true;
                     _ = t.setMaximized(true);
-                    const u = o.usableBox();
+                    const u = o.usableBox() orelse return;
                     _ = t.setSize(u.width, u.height);
                     return;
                 };
@@ -1079,7 +1081,7 @@ pub const View = struct {
     /// Centred on the output under the pointer (on map), or on its own.
     fn centerOnOutput(view: *View) void {
         const o = view.output() orelse view.server.activeOutput() orelse return;
-        const box = o.box();
+        const box = o.box() orelse return;
         const g = view.windowBox();
         view.x = box.x +| @divTrunc(box.width -| g.width, 2);
         view.y = box.y +| @divTrunc(box.height -| g.height, 2);
@@ -1096,15 +1098,14 @@ pub const View = struct {
         // the window here (it is revealed once it has drawn that size).
         const x11 = view.impl == .xwayland;
         if (view.isFullscreen()) {
-            if (x11) if (server.outputById(view.fullscreen_output)) |o| {
-                const b = o.box();
+            if (x11) if (server.outputById(view.fullscreen_output)) |o| if (o.box()) |b| {
                 view.setFullscreenState(true);
                 view.place(b.x, b.y, b.width, b.height);
             };
             view.fitFullscreen();
         } else if (view.maximized) {
             if (server.activeOutput()) |o| {
-                const u = o.usableBox();
+                const u = o.usableBox() orelse return;
                 view.x = u.x;
                 view.y = u.y;
                 if (x11) {
@@ -1423,12 +1424,12 @@ pub const Popup = struct {
         if (View.fromNode(&tree.node)) |view| {
             const g = view.geometry();
             const out = view.server.outputAt(g.x +| @divTrunc(g.width, 2), g.y +| @divTrunc(g.height, 2)) orelse return;
-            box = out.box();
+            box = out.box() orelse return;
             const wb = view.windowBox();
             ox = view.x -| wb.x;
             oy = view.y -| wb.y;
         } else if (LayerSurface.fromNode(&tree.node)) |ls| {
-            box = (ls.output orelse return).box();
+            box = (ls.output orelse return).box() orelse return;
             ox = ls.popups.node.x;
             oy = ls.popups.node.y;
         } else return;

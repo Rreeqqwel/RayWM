@@ -181,4 +181,55 @@ o8() {
     stop
 }
 
-run_scenarios outputs o1 o2 o3 o4 o5 o6 o7 o8
+o9() {
+    name="unplug preserves a floating window's output-relative position"
+    OUTPUTS=2 WIN=$plain PLUGINS=$helpers start "$cfg" 0
+    drive move 1900 360
+    launch a $plain
+    wait_log a "frame done"
+    super_key f7
+    dump
+    expect 1 "view 21 1380,100 300x200 focused=true"
+    unplug HEADLESS-1
+    sleep 0.5
+    dump
+    grep -Eq '^view 21 100,100 300x200 focused=(true|false)$' "$tmp/probe.log" || fail "floating window did not migrate at the same relative position"
+    stop
+}
+
+o10() {
+    name="unplug refits fullscreen and maximized windows"
+    for state in fullscreen maximized; do
+        if [ "$state" = fullscreen ]; then request=RAYWM_TEST_FULLSCREEN=1; else request=RAYWM_TEST_MAXIMIZED=1; fi
+        OUTPUTS=2 WIN=$plain PLUGINS=$helpers start "$cfg" 0
+        drive move 1900 360
+        launch a $plain "$request"
+        wait_log a "frame done"
+        dump
+        expect 1 "view 21 1280,0 1280x720 focused=true"
+        expect 1 "where 21 1@HEADLESS-1"
+        unplug HEADLESS-1
+        sleep 0.5
+        dump
+        grep -Eq '^view 21 0,0 1280x720 focused=(true|false)$' "$tmp/probe.log" || fail "$state window was not refitted on the remaining output"
+        stop
+    done
+}
+
+o11() {
+    name="unplug the last output and restore windows when an output returns"
+    WIN=$plain PLUGINS=$helpers start "$cfg" 1
+    super_key f7
+    dump
+    expect 1 "view 11 100,100 300x200 focused=true"
+    unplug HEADLESS-1
+    sleep 0.5
+    kill -0 "$pid" 2>/dev/null || fail "compositor died after last output was unplugged"
+    plug
+    sleep 0.5
+    dump
+    grep -Eq '^view 11 100,100 300x200 focused=(true|false)$' "$tmp/probe.log" || fail "floating window did not return to the new output"
+    stop
+}
+
+run_scenarios outputs o1 o2 o3 o4 o5 o6 o7 o8 o9 o10 o11

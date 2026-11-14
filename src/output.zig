@@ -50,6 +50,8 @@ pub const Output = struct {
     /// Where it was in the layout, kept while it is disabled: reported to
     /// output-management clients and used when it is enabled again.
     last_pos: ?[2]i32 = null,
+    /// Most recent geometry observed while this output was in the layout.
+    last_box: ?wlr.Box = null,
     /// Without a backend DRM device there is no scanout target for
     /// linux-dmabuf feedback. Keep renderer import/composition available.
     force_composite: bool = false,
@@ -120,7 +122,8 @@ pub const Output = struct {
         layer_shell.arrange(output);
     }
 
-    pub fn box(output: *Output) wlr.Box {
+    pub fn box(output: *Output) ?wlr.Box {
+        if (!output.inLayout()) return null;
         var b: wlr.Box = undefined;
         output.server.output_layout.getBox(output.wlr_output, &b);
         return b;
@@ -129,16 +132,16 @@ pub const Output = struct {
     pub fn layoutLockBackground(output: *Output) void {
         const r = output.lock_bg orelse return;
         if (!output.inLayout()) return r.node.setEnabled(false);
-        const b = output.box();
+        const b = output.box() orelse return r.node.setEnabled(false);
         r.node.setEnabled(true);
         r.node.setPosition(b.x, b.y);
         r.setSize(b.width, b.height);
     }
 
     /// The usable area in layout coordinates.
-    pub fn usableBox(output: *Output) wlr.Box {
-        const b = output.box();
-        return .{ .x = b.x + output.usable.x, .y = b.y + output.usable.y, .width = output.usable.width, .height = output.usable.height };
+    pub fn usableBox(output: *Output) ?wlr.Box {
+        const b = output.box() orelse return null;
+        return .{ .x = b.x +| output.usable.x, .y = b.y +| output.usable.y, .width = output.usable.width, .height = output.usable.height };
     }
 
     /// wlroots only emits frame when the output needs a repaint (damage or
@@ -330,7 +333,7 @@ fn pinAuto(server: *Server, skip: *Output) void {
     var it = server.outputs.iterator(.forward);
     while (it.next()) |o| {
         if (o == skip or !o.autoPlaced()) continue;
-        const b = o.box();
+        const b = o.box() orelse continue;
         _ = server.output_layout.add(o.wlr_output, b.x, b.y) catch {};
     }
 }
@@ -534,7 +537,7 @@ pub fn configure(server: *Server, changes: []const Change, test_only: bool) Conf
         const enable = c.config.enabled orelse o.inLayout();
         if (!enable) {
             if (o.inLayout()) {
-                const b = o.box();
+                const b = o.box() orelse continue;
                 o.last_pos = .{ b.x, b.y };
                 server.output_layout.remove(o.wlr_output);
             }
@@ -548,7 +551,7 @@ pub fn configure(server: *Server, changes: []const Change, test_only: bool) Conf
             .auto => o.joinLayout(null) catch return error.OutOfMemory,
             .at => |xy| {
                 const b = o.box();
-                if (!o.inLayout() or o.autoPlaced() or b.x != xy[0] or b.y != xy[1]) o.joinLayout(xy) catch return error.OutOfMemory;
+                if (b == null or o.autoPlaced() or b.?.x != xy[0] or b.?.y != xy[1]) o.joinLayout(xy) catch return error.OutOfMemory;
             },
         } else if (!o.inLayout()) o.joinLayout(null) catch return error.OutOfMemory;
         // Cursor images for this scale.
@@ -601,7 +604,7 @@ pub const Management = struct {
             // output still is).
             head.state.enabled = o.inLayout();
             if (o.inLayout()) {
-                const b = o.box();
+                const b = o.box() orelse continue;
                 head.state.x = b.x;
                 head.state.y = b.y;
             } else if (o.last_pos) |p| {

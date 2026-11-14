@@ -274,7 +274,7 @@ fn sameText(current: ?[*:0]const u8, wanted: [*:0]const u8) bool {
 fn overlaps(v: *View, o: *srv.Output) bool {
     if (!o.inLayout()) return false;
     const a = v.geometry();
-    const b = o.box();
+    const b = o.box() orelse return false;
     return @as(i64, a.x) < @as(i64, b.x) + b.width and @as(i64, b.x) < @as(i64, a.x) + a.width and
         @as(i64, a.y) < @as(i64, b.y) + b.height and @as(i64, b.y) < @as(i64, a.y) + a.height;
 }

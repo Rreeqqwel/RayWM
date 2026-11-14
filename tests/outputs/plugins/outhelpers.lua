@@ -35,6 +35,18 @@ return {
       raywm.view_move(id, target.x + 100, target.y + 100)
       log:write(("hide-move %d to %d at %d\n"):format(id, ws, target.x + 100))
     end)
+    -- Place the focused window at a known offset on its current output.
+    ctx.bind("Super+F7", function()
+      local id = raywm.focused()
+      local v = id and raywm.view(id)
+      local o
+      for _, candidate in ipairs(raywm.outputs()) do
+        if v and candidate.id == v.output then o = candidate end
+      end
+      if not o then return end
+      raywm.view_floating(id, true)
+      raywm.view_place(id, o.x + 100, o.y + 100, 300, 200)
+    end)
     ctx.bind("Super+F9", function()
       local function try(name, opts)
         local ok, a, b = pcall(raywm.output_configure, name, opts)

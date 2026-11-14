@@ -489,7 +489,10 @@ pub const Server = struct {
         var outs = server.outputs.iterator(.forward);
         // A dying output is still listed here: wlroots removes it from the
         // layout (firing this event) before our destroy handler runs.
-        while (outs.next()) |o| if (o.inLayout()) o.arrangeLayers();
+        while (outs.next()) |o| if (o.box()) |b| {
+            o.last_box = b;
+            o.arrangeLayers();
+        };
         // Workspaces of an output that left move with their windows first.
         workspace.rescue(server);
         if (server.session_lock.locked()) server.session_lock.arrange();

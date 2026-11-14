@@ -188,7 +188,7 @@ pub fn output(server: *Server, id: u32) ?lua.OutputInfo {
     const o = server.outputById(id) orelse return null;
     const w = o.wlr_output;
     const in_layout = o.inLayout();
-    const b: wlr.Box = if (in_layout) o.box() else .{ .x = 0, .y = 0, .width = 0, .height = 0 };
+    const b: wlr.Box = o.box() orelse .{ .x = 0, .y = 0, .width = 0, .height = 0 };
     const u = o.usable;
     return .{
         .box = .{ .x = b.x, .y = b.y, .w = b.width, .h = b.height },

@@ -38,6 +38,8 @@ pub const Workspace = struct {
     home: [:0]u8,
     /// The output it belongs to; null only while no output exists.
     output: ?*Output,
+    /// Geometry retained while no output exists.
+    last_box: ?wlr.Box = null,
     /// In server.workspaces, in creation order.
     link: wl.list.Link = undefined,
     /// No plugin owns it (see the file comment).
@@ -148,6 +150,8 @@ pub const Workspace = struct {
         const old = ws.output;
         if (old == out) return;
         const server = ws.server;
+        const source = if (old) |o| o.box() orelse o.last_box else ws.last_box;
+        if (out == null) ws.last_box = source;
         ws.output = out;
         if (old) |o| if (o.active_ws == ws) {
             o.active_ws = firstOn(server, o);
@@ -156,9 +160,10 @@ pub const Workspace = struct {
             o.active_ws = ws;
         };
         // Windows go along, at the same place relative to the output.
-        if (old != null and out != null) {
+        if (out) |target| {
             var it = server.view_ids.valueIterator();
-            while (it.next()) |vp| if (vp.*.workspace == ws) vp.*.moveToOutput(old.?, out.?);
+            while (it.next()) |vp| if (vp.*.workspace == ws) vp.*.moveToOutput(source, target);
+            ws.last_box = null;
         }
         var vit = server.view_ids.valueIterator();
         while (vit.next()) |vp| vp.*.updateVisibility();

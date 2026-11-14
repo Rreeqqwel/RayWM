@@ -178,7 +178,7 @@ pub const LayerSurface = struct {
 /// Positions all layer surfaces of `output` (exclusive zones first, as the
 /// protocol intends) and recomputes the area left for windows.
 pub fn arrange(output: *Output) void {
-    const full = output.box();
+    const full = output.box() orelse return;
     var usable = full;
     for ([_]bool{ true, false }) |exclusive_pass| {
         for ([_]zwlr.LayerShellV1.Layer{ .overlay, .top, .bottom, .background }) |layer| {
