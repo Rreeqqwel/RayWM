@@ -152,7 +152,16 @@ local function audit()
   if raywm.settings then
     local lines = {}
     for sec, t in pairs(raywm.settings) do
-      for k, v in pairs(t) do lines[#lines + 1] = "setting " .. sec .. "." .. k .. "=" .. tostring(v) end
+      for k, v in pairs(t) do
+        if type(v) == "table" then
+          -- List settings (autostart.exec): one line per entry, like `raywm -t`.
+          for _, item in ipairs(v) do
+            lines[#lines + 1] = "setting " .. sec .. "." .. k .. "=" .. tostring(item)
+          end
+        else
+          lines[#lines + 1] = "setting " .. sec .. "." .. k .. "=" .. tostring(v)
+        end
+      end
     end
     table.sort(lines)
     for _, l in ipairs(lines) do out:write(l, "\n") end
