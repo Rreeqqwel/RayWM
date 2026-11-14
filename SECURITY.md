@@ -29,12 +29,15 @@ What RayWM *does* do, to contain mistakes rather than attacks:
 | Every callback runs under `pcall`; a failing plugin is unloaded | a buggy plugin taking the compositor down | stop a plugin from misbehaving without raising errors |
 | Memory cap (64 MiB, shared) | runaway allocation | per-plugin accounting; a hoarding plugin can cause another plugin's allocation to fail |
 | Instruction budget per callback, re-raised on every instruction once exceeded (so `pcall` cannot swallow it) | infinite loops freezing the compositor | limit total CPU time over many callbacks |
-| No `debug` library, no `package.loadlib`, no C module searchers | corrupting internal state through upvalues and the registry; loading native code from Lua | prevent other ways of misbehaving (for example `load` with crafted bytecode) |
+| No `debug` library, no `package.loadlib`, no C module searchers | corrupting internal state through upvalues and the registry; loading native code from Lua | prevent a plugin from using the APIs it is given with the compositor's own authority (spawn, IPC actions, window control) |
 | Integer ids instead of native pointers; ids checked on every call | use-after-free through stale handles | — |
 | Coordinates clamped, geometry math saturating | arithmetic overflow from extreme values | — |
 
-Crafted Lua bytecode passed to `load` can crash the Lua VM. This is
-another reason why plugins have to be trusted.
+The loaders accept Lua source only: `load`, `loadfile`, `dofile` and
+`require` force text mode, so bytecode (a documented way to crash the VM)
+is refused before it runs. Plugins still have to be trusted because they
+run with the compositor's authority: they can spawn processes and call
+every host function.
 
 ## Wayland clients and privileged protocols
 
@@ -170,7 +173,8 @@ retry policy; Wayland clients remain independent of its process lifecycle.
   packages are checked to contain no such code (`scripts/package.sh`).
 - **Screenshot files** are created with mode 0600 in the user's
   pictures directory; temporary files for clipboard copies live in
-  `$XDG_RUNTIME_DIR` and are removed after use.
+  `$XDG_RUNTIME_DIR`, or `/tmp` when it is unset, are created with
+  `mktemp` (mode 0600) and are removed after use.
 - **Dwindle snapshot.** The dwindle plugin keeps its tree shape across
   reloads in `$XDG_RUNTIME_DIR` (mode 0700). The snapshot is parsed as
   plain data and never executed. Without `XDG_RUNTIME_DIR` it is not

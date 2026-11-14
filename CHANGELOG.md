@@ -22,6 +22,11 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
   options list in README omitted `raywm -t`; `docs/ARCHITECTURE.md`
   listed a non-existent `outputconfig.zig` and left `conf.zig`,
   `settings.zig`, `alloc.zig` and `cabi.zig` out of the module table.
+- `SECURITY.md` claimed that crafted bytecode passed to `load` can crash
+  the VM, although `load`, `loadfile`, `dofile` and `require` have
+  forced text mode since v0.2.3, and it placed screenshot clipboard
+  temporary files in `$XDG_RUNTIME_DIR` only, while the shipped plugin
+  falls back to `/tmp` when it is unset.
 
 ## [v0.2.3] — Sticky, pinned and ray.conf, candidate prepared 2026-11-14
 
