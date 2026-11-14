@@ -64,6 +64,9 @@ jobs:
       - name: Lint (computed bools passed to C, see src/cabi.zig)
         run: tests/lint.sh
 
+      - name: Documentation sync (API, settings, IPC, options, modules)
+        run: tests/docs-sync.sh
+
       - name: Build (Debug)
         run: zig build
 

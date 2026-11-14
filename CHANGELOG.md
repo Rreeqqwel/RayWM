@@ -6,6 +6,16 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ## [Unreleased]
 
+### Tests and infrastructure
+
+- **`tests/docs-sync.sh`** keeps the documentation tied to the public
+  surface: it fails when a `raywm.*`/`ctx.*` name registered in
+  `src/lua.zig`, a setting in `src/conf.zig`, an IPC method in
+  `src/ipc.zig` or a command-line option in `src/main.zig` is missing
+  from its reference document, or when the docs name a module that no
+  longer exists. CI runs it before the build; `AGENTS.md` maps each kind
+  of change to the documents it must update.
+
 ### Fixed
 
 - Documentation drift: the CLI reference in `docs/INSTALL.md` and the
