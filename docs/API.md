@@ -185,7 +185,7 @@ plugin also supports an older RayWM. `raywm.version` identifies the
 compositor build; it is independent of the plugin API version.
 
 `view(id)` additionally reports `parent` (0 for none), `min_w`, `min_h`,
-`max_w`, `max_h` (0 means no client limit), `floating`, `sticky`, `managed`,
+`max_w`, `max_h` (0 means no client limit), `floating`, `sticky`, `pinned`, `managed`,
 `fullscreen`, `fullscreen_output` (0 when not fullscreen), `maximized`,
 `workspace` (0 for no workspace), `minimized`, `urgent`, `xwayland`,
 `pid`, and `decoration` (`"client"`, `"server"`, or nil without a decoration
@@ -200,6 +200,7 @@ Window commands return `true` or `nil, "stale"`:
 |---|---|
 | `view_floating(id, on)` | Change floating intent; layout plugins respond to `view_state`. The shipped floating plugin restores the last floating geometry. |
 | `view_sticky(id, on)` | Keep the window visible on every workspace of its output (added after v0.2.2). It keeps its workspace and geometry; intended for floating windows. |
+| `view_pinned(id, on)` | Keep the window above every normal window (added after v0.2.2). Pinning makes it floating in place; unpinning leaves it floating. |
 | `view_fullscreen(id, on [, output])` | Enter/leave native fullscreen. An omitted/zero output selects the window's output. Invalid output IDs fall back to the window's output. |
 | `view_maximize(id, on)` | Fill the output's usable area; leaving restores normal geometry. |
 | `view_workspace(id, workspace)` | Move to a native workspace; nil/0 removes workspace membership. A stale workspace fails without moving the view. |

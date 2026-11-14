@@ -83,6 +83,8 @@ pub const View = struct {
     floating: bool = false,
     /// Shown on every workspace of its output (raywm.view_sticky).
     sticky: bool = false,
+    /// Above every normal window, and floating (raywm.view_pinned).
+    pinned: bool = false,
     /// Geometry it last had while floating, restored when it floats again.
     float_box: ?wlr.Box = null,
     /// Size the client chose when it mapped, used when it first floats.
@@ -687,6 +689,21 @@ pub const View = struct {
         view.stateChanged();
     }
 
+    /// Keeps the window above every normal window and floating in place.
+    /// Unpinning leaves it floating (toggle floating to tile it again).
+    pub fn setPinned(view: *View, on: bool) void {
+        if (view.pinned == on) return;
+        view.pinned = on;
+        if (on and !view.floating) {
+            // Keep the tile's geometry instead of jumping to a default box.
+            view.float_box = view.geometry();
+            view.setFloating(true);
+        }
+        view.restack();
+        view.restackChildren();
+        view.stateChanged();
+    }
+
     /// A live plugin lays out this window (ctx.manage).
     pub fn managed(view: *View) bool {
         const rt = view.server.rt orelse return false;
@@ -711,10 +728,11 @@ pub const View = struct {
         return false;
     }
 
-    /// The layer of a non-fullscreen window: sticky windows above normal
-    /// ones (and their dialogs with them), a special workspace above that,
-    /// everything below panels.
+    /// The layer of a non-fullscreen window: pinned windows above all,
+    /// then sticky ones (and their dialogs with them), a special workspace
+    /// above normal windows, everything below panels.
     fn windowLayer(view: *View) srv.Layer {
+        if (view.pinned or hasAncestorFlag(view, "pinned")) return .pinned;
         if (view.sticky or hasAncestorFlag(view, "sticky")) return .sticky;
         if (view.workspace) |w| if (w.special) return .special;
         return if (view.managed()) .tiled else .floating;

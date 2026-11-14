@@ -320,7 +320,7 @@ ws15() {
     WIN=$plain PLUGINS=$helpers start "$cfg" 2
     super_ctrl s                                             # b (12) becomes sticky
     dump                                                                      # 1
-    expect 1 "flags 12 sticky=true"
+    expect 1 "flags 12 sticky=true pinned=false"
     super_key 2
     dump                                                                      # 2
     expect 2 "view 11 8,8 628x704 focused=false"
@@ -333,7 +333,7 @@ ws15() {
     super_ctrl s                                             # no longer sticky
     super_key 2
     dump                                                                      # 3
-    expect 3 "flags 12 sticky=false"
+    expect 3 "flags 12 sticky=false pinned=false"
     expect 3 "state 12 floating=false fullscreen=false maximized=false visible=false managed=true ws=2 output=1"
     stop
 }

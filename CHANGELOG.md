@@ -42,6 +42,9 @@ Reliability hardening from the first torture-suite run
   window visible on every workspace of its output until it is unpinned.
   Sticky windows keep their workspace membership and geometry and use a
   dedicated scene layer above normal windows; their dialogs follow them.
+- **Pinned windows:** `raywm.view_pinned(id, on)` and `Super+Ctrl+P` keep a
+  window above every normal window. Pinning makes it floating in place so
+  layouts leave it alone; unpinning leaves it floating.
 - **Special workspaces** (scratchpad overlays): `config/plugins/special.lua`
   creates one hidden workspace per output and `Super+S` shows it above the
   current workspace without hiding it (`Super+Shift+S` moves the focused

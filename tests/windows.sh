@@ -22,6 +22,7 @@ shown_after_resize() {
         fail "$1 was shown before it had its size $2"
 }
 toggle_float() { drive key super down key shift down key space down key space up key shift up key super up sleep 300; }
+super_ctrl() { drive key super down key ctrl down key "$1" down key "$1" up key ctrl up key super up sleep 300; }
 
 w1() {
     name="a tiled window is shown only once it has its tile size"
@@ -351,4 +352,30 @@ w16() {
     stop
 }
 
-run_scenarios windows w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16
+w17() {
+    name="pinned windows float in place and stay above normal windows"
+    WIN=$plain start "$tiled" 2
+    super_ctrl p                                              # b (3) pinned
+    dump                                                                      # 1
+    expect 1 "flags 3 sticky=false pinned=true"
+    expect 1 "state 3 floating=true fullscreen=false maximized=false visible=true managed=false ws=0 output=1"
+    expect 1 "view 3 644,8 628x704 focused=true"
+    launch c $plain
+    wait_log c "frame done"
+    sleep 0.3
+    dump                                                                      # 2
+    expect 2 "view 3 644,8 628x704 focused=false"
+    expect 2 "view 4 644,8 628x704 focused=true"
+    # c is tiled under b; the click goes to the pinned b.
+    drive move 900 360 down left up left sleep 150
+    has b "ptr button 272 pressed window"
+    lacks c "ptr button 272 pressed window"
+    super_ctrl p                                              # unpinned
+    dump                                                                      # 3
+    expect 3 "flags 3 sticky=false pinned=false"
+    expect 3 "state 3 floating=true fullscreen=false maximized=false visible=true managed=false ws=0 output=1"
+    expect 3 "view 3 644,8 628x704 focused=true"
+    stop
+}
+
+run_scenarios windows w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16 w17

@@ -64,6 +64,7 @@ return {
     end
     if raywm.view_sticky then -- RayWM 0.2.3
       ctx.bind("Super+Ctrl+s", toggle("sticky", raywm.view_sticky))
+      ctx.bind("Super+Ctrl+p", toggle("pinned", raywm.view_pinned))
     end
     if raywm.view_minimize then -- RayWM 0.2.0
       -- After a reload: windows that are still minimized.

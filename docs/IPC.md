@@ -57,7 +57,7 @@ returned numeric `next` as the next `offset` until it is null. Lists have
 the same 4096-item cap as the Lua API.
 
 Window entries contain `id,x,y,w,h,title,app_id,workspace,output,focused,
-visible,floating,sticky,fullscreen,maximized,minimized,urgent,xwayland,pid`.
+visible,floating,sticky,pinned,fullscreen,maximized,minimized,urgent,xwayland,pid`.
 Output entries contain `id,name,x,y,w,h,scale,transform,enabled,power,workspace`.
 Workspace entries contain `id,name,output,active,urgent,special`. `active`
 also reports a shown special overlay; `special` distinguishes overlays

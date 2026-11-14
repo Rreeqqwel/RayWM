@@ -40,7 +40,7 @@ return {
             tostring(v.urgent), tostring(v.decoration)))
         end
         if raywm.view_sticky then
-          out:write(string.format("flags %d sticky=%s\n", id, tostring(v.sticky)))
+          out:write(string.format("flags %d sticky=%s pinned=%s\n", id, tostring(v.sticky), tostring(v.pinned)))
         end
         if raywm.workspace and v.workspace ~= 0 then
           local w = raywm.workspace(v.workspace)

@@ -88,6 +88,7 @@ pub const ViewInfo = struct {
     max_h: i32 = 0,
     floating: bool = false,
     sticky: bool = false,
+    pinned: bool = false,
     fullscreen: bool = false,
     fullscreen_output: u32 = 0,
     maximized: bool = false,
@@ -201,6 +202,7 @@ pub const ViewCmd = union(enum) {
     border: Border,
     floating: bool,
     sticky: bool,
+    pinned: bool,
     /// `output` 0: the output the window is on.
     fullscreen: struct { on: bool, output: u32 },
     maximize: bool,
@@ -959,6 +961,7 @@ pub fn Runtime(comptime H: type) type {
         const globals_later = .{
             .{ "workspace_toggle", lWorkspaceToggle },
             .{ "view_sticky", viewCmd(.sticky) },
+            .{ "view_pinned", viewCmd(.pinned) },
         };
 
         const ctx_fns = .{
@@ -1338,6 +1341,7 @@ pub fn Runtime(comptime H: type) type {
             setInt(L, "max_h", info.max_h);
             setBool(L, "floating", info.floating);
             setBool(L, "sticky", info.sticky);
+            setBool(L, "pinned", info.pinned);
             setBool(L, "fullscreen", info.fullscreen);
             setInt(L, "fullscreen_output", info.fullscreen_output);
             setBool(L, "maximized", info.maximized);
@@ -1482,6 +1486,7 @@ pub fn Runtime(comptime H: type) type {
                         .show => .{ .show = c.lua_toboolean(L, 2) != 0 },
                         .floating => .{ .floating = c.lua_toboolean(L, 2) != 0 },
                         .sticky => .{ .sticky = c.lua_toboolean(L, 2) != 0 },
+                        .pinned => .{ .pinned = c.lua_toboolean(L, 2) != 0 },
                         .fullscreen => .{ .fullscreen = .{
                             .on = c.lua_toboolean(L, 2) != 0,
                             .output = if (c.lua_type(L, 3) <= c.LUA_TNIL) 0 else checkId(L, 3),
