@@ -9,7 +9,7 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 ### Tests and infrastructure
 
 - **`tests/docs-sync.sh`** keeps the documentation tied to the public
-  surface: it fails when a `raywm.*`/`ctx.*` name registered in
+  surface: it fails when a `raywm.*`/`ctx.*` name or event in
   `src/lua.zig`, a setting in `src/conf.zig`, an IPC method in
   `src/ipc.zig` or a command-line option in `src/main.zig` is missing
   from its reference document, or when the docs name a module that no

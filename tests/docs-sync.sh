@@ -34,6 +34,15 @@ for name in $names; do
         fail "raywm.$name is registered in src/lua.zig but missing from docs/API.md"
 done
 
+# Every event name in src/lua.zig needs a row in the API.md event table.
+events=$(awk '/pub const Event = enum \{/,/^\};/' src/lua.zig |
+    sed -n 's/^ *\([a-z_]*\),$/\1/p' | sort -u)
+[ -n "$events" ] || fail "no events found in src/lua.zig (the enum moved; update this script)"
+for event in $events; do
+    grep -qF "\`$event\`" docs/API.md ||
+        fail "event $event is emitted by src/lua.zig but missing from docs/API.md"
+done
+
 # Every setting in src/conf.zig needs a row in the CONFIGURATION.md table.
 settings=$(awk '
     /^pub const Settings = struct \{/ { settings = 1; next }
@@ -102,4 +111,4 @@ if [ "$failed" -ne 0 ]; then
     echo "docs-sync: FAIL ($failed problem(s)); update the docs or the check"
     exit 1
 fi
-echo "docs-sync: OK ($(echo "$names" | wc -w) API names, $(echo "$settings" | wc -w) settings, $(echo "$methods" | wc -w) IPC methods, $(echo "$options" | wc -w) options)"
+echo "docs-sync: OK ($(echo "$names" | wc -w) API names, $(echo "$events" | wc -w) events, $(echo "$settings" | wc -w) settings, $(echo "$methods" | wc -w) IPC methods, $(echo "$options" | wc -w) options)"
