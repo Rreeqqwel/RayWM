@@ -19,10 +19,11 @@ not share `master`'s commits after the initial cleanup. Their code is still
 tested: CI runs on the recorded `SOURCE-COMMIT`, and the Release workflow
 runs the complete suite on it before publishing.
 
-The required check on `beta` and `release` is therefore the release-plan
-check, not a test job on the filtered commit. A commit that cannot name a
-master `SOURCE-COMMIT`, or whose release files differ from that commit,
-is rejected by the Release workflow.
+The `beta`/`release` ruleset therefore enforces linear history, no
+force-push and no deletion, but no test job on the filtered commit: the
+tests belong to `master`. A commit that cannot name a master
+`SOURCE-COMMIT`, or whose release files differ from that commit, is
+rejected by the Release workflow.
 
 Temporary branches (`feature/*`, `fix/*`, `hotfix/*`) branch from
 `master`, run CI, and are merged back into `master`.
