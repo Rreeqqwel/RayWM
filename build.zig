@@ -10,6 +10,8 @@ pub fn build(b: *std.Build) void {
     // TEST ONLY: virtual pointer/keyboard protocols for tests/input.sh.
     // Never enable this for a build that is installed or distributed.
     const test_input = b.option(bool, "test-input", "TEST ONLY: enable virtual input protocols") orelse false;
+    // beta/release are source-only trees: tests/ exists only on master.
+    const has_tests = if (b.build_root.handle.access(b.graph.io, "tests/client.zig", .{})) |_| true else |_| false;
 
     const scanner = Scanner.create(b, .{});
     scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
@@ -49,8 +51,8 @@ pub fn build(b: *std.Build) void {
     scanner.addCustomProtocol(b.path("protocol/wlr-foreign-toplevel-management-unstable-v1.xml"));
     // Client side for raywm-test-client only (presentation feedback); the
     // compositor side is wlroots'. The copy works around a scanner bug.
-    scanner.addCustomProtocol(b.path("tests/protocol/presentation-time.xml"));
-    if (test_input) {
+    if (has_tests) scanner.addCustomProtocol(b.path("tests/protocol/presentation-time.xml"));
+    if (test_input and has_tests) {
         const transfer = b.addExecutable(.{
             .name = "raywm-test-data",
             .root_module = b.createModule(.{ .target = target, .optimize = optimize, .link_libc = true }),
@@ -121,7 +123,7 @@ pub fn build(b: *std.Build) void {
     scanner.generate("zwp_primary_selection_device_manager_v1", 1);
     scanner.generate("zxdg_exporter_v2", 1);
     scanner.generate("zxdg_importer_v2", 1);
-    scanner.generate("wp_presentation", 2);
+    if (has_tests) scanner.generate("wp_presentation", 2);
     scanner.generate("zxdg_decoration_manager_v1", 1);
     scanner.generate("xdg_activation_v1", 1);
     scanner.generate("zwlr_foreign_toplevel_manager_v1", 3);
@@ -320,21 +322,23 @@ pub fn build(b: *std.Build) void {
     exe.root_module.linkSystemLibrary("libinput", .{});
     b.installArtifact(exe);
 
-    // Minimal xdg-shell client used by tests/smoke.sh.
-    const client = b.addExecutable(.{
-        .name = "raywm-test-client",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/client.zig"),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        }),
-        .use_llvm = use_llvm,
-        .use_lld = use_llvm,
-    });
-    client.root_module.addImport("wayland", wayland);
-    client.root_module.linkSystemLibrary("wayland-client", .{});
-    b.installArtifact(client);
+    // Minimal xdg-shell client used by tests/smoke.sh (master only).
+    if (has_tests) {
+        const client = b.addExecutable(.{
+            .name = "raywm-test-client",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("tests/client.zig"),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+            }),
+            .use_llvm = use_llvm,
+            .use_lld = use_llvm,
+        });
+        client.root_module.addImport("wayland", wayland);
+        client.root_module.linkSystemLibrary("wayland-client", .{});
+        b.installArtifact(client);
+    }
 
     // Update manager (src/update.zig): std and libc only; uses curl,
     // vercmp, pacman and makepkg as external programs.
@@ -352,107 +356,111 @@ pub fn build(b: *std.Build) void {
 
     // The torture suite on this install (docs/TORTURE.md); needs the test
     // build: zig build stress -Dtest-input -p zig-out/test-input -- --level fast
-    const stress = b.addSystemCommand(&.{ "sh", "tests/stress/run.sh", "--bin" });
-    stress.addArg(b.getInstallPath(.bin, ""));
-    if (b.args) |args| stress.addArgs(args);
-    stress.setCwd(b.path("."));
-    stress.has_side_effects = true;
-    stress.step.dependOn(b.getInstallStep());
-    b.step("stress", "Torture suite tests/stress/run.sh (build with -Dtest-input)").dependOn(&stress.step);
+    if (has_tests) {
+        const stress = b.addSystemCommand(&.{ "sh", "tests/stress/run.sh", "--bin" });
+        stress.addArg(b.getInstallPath(.bin, ""));
+        if (b.args) |args| stress.addArgs(args);
+        stress.setCwd(b.path("."));
+        stress.has_side_effects = true;
+        stress.step.dependOn(b.getInstallStep());
+        b.step("stress", "Torture suite tests/stress/run.sh (build with -Dtest-input)").dependOn(&stress.step);
+    }
 
     const run = b.addRunArtifact(exe);
     if (b.args) |args| run.addArgs(args);
     b.step("run", "Run raywm").dependOn(&run.step);
 
-    const unit_mod = b.createModule(.{
-        .root_source_file = b.path("tests/lua_test.zig"),
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-    });
-    unit_mod.addImport("lua", lua);
-    const unit = b.addTest(.{ .root_module = unit_mod, .use_llvm = use_llvm, .use_lld = use_llvm });
-    const unit_run = b.addRunArtifact(unit);
-    unit_run.setCwd(b.path(".")); // fixtures are referenced as tests/lua/...
     const test_step = b.step("test", "Run unit tests (core, Lua host and the shipped plugins)");
-    test_step.dependOn(&unit_run.step);
+    if (has_tests) {
+        const unit_mod = b.createModule(.{
+            .root_source_file = b.path("tests/lua_test.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        });
+        unit_mod.addImport("lua", lua);
+        const unit = b.addTest(.{ .root_module = unit_mod, .use_llvm = use_llvm, .use_lld = use_llvm });
+        const unit_run = b.addRunArtifact(unit);
+        unit_run.setCwd(b.path(".")); // fixtures are referenced as tests/lua/...
+        test_step.dependOn(&unit_run.step);
 
-    // ray.conf parser; reads the shipped config/ray.conf.
-    const conf_tests = b.addTest(.{ .root_module = conf, .use_llvm = use_llvm, .use_lld = use_llvm });
-    const conf_run = b.addRunArtifact(conf_tests);
-    conf_run.setCwd(b.path("."));
-    test_step.dependOn(&conf_run.step);
+        // ray.conf parser; reads the shipped config/ray.conf.
+        const conf_tests = b.addTest(.{ .root_module = conf, .use_llvm = use_llvm, .use_lld = use_llvm });
+        const conf_run = b.addRunArtifact(conf_tests);
+        conf_run.setCwd(b.path("."));
+        test_step.dependOn(&conf_run.step);
 
-    // Update manager: tags, channels, release lists, metadata checks.
-    const update_tests = b.addTest(.{ .root_module = update_mod, .use_llvm = use_llvm, .use_lld = use_llvm });
-    test_step.dependOn(&b.addRunArtifact(update_tests).step);
+        // Update manager: tags, channels, release lists, metadata checks.
+        const update_tests = b.addTest(.{ .root_module = update_mod, .use_llvm = use_llvm, .use_lld = use_llvm });
+        test_step.dependOn(&b.addRunArtifact(update_tests).step);
 
-    // Core unit tests: src/main.zig as a module (exposes srv, host).
-    const core = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-    });
-    core.addImport("wayland", wayland);
-    core.addImport("xkbcommon", xkbcommon);
-    core.addImport("wlroots", wlroots);
-    core.addImport("lua", lua);
-    core.addImport("conf", conf);
-    core.addImport("alloc", alloc_mod);
-    core.addOptions("build_options", options);
-    if (test_input) core.addImport("test_input", exe.root_module.import_table.get("test_input").?);
-    const core_tests_mod = b.createModule(.{
-        .root_source_file = b.path("tests/core_test.zig"),
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-    });
-    core_tests_mod.addImport("raywm", core);
-    core_tests_mod.addImport("xkbcommon", xkbcommon);
-    for ([_][]const u8{ "wayland-server", "xkbcommon", "pixman-1", "libinput" }) |lib| core_tests_mod.linkSystemLibrary(lib, .{});
-    // An optimized C callee, like the system libraries RayWM calls (see
-    // src/cabi.zig): it reads a bool argument as the caller passed it.
-    core_tests_mod.addCSourceFile(.{ .file = b.path("tests/support/raw_bool.c"), .flags = &.{"-O2"} });
-    const core_tests = b.addTest(.{ .root_module = core_tests_mod, .use_llvm = use_llvm, .use_lld = use_llvm });
-    test_step.dependOn(&b.addRunArtifact(core_tests).step);
+        // Core unit tests: src/main.zig as a module (exposes srv, host).
+        const core = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        });
+        core.addImport("wayland", wayland);
+        core.addImport("xkbcommon", xkbcommon);
+        core.addImport("wlroots", wlroots);
+        core.addImport("lua", lua);
+        core.addImport("conf", conf);
+        core.addImport("alloc", alloc_mod);
+        core.addOptions("build_options", options);
+        if (test_input) core.addImport("test_input", exe.root_module.import_table.get("test_input").?);
+        const core_tests_mod = b.createModule(.{
+            .root_source_file = b.path("tests/core_test.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        });
+        core_tests_mod.addImport("raywm", core);
+        core_tests_mod.addImport("xkbcommon", xkbcommon);
+        for ([_][]const u8{ "wayland-server", "xkbcommon", "pixman-1", "libinput" }) |lib| core_tests_mod.linkSystemLibrary(lib, .{});
+        // An optimized C callee, like the system libraries RayWM calls (see
+        // src/cabi.zig): it reads a bool argument as the caller passed it.
+        core_tests_mod.addCSourceFile(.{ .file = b.path("tests/support/raw_bool.c"), .flags = &.{"-O2"} });
+        const core_tests = b.addTest(.{ .root_module = core_tests_mod, .use_llvm = use_llvm, .use_lld = use_llvm });
+        test_step.dependOn(&b.addRunArtifact(core_tests).step);
 
-    // The dwindle plugin is plain Lua, tested against a mock of the API.
-    const dwindle = b.addSystemCommand(&.{ "lua5.4", "tests/dwindle_test.lua" });
-    dwindle.setCwd(b.path("."));
-    dwindle.setEnvironmentVariable("XDG_RUNTIME_DIR", b.cache_root.path orelse ".");
-    dwindle.setEnvironmentVariable("WAYLAND_DISPLAY", "raywm-dwindle-test");
-    dwindle.has_side_effects = true;
-    test_step.dependOn(&dwindle.step);
+        // The dwindle plugin is plain Lua, tested against a mock of the API.
+        const dwindle = b.addSystemCommand(&.{ "lua5.4", "tests/dwindle_test.lua" });
+        dwindle.setCwd(b.path("."));
+        dwindle.setEnvironmentVariable("XDG_RUNTIME_DIR", b.cache_root.path orelse ".");
+        dwindle.setEnvironmentVariable("WAYLAND_DISPLAY", "raywm-dwindle-test");
+        dwindle.has_side_effects = true;
+        test_step.dependOn(&dwindle.step);
 
-    // The focus plugin (directional focus, cycle, warp, border), mock API.
-    const focus = b.addSystemCommand(&.{ "lua5.4", "tests/focus_test.lua" });
-    focus.setCwd(b.path("."));
-    focus.has_side_effects = true;
-    test_step.dependOn(&focus.step);
+        // The focus plugin (directional focus, cycle, warp, border), mock API.
+        const focus = b.addSystemCommand(&.{ "lua5.4", "tests/focus_test.lua" });
+        focus.setCwd(b.path("."));
+        focus.has_side_effects = true;
+        test_step.dependOn(&focus.step);
 
-    // The workspaces plugin (keys, home outputs, reload), mock API.
-    const workspaces = b.addSystemCommand(&.{ "lua5.4", "tests/workspaces_test.lua" });
-    workspaces.setCwd(b.path("."));
-    workspaces.has_side_effects = true;
-    test_step.dependOn(&workspaces.step);
+        // The workspaces plugin (keys, home outputs, reload), mock API.
+        const workspaces = b.addSystemCommand(&.{ "lua5.4", "tests/workspaces_test.lua" });
+        workspaces.setCwd(b.path("."));
+        workspaces.has_side_effects = true;
+        test_step.dependOn(&workspaces.step);
 
-    // The special-workspace overlay plugin (create, toggle, adopt), mock API.
-    const special = b.addSystemCommand(&.{ "lua5.4", "tests/special_test.lua" });
-    special.setCwd(b.path("."));
-    special.has_side_effects = true;
-    test_step.dependOn(&special.step);
+        // The special-workspace overlay plugin (create, toggle, adopt), mock API.
+        const special = b.addSystemCommand(&.{ "lua5.4", "tests/special_test.lua" });
+        special.setCwd(b.path("."));
+        special.has_side_effects = true;
+        test_step.dependOn(&special.step);
 
-    // The window-rules plugin (matching, dialogs, rules.lua), mock API.
-    const rules = b.addSystemCommand(&.{ "lua5.4", "tests/rules_test.lua" });
-    rules.setCwd(b.path("."));
-    rules.has_side_effects = true;
-    test_step.dependOn(&rules.step);
+        // The window-rules plugin (matching, dialogs, rules.lua), mock API.
+        const rules = b.addSystemCommand(&.{ "lua5.4", "tests/rules_test.lua" });
+        rules.setCwd(b.path("."));
+        rules.has_side_effects = true;
+        test_step.dependOn(&rules.step);
 
-    // The screenshot plugin, against a mock API and fake grim/slurp/wl-copy.
-    const screenshot = b.addSystemCommand(&.{ "lua5.4", "tests/screenshot_test.lua" });
-    screenshot.setCwd(b.path("."));
-    screenshot.setEnvironmentVariable("XDG_RUNTIME_DIR", b.cache_root.path orelse ".");
-    screenshot.has_side_effects = true;
-    test_step.dependOn(&screenshot.step);
+        // The screenshot plugin, against a mock API and fake grim/slurp/wl-copy.
+        const screenshot = b.addSystemCommand(&.{ "lua5.4", "tests/screenshot_test.lua" });
+        screenshot.setCwd(b.path("."));
+        screenshot.setEnvironmentVariable("XDG_RUNTIME_DIR", b.cache_root.path orelse ".");
+        screenshot.has_side_effects = true;
+        test_step.dependOn(&screenshot.step);
+    }
 }
