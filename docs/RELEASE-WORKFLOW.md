@@ -8,13 +8,21 @@ the parts a machine can check.
 
 | Branch | Purpose | Who updates it, how |
 |---|---|---|
-| `master` | Development: all source, tests, docs, CHANGELOG, agent instructions, build and packaging tools, CI configuration, experiments. Default branch. | Direct pushes or merged pull requests. Force pushes and deletion are blocked. |
-| `beta` | Public testing. Holds exactly the commits that were offered as Beta candidates. | Fast-forward to a commit of `master` whose CI passed. Force pushes, deletion and commits without a passing `build + tests (pixman)` check are blocked. |
-| `release` | Stable. Holds only commits that were published as a Beta and then promoted. | Fast-forward to a commit that carries a published `vX.Y.Z-beta[.N]` tag. Same protection as `beta`. |
+| `master` | Development and documentation: all source, tests, docs, CHANGELOG, agent instructions, measurements, build/packaging tools and CI. This is the only branch where development happens. | Direct pushes or merged pull requests. Force pushes and deletion are blocked. |
+| `beta` | Beta releases. A generated **source-only** tree: `src`, `protocol`, `config`, `packaging`, `scripts`, `build.zig`, `build.zig.zon`, `LICENSE`, `.github/workflows/release.yml`, `SOURCE-COMMIT`. No docs, tests, CHANGELOG, README, SECURITY, agent files or development CI. **Default branch.** | Only `scripts/make-release-branch.sh <master-sha> beta`, then a fast-forward push. Never commit or merge here. Force pushes and deletion are blocked. |
+| `release` | Stable releases: the same source-only layout as `beta`. | Only `scripts/make-release-branch.sh <master-sha> release`, then a fast-forward push. Never commit or merge here. Force pushes and deletion are blocked. |
 
-Every commit on `beta` and `release` is also in `master`'s history (they
-only ever fast-forward to commits from `master`). Nothing is developed on
-`beta` or `release` directly.
+`beta` and `release` are **derived**, not merged: every commit is generated
+from a commit in `master` and records it in `SOURCE-COMMIT`. The generated
+tree is linear and never contains the development tree, so the branches do
+not share `master`'s commits after the initial cleanup. Their code is still
+tested: CI runs on the recorded `SOURCE-COMMIT`, and the Release workflow
+runs the complete suite on it before publishing.
+
+The required check on `beta` and `release` is therefore the release-plan
+check, not a test job on the filtered commit. A commit that cannot name a
+master `SOURCE-COMMIT`, or whose release files differ from that commit,
+is rejected by the Release workflow.
 
 Temporary branches (`feature/*`, `fix/*`, `hotfix/*`) branch from
 `master`, run CI, and are merged back into `master`.
@@ -44,8 +52,12 @@ package's channel and never changes it, so Beta ↔ Stable upgrades keep it.
   blocks updates and deletion of `v*` tags).
 - `build.zig.zon` `.version` and `src/lua.zig` `version` hold `X.Y.Z`
   (without the suffix) and must match the tag, which the workflow checks.
-- `CHANGELOG.md` must have a `## [vX.Y.Z]` section before the first Beta of
-  a version; it becomes the release notes.
+- `CHANGELOG.md` lives on `master` (not on `beta`/`release`) and must have a
+  `## [vX.Y.Z]` section before the first Beta of a version. The Release
+  workflow reads it from `master` for the notes.
+- Every `beta`/`release` commit carries `SOURCE-COMMIT`, the full SHA of the
+  tested `master` commit. The Release workflow requires it to be in
+  `master` and the release files to match that commit.
 - Historical releases `v0.1.0`, `v0.1.1`, `v0.2.0` and `v0.2.1` predate this
   scheme. Their tags, releases and assets stay as they are; the scripts treat
   them as channel `legacy`.
@@ -72,12 +84,13 @@ Every release also has GitHub's automatic source ZIP/tarball for the tag;
 the rules below are about the uploaded assets.
 
 **Beta** (Pre-release, never "Latest"):
-- `raywm-vX.Y.Z-beta[.N].tar.gz`: `git archive` of the tagged commit
-  without CI/agent files (`.github`, `.claude`, `CLAUDE.md`) and raw
-  measurement data, plus `zig-pkg/` (the pinned Zig dependencies, so it
-  builds offline) and `SOURCE-INFO`. It contains `src`, `protocol`, the
-  `tests` that `build.zig` needs, `config` with all shipped Lua plugins,
-  `scripts`, `packaging/arch`, and the user documentation. No binaries.
+- `raywm-vX.Y.Z-beta[.N].tar.gz`: `git archive` of the tagged source-only
+  commit, plus `zig-pkg/` (the pinned Zig dependencies, so it builds
+  offline), `SOURCE-INFO` and `SOURCE-COMMIT`. It contains `src`,
+  `protocol`, `config` with all shipped Lua plugins, `scripts`,
+  `packaging/arch`, the build files and `LICENSE`; it contains no docs,
+  tests, CHANGELOG, README, agent files, CI or measurement data. No
+  binaries.
 - `raywm-vX.Y.Z-beta[.N].tar.gz.sha256`, `SHA256SUMS`, `raywm-release.json`.
 
 **Stable** (normal release, marked "Latest"):
@@ -86,8 +99,9 @@ the rules below are about the uploaded assets.
   installs `/usr/bin/raywm` (ReleaseSafe, `-Dcpu=baseline`, no test-only
   code), `/usr/bin/raywmctl`, `/usr/bin/raywm-update`, the default
   configuration (`ray.conf`, `init.lua`) and plugins in
-  `/usr/share/raywm/config`, `/usr/share/wayland-sessions/raywm.desktop`,
-  documentation and the license. It never touches `~/.config/raywm`.
+  `/usr/share/raywm/config`, `/usr/share/wayland-sessions/raywm.desktop`
+  and the license. Documentation stays on `master`. It never touches
+  `~/.config/raywm`.
 - `….pkg.tar.zst.sha256`, `SHA256SUMS`, `raywm-release.json`.
 
 ### Update metadata (`raywm-release.json`, schema 1)
@@ -133,47 +147,55 @@ breaks updates for installed versions: keep them, or add a new schema.
 
 1. On `master`: CHANGELOG section, version in `build.zig.zon` and
    `src/lua.zig`, full local matrix (`docs/TESTING.md`) and CI green.
-2. Rehearse: run the **Release** workflow manually (Actions → Release → Run
-   workflow, on `master`, tag `vX.Y.Z-beta`). It is always a dry run: it
-   tests, builds and checks the assets and keeps them as workflow
-   artifacts without tagging or publishing.
-3. Promote the exact tested commit: `git push origin <sha>:beta` (a
-   fast-forward; the ruleset requires the commit's CI to have passed).
-4. Tag it and push the tag:
-   `git tag -a vX.Y.Z-beta -m "RayWM vX.Y.Z-beta" <sha> && git push origin vX.Y.Z-beta`.
-   The Release workflow runs the tests again, builds the source archive and
-   publishes the Pre-release.
-5. Public testing (docs/GAMING-TESTING.md and HARDWARE-TESTING.md for
-   hardware-dependent areas). A fix needs a new commit on `master` and a new
-   candidate `vX.Y.Z-beta.2` (steps 1–4). Stable never gets code that was not
+2. Generate the Beta branch commit from that tested master commit:
+   `scripts/make-release-branch.sh <master-sha> beta` and
+   `git push origin beta` (a fast-forward; the commit records
+   `SOURCE-COMMIT`).
+3. Tag the beta head and push the tag:
+   `git tag -a vX.Y.Z-beta -m "RayWM vX.Y.Z-beta" beta && git push origin vX.Y.Z-beta`.
+   The Release workflow tests `SOURCE-COMMIT`, checks that the release
+   files match it, builds the source archive and publishes the Pre-release.
+   Manual `workflow_dispatch` runs are dry runs, but they need an existing
+   tag because the tree is read from it.
+4. Public testing (docs/GAMING-TESTING.md and HARDWARE-TESTING.md for
+   hardware-dependent areas). A fix needs a new commit on `master`, a new
+   `make-release-branch.sh <master-sha> beta` append and a new candidate
+   `vX.Y.Z-beta.2` (steps 1–3). Stable never gets code that was not
    published as a Beta.
-6. When a Beta is accepted, rehearse `vX.Y.Z-stable` (dry run), then
-   promote **that Beta's commit** (not `beta`'s current head):
-   `git push origin <beta-sha>:release`,
-   `git tag -a vX.Y.Z-stable -m "RayWM vX.Y.Z" <beta-sha> && git push origin vX.Y.Z-stable`.
+5. When a Beta is accepted, generate `release` from the **same master
+   source commit** the Beta recorded:
+   `source=$(git show vX.Y.Z-beta:SOURCE-COMMIT)` then
+   `scripts/make-release-branch.sh "$source" release` and
+   `git push origin release`.
+6. Tag the stable head and push it:
+   `git tag -a vX.Y.Z-stable -m "RayWM vX.Y.Z" release && git push origin vX.Y.Z-stable`.
    The workflow refuses a Stable tag unless a published Beta Pre-release of
-   the same version points to the same commit and the commit is in
-   `release`.
+   the same version records the same `SOURCE-COMMIT` and the tag commit is
+   in `release`. The Stable and Beta trees are therefore identical even
+   though their branch histories are independent.
 
 ## Testing requirements
 
-The Release workflow runs the complete CI suite (`.github/workflows/ci.yml`,
-including `tests/perf.sh` and `tests/release-meta.sh`) on the tagged commit,
-then `tests/release-archive.sh --build` (structure, no binaries, versions,
-build and unit tests from the extracted archive). For both channels it
-then builds the pacman package from that archive with
-`scripts/arch-package.sh` (as an unprivileged user, as `raywm-update` does
-on users' machines for a Beta) and runs `tests/release-package.sh`
-(pacman metadata, dependencies, file list including `raywm-update` and
-`ray.conf`, nothing in `/etc`, baseline-CPU binary without test code,
-headless start with the packaged configuration) and
-`tests/release-install.sh` (real `pacman -U`, reinstall and `-R` in the
+The Release workflow calls the complete CI suite
+(`Rreeqqwel/RayWM/.github/workflows/ci.yml@master`, including
+`tests/perf.sh` and `tests/release-meta.sh`) on the `SOURCE-COMMIT` recorded
+in the tag, because `beta` and `release` carry no tests. It also checks that
+the tagged release files are identical to that master commit. It then runs
+`tests/release-archive.sh --build` from the master checkout (structure, no
+binaries, versions, a ReleaseSafe build and a headless config check) against
+the source-only archive, and builds the pacman package from that archive
+with `scripts/arch-package.sh` (as an unprivileged user, as
+`raywm-update` does on users' machines for a Beta). It runs
+`tests/release-package.sh` (pacman metadata, dependencies, file list
+including `raywm-update` and `ray.conf`, nothing in `/etc`, baseline-CPU
+binary without test code, headless start with the packaged configuration)
+and `tests/release-install.sh` (real `pacman -U`, reinstall and `-R` in the
 container: `/etc/raywm/update.conf` created once with the package's
 channel, unowned, kept across reinstall and removal, switched by
 `raywm-update --set-channel`). Only the Stable package is published; for a
-Beta it proves the archive builds into a valid package. Publishing depends on
-every job; a failure stops before anything is uploaded. CI runners have no
-GPU display: hardware validation is manual and recorded in the release
+Beta it proves the archive builds into a valid package. Publishing depends
+on every job; a failure stops before anything is uploaded. CI runners have
+no GPU display: hardware validation is manual and recorded in the release
 report.
 
 ## When a release run fails
@@ -202,7 +224,20 @@ Delete a `feature/*`, `fix/*` or `hotfix/*` branch once
 is decided. Tags keep every released commit reachable regardless of
 branches.
 
-## Migration record (2026-10-24)
+## Migration to source-only release branches (2026-11-14)
+
+`master` already held the development tree; `beta` and `release` held full
+copies of it. They now hold generated source-only trees, and `beta` is the
+default branch. The first cleanup commits were generated from the old
+`beta` and `release` heads (so the already published `v0.2.3-beta` tag
+still points to its full development commit) and appended as fast-forwards;
+no history was rewritten. From the next candidate on, every release commit
+is generated from the tested `master` commit and records it in
+`SOURCE-COMMIT`. The required `build + tests (pixman)` check was removed
+from the `beta`/`release` rulesets because the filtered tree has no tests;
+the Release workflow now runs that suite on `SOURCE-COMMIT` instead.
+
+## Migration record (2026-10-24, historical)
 
 Before the migration the default branch was `main` (only `5482beb`
 "Initial commit"); all development lived in `feature/*` and

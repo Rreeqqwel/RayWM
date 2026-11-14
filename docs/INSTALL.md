@@ -32,8 +32,9 @@ cp -r /usr/share/raywm/config ~/.config/raywm   # first install only
 The package installs `/usr/bin/raywm`, `/usr/bin/raywmctl`,
 `/usr/bin/raywm-update`, the default configuration (`ray.conf`, `init.lua`)
 and plugins in `/usr/share/raywm/config`, a session entry for display
-managers (`/usr/share/wayland-sessions/raywm.desktop`) and the
-documentation; it never changes `~/.config/raywm`. On the first install it
+managers (`/usr/share/wayland-sessions/raywm.desktop`) and the license;
+documentation stays in the repository's `master` branch. It never changes
+`~/.config/raywm`. On the first install it
 creates `/etc/raywm/update.conf` with `channel=stable` (see
 [Updates](#updates-raywm-update)). Remove it with `sudo pacman -R raywm`.
 

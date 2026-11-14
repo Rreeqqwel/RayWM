@@ -72,7 +72,5 @@ package() {
   cp -r --no-preserve=ownership config/. "${pkgdir}/usr/share/raywm/config/"
   find "${pkgdir}/usr/share/raywm/config" -type f -exec chmod 644 {} +
   install -Dm644 "${srcdir}/raywm.desktop" "${pkgdir}/usr/share/wayland-sessions/raywm.desktop"
-  install -Dm644 README.md CHANGELOG.md SECURITY.md -t "${pkgdir}/usr/share/doc/raywm/"
-  install -Dm644 docs/*.md -t "${pkgdir}/usr/share/doc/raywm/docs/"
   install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/raywm/LICENSE"
 }

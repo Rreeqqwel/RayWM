@@ -424,12 +424,16 @@ scripts/        source-archive.sh, arch-package.sh, release-meta.py, raywmctl, i
 
 | Branch | Role |
 |---|---|
-| `master` (default) | development: code, tests, docs, CHANGELOG, CI |
-| `beta` | public testing; each `vX.Y.Z-beta[.N]` is a GitHub Pre-release |
-| `release` | stable; each `vX.Y.Z-stable` is a GitHub Release with a pacman package |
+| `master` | development: all code, tests, docs, CHANGELOG, measurements and CI |
+| `beta` (**default**) | generated source-only Beta trees; each `vX.Y.Z-beta[.N]` is a GitHub Pre-release |
+| `release` | generated source-only Stable trees; each `vX.Y.Z-stable` is a GitHub Release with a pacman package |
 
 Work happens on `master` (or short-lived `feature/*`, `fix/*` branches
-merged into it). Promotion and tagging rules are in
+merged into it). `beta` and `release` are generated with
+`scripts/make-release-branch.sh`; they contain no docs, tests, CHANGELOG,
+README or development CI, only the source, build files, config, packaging,
+scripts, license, the release workflow and `SOURCE-COMMIT`. Never commit
+to them directly. Promotion and tagging rules are in
 [docs/RELEASE-WORKFLOW.md](docs/RELEASE-WORKFLOW.md).
 
 ## Contributing

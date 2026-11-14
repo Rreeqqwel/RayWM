@@ -43,6 +43,7 @@ jobs:
       channel: ${{ steps.meta.outputs.channel }}
       pkgver: ${{ steps.meta.outputs.pkgver }}
       dry_run: ${{ steps.meta.outputs.dry_run }}
+      source_commit: ${{ steps.meta.outputs.source_commit }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,9 +60,26 @@ jobs:
           pkgver=$(printf '%s' "$info" | python3 -c 'import json,sys; print(json.load(sys.stdin)["pkgver"])')
           case "$channel" in beta|stable) ;; *) echo "::error::$TAG is not a beta or stable tag"; exit 1 ;; esac
           python3 scripts/release-meta.py check-zon "$TAG" build.zig.zon
+          # The release commit is a generated source-only tree; its
+          # SOURCE-COMMIT names the tested master commit it came from.
+          source=$(git show "$TAG:SOURCE-COMMIT" 2>/dev/null | tr -d '[:space:]') ||
+            { echo "::error::$TAG has no SOURCE-COMMIT"; exit 1; }
+          case "$source" in
+            [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+            *) echo "::error::$TAG: bad SOURCE-COMMIT '$source'"; exit 1 ;;
+          esac
+          git merge-base --is-ancestor "$source" origin/master ||
+            { echo "::error::$source is not in master"; exit 1; }
+          git diff --quiet "$source" "$TAG" -- src protocol config packaging scripts \
+            build.zig build.zig.zon LICENSE .github/workflows/release.yml ||
+            { echo "::error::$TAG differs from $source in the release files; regenerate it"; exit 1; }
+          # The release notes stay in master's CHANGELOG, not in the
+          # source-only branch.
+          git show origin/master:CHANGELOG.md >CHANGELOG.md
           python3 scripts/release-meta.py notes "$TAG" CHANGELOG.md >/dev/null
           {
             echo "tag=$TAG"; echo "channel=$channel"; echo "pkgver=$pkgver"; echo "dry_run=$DRY"
+            echo "source_commit=$source"
           } >>"$GITHUB_OUTPUT"
           echo "### $TAG — $channel (pacman $pkgver-1), dry run: $DRY" >>"$GITHUB_STEP_SUMMARY"
       - name: Tag and branch rules
@@ -76,16 +94,19 @@ jobs:
           git fetch --force --no-tags origin "+refs/tags/$TAG:refs/tags/$TAG"
           commit=$(git rev-parse "$TAG^{commit}")
           [ "$(git cat-file -t "refs/tags/$TAG")" = tag ] || { echo "::error::$TAG must be an annotated tag"; exit 1; }
-          git merge-base --is-ancestor "$commit" origin/master || { echo "::error::$commit is not in master"; exit 1; }
           if [ "$CHANNEL" = beta ]; then
             git merge-base --is-ancestor "$commit" origin/beta || { echo "::error::$commit is not in beta"; exit 1; }
           else
             git merge-base --is-ancestor "$commit" origin/release || { echo "::error::$commit is not in release"; exit 1; }
-            # Stable promotes a tested Beta: some vX.Y.Z-beta[.N] tag of the same
-            # version must point to exactly this commit.
+            # Stable promotes a tested Beta: some vX.Y.Z-beta[.N] tag of the
+            # same version must record the same master SOURCE-COMMIT.
             version=${TAG%-stable}
-            beta=$(git tag --points-at "$commit" | grep -E "^${version}-beta(\.[0-9]+)?$" | head -1 || true)
-            [ -n "$beta" ] || { echo "::error::no ${version}-beta[.N] tag on $commit: promote a tested Beta"; exit 1; }
+            beta=$(git tag --list "${version}-beta*" --sort=-v:refname | head -1 || true)
+            [ -n "$beta" ] || { echo "::error::no ${version}-beta[.N] tag: promote a tested Beta"; exit 1; }
+            beta_source=$(git show "$beta:SOURCE-COMMIT" 2>/dev/null | tr -d '[:space:]') ||
+              { echo "::error::$beta has no SOURCE-COMMIT"; exit 1; }
+            [ "$beta_source" = "${{ steps.meta.outputs.source_commit }}" ] ||
+              { echo "::error::$TAG and $beta come from different master commits"; exit 1; }
             echo "Promotes $beta" >>"$GITHUB_STEP_SUMMARY"
             echo "BETA_TAG=$beta" >>"$GITHUB_ENV"
           fi
@@ -109,7 +130,11 @@ jobs:
   tests:
     name: tests
     needs: plan
-    uses: ./.github/workflows/ci.yml
+    # beta and release carry no tests: run the full development suite on the
+    # master commit recorded in the release tree.
+    uses: Rreeqqwel/RayWM/.github/workflows/ci.yml@master
+    with:
+      ref: ${{ needs.plan.outputs.source_commit }}
     permissions:
       contents: read
 
@@ -131,6 +156,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Test scripts and release notes from master
+        env:
+          SOURCE_COMMIT: ${{ needs.plan.outputs.source_commit }}
+        run: |
+          mkdir -p master
+          git archive "$SOURCE_COMMIT" | tar -x -C master
       - name: Zig ${{ env.ZIG_VERSION }} (checksum-verified)
         run: |
           curl -sSfL -o /tmp/zig.tar.xz "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
@@ -141,7 +172,7 @@ jobs:
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           scripts/source-archive.sh "$TAG" out HEAD
-          tests/release-archive.sh "out/raywm-$TAG.tar.gz" "$TAG" --build
+          master/tests/release-archive.sh "out/raywm-$TAG.tar.gz" "$TAG" --build
           tar -tzf "out/raywm-$TAG.tar.gz" | sed -n '1,400p' >"out/source-files.txt"
       # Stable: this package is the release asset. Beta: the same build
       # raywm-update runs on users' machines from the source archive, so a
@@ -152,8 +183,8 @@ jobs:
           useradd -m builder
           chown -R builder "$GITHUB_WORKSPACE"
           su builder -c "cd '$GITHUB_WORKSPACE' && SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) scripts/arch-package.sh '$TAG' 'out/raywm-$TAG.tar.gz' pkg"
-          tests/release-package.sh "pkg/raywm-$PKGVER-1-x86_64.pkg.tar.zst" "$TAG"
-          tests/release-install.sh "pkg/raywm-$PKGVER-1-x86_64.pkg.tar.zst" "$TAG"
+          master/tests/release-package.sh "pkg/raywm-$PKGVER-1-x86_64.pkg.tar.zst" "$TAG"
+          master/tests/release-install.sh "pkg/raywm-$PKGVER-1-x86_64.pkg.tar.zst" "$TAG"
           pacman -Qip "pkg/raywm-$PKGVER-1-x86_64.pkg.tar.zst" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Assets and metadata
         run: |
@@ -167,7 +198,7 @@ jobs:
           main=$(ls assets | grep -v '\.sha256$')
           python3 scripts/release-meta.py metadata "$TAG" "$(git rev-parse HEAD)" assets/raywm-release.json "assets/$main"
           (cd assets && sha256sum -- * | grep -v ' SHA256SUMS$' >SHA256SUMS)
-          python3 scripts/release-meta.py notes "$TAG" CHANGELOG.md >notes.md
+          python3 scripts/release-meta.py notes "$TAG" master/CHANGELOG.md >notes.md
           ls -l assets | tee -a "$GITHUB_STEP_SUMMARY"
           cat assets/raywm-release.json >>"$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
@@ -205,7 +236,7 @@ jobs:
           if [ "$CHANNEL" = beta ]; then
             title="RayWM ${TAG} (Beta)"
             flags="--prerelease --latest=false"
-            intro="Public testing build (beta channel). Source archive only: build it with the instructions in docs/INSTALL.md or packaging/arch."
+            intro="Public testing build (beta channel). Source archive only: build it with packaging/arch; documentation is on the repository's master branch."
           else
             title="RayWM ${version} (Stable)"
             flags="--latest"

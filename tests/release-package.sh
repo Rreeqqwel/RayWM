@@ -30,9 +30,7 @@ files=$(pacman -Qlp "$pkg" | cut -d' ' -f2-)
 for f in /usr/bin/raywm /usr/bin/raywmctl /usr/bin/raywm-update /usr/share/raywm/config/ray.conf \
     /usr/share/raywm/config/init.lua /usr/share/raywm/config/rules.lua \
     /usr/share/raywm/config/plugins/dwindle.lua /usr/share/raywm/config/plugins/outputs.lua \
-    /usr/share/wayland-sessions/raywm.desktop /usr/share/licenses/raywm/LICENSE \
-    /usr/share/doc/raywm/README.md /usr/share/doc/raywm/docs/GAMING.md /usr/share/doc/raywm/docs/CONFIGURATION.md \
-    /usr/share/doc/raywm/docs/INSTALL.md; do
+    /usr/share/wayland-sessions/raywm.desktop /usr/share/licenses/raywm/LICENSE; do
     printf '%s\n' "$files" | grep -qx "$f" && ok || fail "missing $f"
 done
 printf '%s\n' "$files" | grep -v '^/usr/' | grep -q . && fail "files outside /usr: $(printf '%s\n' "$files" | grep -v '^/usr/' | head -3)" || ok

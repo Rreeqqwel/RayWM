@@ -23,22 +23,22 @@ trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 tar -xzf "$archive" -C "$tmp"
 [ "$(ls "$tmp")" = "$name" ] && ok || fail "top-level directory is not $name/"
 d="$tmp/$name"
-for f in build.zig build.zig.zon LICENSE README.md CHANGELOG.md SECURITY.md SOURCE-INFO \
-    src/main.zig src/server.zig src/conf.zig src/update.zig protocol tests/client.zig tests/core_test.zig tests/lua_test.zig \
+for f in build.zig build.zig.zon LICENSE SOURCE-INFO SOURCE-COMMIT \
+    src/main.zig src/server.zig src/conf.zig src/update.zig protocol \
     config/ray.conf config/init.lua config/rules.lua config/plugins/dwindle.lua config/plugins/binds.lua \
     config/plugins/outputs.lua scripts/raywmctl scripts/install.sh scripts/arch-package.sh \
     scripts/source-archive.sh scripts/release-meta.py packaging/arch/PKGBUILD.in \
-    packaging/arch/raywm.desktop packaging/arch/raywm.install docs/INSTALL.md docs/GAMING.md \
-    docs/RELEASE-WORKFLOW.md zig-pkg; do
+    packaging/arch/raywm.desktop packaging/arch/raywm.install zig-pkg; do
     [ -e "$d/$f" ] && ok || fail "missing $f"
 done
 for dep in wlroots wayland xkbcommon pixman; do
     ls "$d/zig-pkg" | grep -q "^$dep-" && ok || fail "zig-pkg lacks $dep"
 done
-for f in .github .claude CLAUDE.md docs/measurements zig-out .zig-cache dist recovery graphify-out; do
+for f in .github .claude CLAUDE.md docs tests README.md CHANGELOG.md SECURITY.md zig-out .zig-cache dist recovery graphify-out; do
     [ ! -e "$d/$f" ] && ok || fail "must not contain $f"
 done
 grep -qx "tag=$tag" "$d/SOURCE-INFO" && ok || fail "SOURCE-INFO tag"
+[ "$(wc -l <"$d/SOURCE-COMMIT")" -eq 1 ] && grep -Eq '^[0-9a-f]{40}$' "$d/SOURCE-COMMIT" && ok || fail "SOURCE-COMMIT"
 python3 "$root/scripts/release-meta.py" check-zon "$tag" "$d/build.zig.zon" && ok || fail "build.zig.zon version"
 elf=$(find "$d" -type f -exec sh -c 'head -c4 "$1" | grep -q "ELF"' _ {} \; -print)
 [ -z "$elf" ] && ok || fail "binaries in archive: $elf"
@@ -50,7 +50,9 @@ if [ "$build" = --build ]; then
     "$tmp/out/bin/raywm" -h >/dev/null 2>&1 && ok || fail "built raywm -h"
     "$tmp/out/bin/raywm-update" --help >/dev/null 2>&1 && ok || fail "built raywm-update --help"
     (cd "$d" && RAYWM_SYSTEM_CONF= "$tmp/out/bin/raywm" -t -c config/init.lua >/dev/null 2>&1) && ok || fail "shipped ray.conf rejected by raywm -t"
-    (cd "$d" && ZIG_GLOBAL_CACHE_DIR="$tmp/gcache" $isolate "$zig" build test >/dev/null 2>&1) && ok || fail "unit tests from archive"
+    if [ -d "$d/tests" ]; then
+        (cd "$d" && ZIG_GLOBAL_CACHE_DIR="$tmp/gcache" $isolate "$zig" build test >/dev/null 2>&1) && ok || fail "unit tests from archive"
+    fi
     echo "release-archive: built from the archive${isolate:+ without network}"
 fi
 if [ "$failures" -eq 0 ]; then echo "release-archive: $checks checks passed"; else echo "release-archive: $failures failure(s)"; exit 1; fi

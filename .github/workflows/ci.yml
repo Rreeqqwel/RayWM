@@ -1,16 +1,22 @@
 name: CI
 
-# Development checks. Runs on the permanent branches (master, beta,
-# release), on topic branches, on pull requests into the permanent
-# branches, and is called by the Release workflow before anything is
-# published (docs/RELEASE-WORKFLOW.md).
+# Development checks. Runs on master, topic branches and pull requests into
+# master. beta and release are generated source-only trees: their code is
+# tested here through the master SOURCE-COMMIT recorded in each release
+# commit, and the Release workflow calls this workflow for that commit
+# (docs/RELEASE-WORKFLOW.md).
 on:
   push:
-    branches: [master, beta, release, 'feature/**', 'fix/**', 'hotfix/**']
+    branches: [master, 'feature/**', 'fix/**', 'hotfix/**']
   pull_request:
-    branches: [master, beta, release]
+    branches: [master]
   workflow_dispatch:
   workflow_call:
+    inputs:
+      ref:
+        description: Commit or branch to test (default: the caller's ref)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -36,6 +42,8 @@ jobs:
           pacman -Q wlroots0.20 wayland lua54 libxkbcommon pixman grim slurp wl-clipboard | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Zig ${{ env.ZIG_VERSION }} (checksum-verified)
         run: |
@@ -172,6 +180,8 @@ jobs:
             libxkbcommon pixman lua54 pkgconf curl xz python openssl xorg-xwayland libxcb procps-ng
 
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Zig ${{ env.ZIG_VERSION }} (checksum-verified)
         run: |
@@ -224,6 +234,8 @@ jobs:
 
       - uses: actions/checkout@v4
         if: steps.drm.outputs.available == 'true'
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Zig
         if: steps.drm.outputs.available == 'true'
