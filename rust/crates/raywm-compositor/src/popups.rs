@@ -345,7 +345,7 @@ impl State {
             .grab_popup(root, PopupKind::Xdg(popup.clone()), &seat, serial)
         {
             Ok(grab) => {
-                keyboard.set_focus(self, grab.current_grab(), serial);
+                self.set_keyboard_focus(grab.current_grab(), serial);
                 keyboard.set_grab(self, PopupKeyboardGrab::new(&grab), serial);
                 pointer.set_grab(
                     self,
@@ -435,9 +435,7 @@ impl State {
             .as_ref()
             .and_then(|grab| grab.current_grab())
         {
-            if let Some(keyboard) = self.seat.as_ref().and_then(|seat| seat.get_keyboard()) {
-                keyboard.set_focus(self, Some(target), SERIAL_COUNTER.next_serial());
-            }
+            self.set_keyboard_focus(Some(target), SERIAL_COUNTER.next_serial());
         }
     }
 }

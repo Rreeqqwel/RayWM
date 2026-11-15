@@ -28,7 +28,7 @@ cargo clippy --workspace --all-targets --no-default-features --locked -- -D warn
 cargo test --workspace --no-default-features --locked
 ```
 
-The default tests comprise seven core tests and ten real headless process/
+The default tests comprise seven core tests and eleven real headless process/
 protocol tests. They cover ID deletion/non-reuse/exhaustion, geometry and
 focus, cascade/stack/fallback policy, all resize edges, size limits, anchored
 commit geometry and operation cancellation; registry/sync, shm and synchronized subsurface buffer lifetimes;
@@ -37,18 +37,23 @@ invalid-ACK isolation; disconnect, SIGINT/SIGTERM, socket ownership/cleanup and
 bad runtime/CLI/nested startup paths. Stage 3 adds three independent clients,
 rapid role creation/destruction, popup configure/ACK and reposition tokens,
 nested/ancestor cleanup, early-buffer isolation and correct wm_base errors for
-invalid/self/roleless parents. Protocol errors printed by negative
+invalid/self/roleless parents. Stage 4A adds the data-device and primary
+selection manager globals/versions, source offer/destroy ordering and
+isolation from a following client. Protocol errors printed by negative
 cases are expected; the connection is rejected and a fresh client still works.
 Each process has a scrubbed environment, private mode-0700 runtime directory,
 bounded waits and a kill/reap guard. Headless mode sends no fabricated frames.
 
-Both graphical tests are explicitly ignored by default because they need a parent.
-Run them through the separate harness from the repository root:
+Both Stage 2/3 graphical tests and the Stage 4A selection test are explicitly
+ignored by default because they need a parent. Run them through the separate
+harnesses from the repository root:
 
 ```sh
 # Requires the unchanged Zig -Dtest-input build, Python 3 and grim.
 python3 rust/tests/nested-smoke.py
 python3 rust/tests/nested-smoke.py --stage3
+# Additionally needs foot and wl-clipboard (wl-copy/wl-paste).
+python3 rust/tests/selection-smoke.py
 ```
 
 The harness builds the Rust test/binary with Cargo.lock, creates a private
@@ -62,10 +67,11 @@ cleanup and process/socket/lock destruction. All virtual input and screen
 capture target only the newly created parent. Test-only RAYWM_SMOKE_SOCKET
 and RAYWM_SMOKE_CONTROL are set by this harness, never inferred from the user's
 display. Missing tools and failed observations cause a nonzero exit, not a pass.
-The script prints a new `/tmp/raywm-stage2-*` or `/tmp/raywm-stage3-*` directory
-containing logs/PNGs. The Stage 3 scenario keeps a parent seat alive throughout
-the test: removing the last virtual keyboard would legitimately remove Winit
-host focus and invalidate the new-map focus precondition.
+The script prints a new `/tmp/raywm-stage2-*`, `/tmp/raywm-stage3-*` or
+`/tmp/raywm-stage4-*` directory containing logs/PNGs. The Stage 3 and 4A
+scenarios keep a parent seat alive throughout the test: removing the last
+virtual keyboard would legitimately remove Winit host focus and invalidate the
+new-map focus precondition.
 
 Stage 3 asserts actual three-window overlap pixels, initial/click/fallback
 Activated and keyboard focus, exclusive key delivery, valid move and rejected
@@ -81,11 +87,23 @@ barriers wait for real submitted frame callbacks. All helpers have bounded
 waits and child cleanup. Evidence is in
 [the Stage 3 qualification record](measurements/v0.3.0/stage3/qualification.md).
 
-This qualifies a nested software renderer and basic input, not physical
-hardware, general application/toolkit compatibility or full desktop parity.
-No Lua/IPC/config/clipboard/IME/Xwayland services are ported in Stages 1–3;
-foot requires the absent data-device global. Rust checks remain local commands,
-not additional release or CI jobs.
+The Stage 4A harness runs two independent Wayland clients with real focus
+gates. It verifies clipboard and primary-selection ownership, distinct payloads
+per MIME type, unfocused receivers, empty selection, forged/stale serial
+rejection, data-device recreation, source destruction, early pipe close,
+unoffered MIME types, unmap/remap, popup dismissal with a live selection and
+receiver/source disconnect. It then qualifies foot (map/render, keyboard input,
+mouse selection to primary, copy to `wl-paste` and paste from `wl-copy`).
+Minimal GTK4 and Qt6 probes, compiled against installed development files when
+present, additionally check map/render, typed text, copy to `wl-paste` and paste
+from `wl-copy`. Every process/socket/lock is cleaned up. Evidence is in
+[the Stage 4A qualification record](measurements/v0.3.0/stage4a/qualification.md).
+
+This qualifies a nested software renderer, basic input and the standard
+clipboard/primary-selection paths, not physical hardware, a full toolkit
+application matrix, drag-icon/DnD behavior or desktop parity. No Lua/IPC/config/IME/Xwayland
+services are ported in Stages 1–4A. Rust checks remain local commands, not
+additional release or CI jobs.
 
 ## Requirements
 

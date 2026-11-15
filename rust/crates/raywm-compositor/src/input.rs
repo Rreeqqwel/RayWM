@@ -54,12 +54,10 @@ impl State {
                 top.send_pending_configure();
             }
         }
-        if let Some(keyboard) = self.seat.as_ref().and_then(|seat| seat.get_keyboard()) {
-            if let Some(grab) = &self.popup_grab {
-                target = grab.current_grab();
-            }
-            keyboard.set_focus(self, target, SERIAL_COUNTER.next_serial());
+        if let Some(grab) = &self.popup_grab {
+            target = grab.current_grab();
         }
+        self.set_keyboard_focus(target, SERIAL_COUNTER.next_serial());
     }
 
     pub fn repair_pointer_focus(&mut self) {
@@ -157,6 +155,7 @@ impl State {
 
     #[cfg(feature = "winit")]
     pub fn host_focus(&mut self, focused: bool) {
+        tracing::info!(focused, "Host focus changed");
         self.host_focused = focused;
         if focused {
             let target = self.desktop.topmost();
@@ -212,6 +211,8 @@ impl State {
                         event.time_msec(),
                         |_, _, _| FilterResult::Forward,
                     );
+                    let focus = keyboard.current_focus();
+                    self.note_selection_serial(serial, focus.as_ref());
                 }
             }
             InputEvent::PointerMotionAbsolute { event } => {
@@ -226,15 +227,21 @@ impl State {
                     } else {
                         self.surface_under(position)
                     };
+                    let serial = SERIAL_COUNTER.next_serial();
+                    let previous = pointer.current_focus();
                     pointer.motion(
                         self,
                         under,
                         &MotionEvent {
                             location: position,
-                            serial: SERIAL_COUNTER.next_serial(),
+                            serial,
                             time: event.time_msec(),
                         },
                     );
+                    if pointer.current_focus() != previous {
+                        let focus = pointer.current_focus();
+                        self.note_selection_serial(serial, focus.as_ref());
+                    }
                     pointer.frame(self);
                 }
             }
@@ -278,15 +285,18 @@ impl State {
                     }
                     return;
                 }
+                let serial = SERIAL_COUNTER.next_serial();
                 pointer.button(
                     self,
                     &ButtonEvent {
                         button,
                         state: event.state(),
-                        serial: SERIAL_COUNTER.next_serial(),
+                        serial,
                         time: event.time_msec(),
                     },
                 );
+                let focus = pointer.current_focus();
+                self.note_selection_serial(serial, focus.as_ref());
                 if self.pressed_buttons.is_empty() && !pointer.is_grabbed() {
                     let location = pointer.current_location();
                     pointer.motion(

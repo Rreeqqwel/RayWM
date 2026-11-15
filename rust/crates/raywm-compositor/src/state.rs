@@ -19,9 +19,12 @@ use smithay::{
     },
 };
 
+use crate::selection::SelectionState;
 use crate::shell::View;
 
 pub struct State {
+    pub display: DisplayHandle,
+    pub selection: SelectionState,
     compositor: CompositorState,
     shm: ShmState,
     pub xdg: XdgShellState,
@@ -46,6 +49,8 @@ pub struct State {
 impl State {
     pub fn new(display: &DisplayHandle) -> Self {
         Self {
+            display: display.clone(),
+            selection: SelectionState::new(display),
             compositor: CompositorState::new::<Self>(display),
             shm: ShmState::new::<Self>(display, vec![]),
             xdg: XdgShellState::new_with_capabilities::<Self>(display, std::iter::empty::<smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities>()),

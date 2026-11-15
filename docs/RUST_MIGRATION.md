@@ -1,11 +1,14 @@
-# Rust / Smithay migration — Stages 1–3
+# Rust / Smithay migration — Stages 1–4A
 
 This is the foundation for a future v0.3 migration, **not a v0.3 release**.
 The working desktop remains Zig 0.16.0 + wlroots 0.20 + Lua 5.4.
 `rust/` is an experimental Rust compositor with a headless protocol mode
-and a nested Winit/EGL/GLES mode. Stage 3 adds floating multi-window policy,
+and a nested Winit/EGL/GLES mode. Stage 3 added floating multi-window policy,
 validated interactive move/resize and XDG popup/grab lifecycle on the Stage 2
-virtual output and renderer. No Lua host exists;
+virtual output and renderer. Stage 4A adds the standard
+`wl_data_device_manager` clipboard, independent primary selection, data-device
+focus following and a serial policy; it does not add drag-icon rendering or a
+clipboard manager. No Lua host exists;
 this is not a daily-use replacement for the Zig desktop.
 No Zig module, package payload, release branch or project version is replaced.
 
@@ -57,7 +60,7 @@ Smithay desktop windows and the nested output.
 | `taskbar.zig` | ID-keyed foreign-toplevel/workspace handles, idle-coalesced publication after native/Lua transitions | supported foreign-toplevel/workspace protocol helpers; verify exact coverage before porting | compositor publication adapter; preserve unsupported protocol contracts explicitly rather than assuming helper parity |
 | `lock.zig` | unlocked/locking/locked/abandoned states, presentation barrier, input exclusion and fail-closed locker crash; uses server/outputs/input | session-lock protocol, output presentation and seat primitives | compositor security state machine, independent of Lua policy |
 | `xwayland.zig` | lazy Xwayland/XWM lifetime, associations to common views, override-redirect menus, retry timers and clipboard bridge | optional Xwayland server/XWM and selection integration | later compositor X11 adapter; no wlroots FFI in Rust |
-| `data.zig`, `textinput.zig`, `protocols.zig` | DnD/icon/serial validation, IME relay, selection/activation/global filtering | corresponding Wayland protocol state and dispatch helpers | explicit compositor protocol adapters; reimplement RayWM eligibility/filtering rules |
+| `data.zig`, `textinput.zig`, `protocols.zig` | DnD/icon/serial validation, IME relay, selection/activation/global filtering | corresponding Wayland protocol state and dispatch helpers | explicit compositor protocol adapters; reimplement RayWM eligibility/filtering rules. Stage 4A implements standard clipboard/primary selection and data-device focus; DnD icon, IME, activation and filtering stay deferred |
 | `conf.zig`, `settings.zig` | bounded parser, system/user layers, reload validity, restart-only settings | none | independent core configuration parser/model; Stage 1 does not read ray.conf |
 | `update.zig` | download/verification/channel/package policy in a short-lived tool | none | independent tool migration after compositor parity; existing tool stays operational |
 
@@ -152,7 +155,7 @@ signalfd; rustix supplies safe UID validation and test polling/signals.
 Tracing formats diagnostics. `wayland-client`, client `wayland-protocols` and
 `tempfile` support real-client tests. No Lua binding is selected prematurely.
 
-## Rust implementation (Stages 1–3)
+## Rust implementation (Stages 1–4A)
 
 ```text
 rust/
@@ -168,10 +171,13 @@ rust/
     src/input.rs               seat focus, keyboard/pointer forwarding and cleanup
     src/grabs.rs               input validation and ID-based move/resize pointer grab
     src/popups.rs              PopupManager adapter, positioning, handshake and grabs
+    src/selection.rs           data-device/primary focus, serial policy and delegation
   tests/headless.rs            protocol tests and opt-in graphical probe
   tests/floating.rs            Stage 3 real-client lifecycle and graphical probe
+  tests/selection.rs           Stage 4A clipboard/primary/focus regressions
   tests/nested-smoke.py        private graphical parent and Stage 2/3 dispatcher
   tests/floating-smoke.py      Stage 3 input driver and submitted-pixel assertions
+  tests/selection-smoke.py     Stage 4A input driver, foot and wl-clipboard harness
 ```
 
 Core has no dependencies on Smithay, Lua or native backends. Its desktop
@@ -307,6 +313,67 @@ bindings remain until the client destroys them or disconnects; they cannot map
 again. This is not a second logical-window registry and does not retain a stale
 usable root. No custom popup protocol or fake clipboard global is advertised.
 
+### Clipboard, primary selection and focus
+
+Stage 4A advertises exactly two selection globals: `wl_data_device_manager`
+(version 3) and `zwp_primary_selection_device_manager_v1` (version 1). They are
+registered through Smithay's `DataDeviceState` and `PrimarySelectionState`;
+no `wlr-data-control`, `ext-data-control`, Xwayland bridge or compositor-owned
+selection is added. Headless mode has no seat, so it can advertise the managers
+but cannot create a data device or set a selection.
+
+**Selection ownership.** Smithay's per-seat `SeatData` is the only selection
+owner. `SelectionHandler::new_selection` only records the resulting mime types;
+RayWM never stores a second `SelectionSource`. When the owning source object is
+destroyed, the adapter forces Smithay's broadcast to re-run its liveness check,
+so a focused receiver promptly gets a null selection instead of an inert offer.
+A replaced or cancelled source is released by Smithay, and a client disconnect
+leaves no retained resource in the compositor.
+
+**Seat and focus integration.** The data-device/primary focus is derived from
+the existing seat keyboard focus, never from a second focus registry. Every
+keyboard `set_focus` site (window focus, fallback after unmap/disconnect, popup
+grab and popup-grab end) goes through `raywm-compositor::selection`'s
+`set_keyboard_focus`, which applies the keyboard focus and then calls
+`set_data_device_focus` / `set_primary_focus` for the same client. A client
+that creates another data device while already focused receives the current
+offer immediately (Smithay alone waits for the next focus/selection change).
+Clients without keyboard focus do not receive selection offers.
+
+**Serial policy.** `wl_data_device.set_selection` and its primary counterpart
+pass through a small dispatch adapter before Smithay's implementation. The
+requesting client must present a serial that was delivered to it since its
+current keyboard focus began: the keyboard-enter serial, a key press, a pointer
+button, or a pointer-enter serial. The log holds at most 64 entries for ten
+seconds and is cleared on every focus-client change. Missing, forged and stale
+serials are denied with a warning and never reach the seat. Smithay still
+enforces the protocol baseline: the data device must belong to a real seat and
+the requesting client must own the keyboard focus. A serial is therefore a
+policy narrowing, not a replacement for seat/focus validation.
+
+**MIME types and data transfer.** The source's `offer` list is passed to the
+receiver unchanged. On `wl_data_offer.receive`, Smithay checks the requested
+MIME type and forwards the receiver's write end to the source client as
+`wl_data_source.send`; the compositor never reads, buffers or copies clipboard
+bytes, and no blocking I/O or retry loop exists in the event loop. An unknown
+MIME type is rejected before reaching the source and its fd is closed. If a
+receiver closes the read end early, the source's write fails with `EPIPE`; that
+is client-local and the compositor remains responsive. Both clipboard and
+primary selection use the same fd path but independent `SeatData` slots, so
+they cannot overwrite each other.
+
+**Limits.** Drag-and-drop handlers exist because Smithay requires them:
+client-initiated negotiation uses Smithay's `DnDGrab`, and invalid drag serials
+are rejected. The compositor does not render the drag icon, does not start
+server-side drags and does not claim qualified DnD; only clipboard and primary
+selection are qualified. There is no clipboard history, manager, persistence
+or copy-on-source-disconnect. foot 1.28.0, wl-clipboard 2.3.0 and minimal
+GTK 4.24 / Qt 6.12 probes were exercised as independent clients. The toolkit
+probes are small programs compiled against installed development files; they
+are not a full application matrix. Foot's non-fatal diagnostics about missing
+XDG activation, fractional scaling, server-side cursors, toplevel icons and
+text-input remain accurate limitations.
+
 ### Rendering, output and input
 
 Winit's event source shares the existing calloop with the listener, display
@@ -392,13 +459,13 @@ cargo test --workspace --locked
 cargo build --workspace --locked
 ```
 
-Stage 3 passes all five commands above. The default test command runs 17
-automatic tests (seven core, ten protocol/process); two graphical tests are
-explicitly ignored there and run by the separate smoke scenarios below.
+Stage 4A passes all five commands above. The default test command runs 18
+automatic tests (seven core, eleven protocol/process); three graphical tests
+are explicitly ignored there and run by the separate smoke scenarios below.
 Headless-only clippy/tests and `tests/docs-sync.sh` also pass. The three
 original Stage 1 process tests remain in place; only the expected registry
-set expands for XDG. Source equality confirms Zig/build/config/protocol files
-are unchanged.
+set expands for XDG and selection. Source equality confirms
+Zig/build/config/protocol files are unchanged.
 
 `cargo test` retains a core socket-path validation test and the original five
 subprocess smoke tests: registry/sync and mandatory shm formats; buffer
@@ -411,14 +478,17 @@ server runs with a scrubbed environment and private directory. Startup,
 protocol reads and exit waits have five-second deadlines and children are
 killed/reaped on failure. XDG tests additionally observe initial configure/ACK,
 bufferless non-mapping, map/unmap, fresh remap, role recreation, invalid ACK
-and early-buffer protocol errors, release and abrupt disconnect. These checks
-establish more than compilation.
+and early-buffer protocol errors, release and abrupt disconnect. The Stage 4A
+headless test verifies both manager globals/versions, source creation with
+multiple MIME types, destroy ordering and isolation from a following client.
+These checks establish more than compilation.
 
 The graphics qualification commands are:
 
 ```sh
 python3 rust/tests/nested-smoke.py
 python3 rust/tests/nested-smoke.py --stage3
+python3 rust/tests/selection-smoke.py
 ```
 
 It uses the unchanged Zig `-Dtest-input` binary as a private headless pixman
@@ -456,22 +526,41 @@ client logs and pixels. The independent Stage 2 smoke remains unchanged in its o
 images, environment and exact run results are described in the Stage 3 evidence
 record; these establish nested software behavior, not a general desktop claim.
 
+Stage 4A adds a private-parent selection scenario with two independent Wayland
+clients and real focus changes. The client sets the clipboard with the serial
+from its actual `wl_keyboard.enter`, verifies focus-owner switching, reads three
+different MIME types through real fds, proves the unfocused receiver gets no
+offers, clears the selection, rejects forged and focus-stale serials (observed in
+the compositor log), recreates a data device while focused, destroys a source,
+closes a pipe early, requests an unoffered MIME type, unmaps/remaps the owner and
+disconnects both a receiver and a source client. Primary selection is set and
+read independently and does not replace the clipboard. The same compositor then
+qualifies foot 1.28.0: mapped/rendered pixels, keyboard input into a shell,
+mouse selection to primary, Ctrl+Shift+C copy to `wl-paste`, and
+`wl-copy` → Ctrl+Shift+V paste into foot measured through the shell. Minimal
+GTK 4 and Qt 6 windows then map/render, receive typed text, copy it to
+`wl-paste` and paste from `wl-copy`, with the text confirmed through files
+written by the probe applications. The compositor survives every teardown and
+shuts down cleanly. Evidence is retained
+under `docs/measurements/v0.3.0/stage4a/`. These are nested/software
+qualifications, not physical hardware or toolkit-matrix coverage.
+
 ### Prototype limits
 
 One nested output, scale 1, fixed floating placement/focus policy and full
-redraw are supported. Clipboard/data-device, client cursor rendering,
+redraw are supported. Standard clipboard and primary selection are implemented;
+drag-icon rendering, DnD qualification, client cursor rendering, server-side
 decorations, maximize/minimize/fullscreen/window menu policy, layer-shell,
-Xwayland, Lua, IPC, ray.conf and effects are not implemented. In particular,
-foot requires wl_data_device_manager and still exits; independent test clients
-suffice for Stage 3, so clipboard is deferred as a separate protocol task.
-No toolkit/application compatibility claim is made.
+Xwayland, Lua, IPC, ray.conf and effects are not. Foot, wl-clipboard and minimal
+GTK 4 / Qt 6 probes qualify as independent clients; no general toolkit
+application matrix is claimed.
 
-Physical DRM/KMS/input/hotplug, hardware GL, GTK/Qt, IME, clipboard/DnD, device
+Physical DRM/KMS/input/hotplug, hardware GL, full GTK/Qt applications, IME, qualified DnD, device
 rules, fractional client scaling, presentation-time, sanitizers and production
 resource/admission budgets remain unqualified. Output resize updates the mode
 and clamps oversized windows; it does not implement multi-output relocation,
 reactive popup repositioning after output changes or configurable focus navigation.
-The unchanged Zig suites are not rerun wholesale in Stages 2/3; the Stage 1
+The unchanged Zig suites are not rerun wholesale in Stages 2/3/4A; the Stage 1
 baseline remains historical and source equality is checked. Context-loss
 recovery and optimized damage tracking are deferred. This is a controlled
 prototype, not an installed desktop.
@@ -509,22 +598,27 @@ prototype, not an installed desktop.
    validated pointer move/resize with ACK/commit anchors and bounded configure
    flow, standard popup positioning/nested grabs/dismissal and lifecycle tests.
    Preserve these protocol and pixel regressions before adding policy or services.
-3. **Next: compatibility and output qualification:** isolate standard
-   data-device/selection support, test real toolkit clients, reactive popup
-   positioning and output-resize edge cases. Then review workspace/configuration
-   ownership before authorizing Lua or tiling work.
-4. **Lua host and settings:** compatibility boundary and unchanged API v1,
+3. **Stage 4A — implemented:** standard
+   `wl_data_device_manager` clipboard and independent primary selection,
+   data-device focus following the existing keyboard focus, input-serial
+   policy, immediate source-death rebroadcast, real fd transfer tests and
+   foot/wl-clipboard qualification. Drag icons and qualified DnD remain open.
+4. **Next: Stage 4B:** drag-icon rendering and negotiated DnD, GTK/Qt client
+   matrix in the private nested session, reactive popup positioning and
+   output-resize edge cases. Then review workspace/configuration ownership
+   before authorizing Lua or tiling work.
+5. **Lua host and settings:** compatibility boundary and unchanged API v1,
    parser/layered reload, adversarial budget/ownership tests and plugin traces.
    Parallel Zig/Rust executables use independent private sockets/config roots.
-5. **Shell and services:** layer-shell, lock/presentation barriers, capture,
+6. **Shell and services:** layer-shell, lock/presentation barriers, capture,
    selection/DnD/IME, activation/filtering, taskbar/workspace publication and
    bounded same-UID IPC. Verify every old protocol version/limit against the
    pinned Smithay capability; write adapters only for proven gaps.
-6. **Effects, Xwayland and native sessions:** native render elements/snapshots,
+7. **Effects, Xwayland and native sessions:** native render elements/snapshots,
    synchronization/damage/performance; XWM lifecycle/selection bridge;
    explicit DRM/libinput/libseat backend. Hardware work requires a separate
    safe test session and [hardware checklist](HARDWARE-TESTING.md).
-7. **Cutover:** packaging, CI, docs, updater and generated release allowlists
+8. **Cutover:** packaging, CI, docs, updater and generated release allowlists
    move to Rust only after the gates below; no Stage 1 release promotion.
 
 Primary risks are semantic drift despite compiling protocol handlers,

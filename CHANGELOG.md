@@ -4,9 +4,21 @@ All notable changes to RayWM. Versions follow [Semantic
 Versioning](https://semver.org/); before 1.0, minor versions may break
 the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
-## [Unreleased] — Rust migration foundation and floating nested prototype
+## [Unreleased] — Rust migration foundation, floating and clipboard prototype
 
 ### Added
+
+- Rust standard clipboard and primary selection through
+  `wl_data_device_manager` v3 and `zwp_primary_selection_device_manager_v1`.
+  Data-device focus follows the existing seat keyboard focus; `set_selection`
+  requires a recently delivered client serial; source destruction and client
+  disconnect clear ownership; receiver fds are forwarded to the source without
+  copying clipboard bytes or blocking the loop. Invalid MIME types and closed
+  pipes are contained per client.
+- Stage 4A real-client qualification: independent clipboard/primary clients,
+  per-MIME payloads, focus and serial policy, source/receiver teardown,
+  popup-plus-selection transitions, foot 1.28.0, wl-clipboard 2.3.0 and minimal
+  GTK4/Qt6 map/render/copy/paste probes in a private nested session.
 
 - Rust floating compositor: simultaneous XDG windows, cascade placement,
   click-to-raise, focus fallback and grab-aware activation. Standard client

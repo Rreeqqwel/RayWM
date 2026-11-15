@@ -409,22 +409,26 @@ From `rust/`, run `cargo fmt --all -- --check`,
 `cargo check --workspace --locked`,
 `cargo clippy --workspace --all-targets --locked -- -D warnings`,
 `cargo test --workspace --locked` and `cargo build --workspace --locked`.
-These check the core window/ID/focus/stack/interaction model and real XDG
-configure/ACK/lifecycle, popup parent/error isolation and subtree cleanup.
-The graphical smoke is separate: `python3 rust/tests/nested-smoke.py` checks
-pixels, frames, input, resize and cleanup inside a private headless parent.
-`python3 rust/tests/nested-smoke.py --stage3` additionally checks three visible
-windows, focus/stacking, serial-validated move/resize, delayed ACK/min/max,
-nested popup grabs/reposition/dismissal and mid-grab destruction/disconnect.
+These check the core window/ID/focus/stack/interaction model, real XDG
+configure/ACK/lifecycle, popup parent/error isolation, subtree cleanup and the
+standard clipboard/primary-selection managers. The graphical smoke is separate:
+`python3 rust/tests/nested-smoke.py` checks pixels, frames, input, resize and
+cleanup inside a private headless parent. `python3 rust/tests/nested-smoke.py
+--stage3` additionally checks three visible windows, focus/stacking,
+serial-validated move/resize, delayed ACK/min/max, nested popup
+grabs/reposition/dismissal and mid-grab destruction/disconnect.
+`python3 rust/tests/selection-smoke.py` qualifies copy/paste between independent
+clients, primary selection, focus/serial policy, foot and wl-clipboard.
 
 `raywm-smithay --backend winit` opens one nested EGL/GLES window/output with
-floating windows, keyboard/pointer focus, client move/resize and XDG popups;
-`--backend headless` is the default protocol-only
-mode. Other options are `--socket NAME` and `--help` / `-h`. It requires a
+floating windows, keyboard/pointer focus, client move/resize, XDG popups and
+`wl_data_device_manager` + primary selection; `--backend headless` is the
+default protocol-only mode. Other options are `--socket NAME` and
+`--help` / `-h`. It requires a
 private XDG_RUNTIME_DIR and keeps incoming WAYLAND_DISPLAY for the parent;
 logs report socket/window/output lifecycle and accepted interactive operations.
-Lua, clipboard and full desktop
-policy are not ported; this is an experimental prototype. See
+Drag icons, qualified DnD, Lua and full desktop policy are not ported; this is
+an experimental prototype. See
 [build and nested launch](docs/INSTALL.md#experimental-rust-foundation) and
 [the migration map, qualification and limits](docs/RUST_MIGRATION.md).
 
@@ -446,7 +450,7 @@ docs/           INSTALL, CONFIGURATION, API, ARCHITECTURE, TESTING, screenshots/
 tests/          unit, integration, input, pointer, navigation, screenshot and stress tests
 rust/           experimental core/compositor Cargo workspace and isolated protocol tests
   crates/         core window/stack/geometry policy; Smithay shell/input/grabs/popups
-  tests/          headless.rs, floating.rs, nested-smoke.py, floating-smoke.py
+  tests/          headless.rs, floating.rs, selection.rs and their smoke harnesses
 scripts/        source-archive.sh, arch-package.sh, release-meta.py, raywmctl, install.sh
 ```
 

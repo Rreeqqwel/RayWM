@@ -23,14 +23,22 @@ use tempfile::TempDir;
 use wayland_client::{
     delegate_noop,
     protocol::{
-        wl_buffer, wl_callback, wl_compositor, wl_keyboard, wl_output, wl_pointer, wl_registry,
-        wl_seat, wl_shm, wl_shm_pool, wl_subcompositor, wl_subsurface, wl_surface,
+        wl_buffer, wl_callback, wl_compositor, wl_data_device, wl_data_device_manager,
+        wl_data_offer, wl_data_source, wl_keyboard, wl_output, wl_pointer, wl_registry, wl_seat,
+        wl_shm, wl_shm_pool, wl_subcompositor, wl_subsurface, wl_surface,
     },
     Connection, Dispatch, EventQueue, QueueHandle, WEnum,
 };
-use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
+use wayland_protocols::{
+    wp::primary_selection::zv1::client::{
+        zwp_primary_selection_device_v1, zwp_primary_selection_offer_v1,
+        zwp_primary_selection_source_v1,
+    },
+    xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base},
+};
 
 mod floating;
+mod selection;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 const WAIT: Duration = Duration::from_secs(5);
@@ -154,6 +162,20 @@ struct Probe {
     )>,
     popup_done: Vec<wayland_protocols::xdg::shell::client::xdg_popup::XdgPopup>,
     repositioned: Vec<u32>,
+    keyboard_enter_serial: Option<u32>,
+    clipboard_selection: Vec<Option<wl_data_offer::WlDataOffer>>,
+    offer_mime_types: Vec<(wl_data_offer::WlDataOffer, String)>,
+    source_sends: Vec<(String, usize)>,
+    source_send_errors: usize,
+    source_cancelled: usize,
+    primary_selection: Vec<Option<zwp_primary_selection_offer_v1::ZwpPrimarySelectionOfferV1>>,
+    primary_offer_mime_types: Vec<(
+        zwp_primary_selection_offer_v1::ZwpPrimarySelectionOfferV1,
+        String,
+    )>,
+    primary_sends: Vec<(String, usize)>,
+    primary_send_errors: usize,
+    primary_cancelled: usize,
 }
 
 impl Probe {
@@ -343,8 +365,11 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Probe {
                     state.key_serial = Some(serial);
                 }
             }
-            wl_keyboard::Event::Enter { surface, .. } => {
+            wl_keyboard::Event::Enter {
+                serial, surface, ..
+            } => {
                 state.keyboard_enters += 1;
+                state.keyboard_enter_serial = Some(serial);
                 state.keyboard_focus = Some(surface);
             }
             wl_keyboard::Event::Leave { .. } => {
@@ -522,10 +547,32 @@ fn globals_buffers_subsurfaces_disconnect_and_sigterm() -> Result<()> {
     let mut server = Server::start(Some("raywm-test"))?;
     let (connection, mut queue, mut probe) = server.connect()?;
     let qh = queue.handle();
+    let mut interfaces = probe
+        .globals
+        .iter()
+        .map(|(_, name, _)| name.as_str())
+        .collect::<Vec<_>>();
+    interfaces.sort_unstable();
     assert_eq!(
-        probe.globals.len(),
-        4,
+        interfaces,
+        [
+            "wl_compositor",
+            "wl_data_device_manager",
+            "wl_shm",
+            "wl_subcompositor",
+            "xdg_wm_base",
+            "zwp_primary_selection_device_manager_v1",
+        ],
         "only implemented protocols are advertised"
+    );
+    assert_eq!(
+        probe.global("wl_data_device_manager")?.1,
+        3,
+        "standard clipboard advertises the v3 data-device contract"
+    );
+    assert_eq!(
+        probe.global("zwp_primary_selection_device_manager_v1")?.1,
+        1
     );
     let registry = connection.display().get_registry(&qh, ());
     let (id, version) = probe.global("wl_compositor")?;

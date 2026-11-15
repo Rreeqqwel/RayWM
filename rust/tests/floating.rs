@@ -30,23 +30,23 @@ impl Dispatch<xdg_popup::XdgPopup, ()> for Probe {
     }
 }
 
-struct Peer {
-    connection: Connection,
-    queue: EventQueue<Probe>,
-    probe: Probe,
-    window: ClientWindow,
-    compositor: wl_compositor::WlCompositor,
-    shell: xdg_wm_base::XdgWmBase,
-    shm: wl_shm::WlShm,
-    seat: Option<wl_seat::WlSeat>,
-    color: u32,
-    size: (i32, i32),
+pub(crate) struct Peer {
+    pub(crate) connection: Connection,
+    pub(crate) queue: EventQueue<Probe>,
+    pub(crate) probe: Probe,
+    pub(crate) window: ClientWindow,
+    pub(crate) compositor: wl_compositor::WlCompositor,
+    pub(crate) shell: xdg_wm_base::XdgWmBase,
+    pub(crate) shm: wl_shm::WlShm,
+    pub(crate) seat: Option<wl_seat::WlSeat>,
+    pub(crate) color: u32,
+    pub(crate) size: (i32, i32),
     #[cfg(feature = "winit")]
     next_barrier: u32,
 }
 
 impl Peer {
-    fn new(socket: &std::path::Path, color: u32) -> Result<Self> {
+    pub(crate) fn new(socket: &std::path::Path, color: u32) -> Result<Self> {
         let connection = Connection::from_socket(UnixStream::connect(socket)?)?;
         let mut queue = connection.new_event_queue();
         let qh = queue.handle();
@@ -86,11 +86,11 @@ impl Peer {
         Ok(peer)
     }
 
-    fn sync(&mut self) -> Result<()> {
+    pub(crate) fn sync(&mut self) -> Result<()> {
         roundtrip(&self.connection, &mut self.queue, &mut self.probe)
     }
 
-    fn buffer(&self, size: (i32, i32), color: u32) -> Result<wl_buffer::WlBuffer> {
+    pub(crate) fn buffer(&self, size: (i32, i32), color: u32) -> Result<wl_buffer::WlBuffer> {
         let (w, h) = size;
         assert!(w > 0 && h > 0 && w <= 2048 && h <= 2048);
         let bytes = color.to_ne_bytes().repeat((w * h) as usize);
@@ -105,7 +105,7 @@ impl Peer {
         Ok(buffer)
     }
 
-    fn ack(&mut self, xdg: &xdg_surface::XdgSurface) -> Result<()> {
+    pub(crate) fn ack(&mut self, xdg: &xdg_surface::XdgSurface) -> Result<()> {
         let serial = self
             .probe
             .surface_configures
@@ -122,7 +122,7 @@ impl Peer {
         Ok(())
     }
 
-    fn draw(&mut self, size: (i32, i32)) -> Result<()> {
+    pub(crate) fn draw(&mut self, size: (i32, i32)) -> Result<()> {
         self.ack(&self.window.xdg.clone())?;
         let buffer = self.buffer(size, self.color)?;
         self.window
@@ -136,14 +136,18 @@ impl Peer {
         Ok(())
     }
 
-    fn destroy(&self) {
+    pub(crate) fn destroy(&self) {
         self.window.top.destroy();
         self.window.xdg.destroy();
         self.window.surface.destroy();
         self.window.buffer.destroy();
     }
 
-    fn positioner(&self, size: (i32, i32), anchor: (i32, i32)) -> xdg_positioner::XdgPositioner {
+    pub(crate) fn positioner(
+        &self,
+        size: (i32, i32),
+        anchor: (i32, i32),
+    ) -> xdg_positioner::XdgPositioner {
         let positioner = self.shell.create_positioner(&self.queue.handle(), ());
         positioner.set_size(size.0, size.1);
         positioner.set_anchor_rect(anchor.0, anchor.1, 1, 1);
@@ -156,7 +160,7 @@ impl Peer {
         positioner
     }
 
-    fn popup(
+    pub(crate) fn popup(
         &self,
         parent: &xdg_surface::XdgSurface,
         size: (i32, i32),
@@ -177,7 +181,7 @@ impl Peer {
         }
     }
 
-    fn map_popup(&mut self, popup: &Popup, color: u32) -> Result<()> {
+    pub(crate) fn map_popup(&mut self, popup: &Popup, color: u32) -> Result<()> {
         popup.surface.commit();
         self.sync()?;
         self.ack(&popup.xdg)?;
@@ -193,15 +197,15 @@ impl Peer {
     }
 }
 
-struct Popup {
-    surface: wl_surface::WlSurface,
-    xdg: xdg_surface::XdgSurface,
-    popup: xdg_popup::XdgPopup,
-    size: (i32, i32),
+pub(crate) struct Popup {
+    pub(crate) surface: wl_surface::WlSurface,
+    pub(crate) xdg: xdg_surface::XdgSurface,
+    pub(crate) popup: xdg_popup::XdgPopup,
+    pub(crate) size: (i32, i32),
 }
 
 impl Popup {
-    fn destroy(&self) {
+    pub(crate) fn destroy(&self) {
         self.popup.destroy();
         self.xdg.destroy();
         self.surface.destroy();
