@@ -17,6 +17,50 @@ test "IPC bounds nesting before parsing, respecting string escapes" {
     try t.expect(!raywm.ipc.boundedJson("}"));
 }
 
+test "IPC rejects every structurally malformed JSON envelope before parsing" {
+    // Valid values, including top-level scalars and whitespace.
+    for ([_][]const u8{
+        "{}",
+        "[]",
+        "{\"v\":1,\"id\":1,\"method\":\"windows\"}",
+        "  { \"a\" : [ 1, 2, { \"b\" : null } ] } \n",
+        "[{}, [], [true, false, null], -1.5e+2]",
+        "\"a\\\"b\\\\c\\u0041\"",
+        "1",
+        "true",
+        "null",
+    }) |ok| try t.expect(raywm.ipc.boundedJson(ok));
+
+    // The Scanner's empty-stack paths: a separator or closer after the
+    // complete root value, and a second value in any form.
+    for ([_][]const u8{
+        "{},",                  "{\"a\":1},",
+        "{}]",                  "{} }",
+        "{} {}",                "{}[]",
+        "{\"a\":{}} {\"b\":1}", "[1,2] []",
+        "1,",                   "true,",
+        "1}",                   "\"x\"}",
+        "{},,",                 "{} x",
+        // Trailing/double commas and wrong container shape.
+        "{\"a\":1,}",           "[1,]",
+        "{\"a\":{\"b\":1},}",   "[,]",
+        "{,}",                  "{\"a\" \"b\"}",
+        "{\"a\":}",             "{\"a\":1:2}",
+        "{]",                   "[}",
+        "{\"a\":[1,2}}",        "{\"a\":{1:2}}",
+        // Empty and incomplete.
+        "",                     "   ",
+        "{",                    "[",
+        "{\"a\"",               "{\"a\":",
+        "[1,2",
+    }) |bad| {
+        if (raywm.ipc.boundedJson(bad)) {
+            std.debug.print("accepted malformed JSON: {s}\n", .{bad});
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
 test "native easing endpoints, continuity and monotonicity" {
     inline for (.{ .linear, .in_quad, .out_quad, .in_out_cubic }) |kind| {
         try t.expectEqual(@as(f64, 0), raywm.animation.ease(kind, 0));

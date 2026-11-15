@@ -455,26 +455,100 @@ fn obj(a: Allocator, pairs: []const struct { []const u8, Value }) !Value {
 }
 
 /// Bound structural depth before the recursive JSON parser runs.
+/// Structural envelope checked before std.json sees the bytes.
+///
+/// `std.json.Scanner` is not total on malformed input: after the top-level
+/// value it can meet `,`, `}` or `]` with an empty nesting stack and
+/// underflow `BitStack` (a panic in Debug/ReleaseSafe). This validator
+/// accepts exactly one structurally valid JSON value: balanced and matching
+/// `{}`/`[]` up to 32 deep, no trailing comma or second value, and commas /
+/// colons only where a container allows them. Scalar spelling (number,
+/// literal, escape) is left to std.json, which rejects it with an error.
 pub fn boundedJson(bytes: []const u8) bool {
+    const Expect = enum { value, value_or_end, key_or_end, key, colon, after_value, done };
+    var stack: [32]u8 = undefined;
     var depth: usize = 0;
-    var string = false;
+    var expect: Expect = .value;
+    var in_string = false;
     var escape = false;
+    var key = false;
+    var scalar = false;
     for (bytes) |byte| {
         if (byte == 0) return false;
-        if (string) {
-            if (escape) escape = false else if (byte == '\\') escape = true else if (byte == '"') string = false;
-        } else switch (byte) {
-            '"' => string = true,
-            '{', '[' => {
+        if (in_string) {
+            if (escape) {
+                escape = false;
+            } else if (byte == '\\') {
+                escape = true;
+            } else if (byte == '"') {
+                in_string = false;
+                expect = if (key) .colon else if (depth == 0) .done else .after_value;
+            }
+            continue;
+        }
+        const space = switch (byte) {
+            ' ', '\t', '\r', '\n' => true,
+            else => false,
+        };
+        const structural = switch (byte) {
+            '{', '}', '[', ']', ',', ':', '"' => true,
+            else => false,
+        };
+        // A bare number/literal ends at whitespace or a structural byte.
+        if (scalar and (space or structural)) {
+            scalar = false;
+            expect = if (depth == 0) .done else .after_value;
+        }
+        if (space) continue;
+        switch (byte) {
+            '"' => {
+                if (expect != .value and expect != .value_or_end and expect != .key_or_end and expect != .key) return false;
+                key = expect == .key_or_end or expect == .key;
+                in_string = true;
+                escape = false;
+            },
+            '{' => {
+                if (expect != .value and expect != .value_or_end) return false;
+                if (depth == stack.len) return false;
+                stack[depth] = '{';
                 depth += 1;
-                if (depth > 32) return false;
+                expect = .key_or_end;
             },
-            '}', ']' => {
-                if (depth == 0) return false;
+            '[' => {
+                if (expect != .value and expect != .value_or_end) return false;
+                if (depth == stack.len) return false;
+                stack[depth] = '[';
+                depth += 1;
+                expect = .value_or_end;
+            },
+            '}' => {
+                if (depth == 0 or stack[depth - 1] != '{') return false;
+                if (expect != .key_or_end and expect != .after_value) return false;
                 depth -= 1;
+                expect = if (depth == 0) .done else .after_value;
             },
-            else => {},
+            ']' => {
+                if (depth == 0 or stack[depth - 1] != '[') return false;
+                if (expect != .value_or_end and expect != .after_value) return false;
+                depth -= 1;
+                expect = if (depth == 0) .done else .after_value;
+            },
+            ',' => {
+                // At depth 0 this is the Scanner's empty-stack path.
+                if (depth == 0 or expect != .after_value) return false;
+                expect = if (stack[depth - 1] == '{') .key else .value;
+            },
+            ':' => {
+                if (depth == 0 or stack[depth - 1] != '{' or expect != .colon) return false;
+                expect = .value;
+            },
+            else => {
+                if (expect != .value and expect != .value_or_end) return false;
+                scalar = true;
+            },
         }
     }
-    return depth == 0 and !string;
+    if (in_string) return false;
+    if (scalar) expect = if (depth == 0) .done else .after_value;
+    return expect == .done and depth == 0;
 }

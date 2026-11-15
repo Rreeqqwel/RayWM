@@ -33,8 +33,11 @@ An error has `ok:false` and an `err` string. Invalid/unknown IDs use null
 in the error response. A request ID must be an integer in 0..9007199254740991;
 booleans and floats are invalid. Unknown fields, duplicate JSON keys,
 unsupported versions, wrong types and unknown methods are rejected.
-Malformed requests do not execute a partial action. Responses to actions
-have `result:null`. Future compatible v1 changes may add response fields;
+Malformed requests do not execute a partial action. A structurally invalid
+envelope — unmatched or mismatched brackets, a trailing comma, a separator
+after the complete value, or a second value — is rejected as
+`invalid_json` before the JSON parser runs. Responses to actions have
+`result:null`. Future compatible v1 changes may add response fields;
 consumers should ignore unknown response fields. Breaking contracts need
 a new version. There is no unversioned fallback.
 

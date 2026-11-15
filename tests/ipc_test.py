@@ -77,9 +77,25 @@ check(not client.request("workspace_activate", {"workspace": 1, "extra": "bad"})
 check(client.request("windows")["ok"])
 
 # Framing survives fragmented requests, malformed JSON and nested payloads.
-for payload in (b'{bad}\n', b'[' * 33 + b'0' + b']' * 33 + b'\n', b'{"v":1,"id":1,"id":2,"method":"windows"}\n', b'\x00\n'):
+for payload in (
+    b'{bad}\n',
+    b'[' * 33 + b'0' + b']' * 33 + b'\n',
+    b'{"v":1,"id":1,"id":2,"method":"windows"}\n',
+    b'\x00\n',
+    # A comma after the complete root used to reach std.json's Scanner with
+    # an empty stack and abort the compositor.
+    b'{},\n',
+    b'{"v":1,"id":1,"method":"windows"},\n',
+    b'{}]\n',
+    b'{} {}\n',
+    b'[1,]\n',
+    b'{"a":{"b":1},}\n',
+    b'1,\n',
+):
     client.socket.sendall(payload)
     check(not client.read()["ok"])
+    # The compositor and this connection are still usable.
+    check(client.request("windows")["ok"])
 frame = b'{"v":1,"id":1000,"method":"windows"}\n'
 client.socket.sendall(frame[:10])
 time.sleep(0.02)
