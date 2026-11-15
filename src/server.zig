@@ -398,7 +398,13 @@ pub const Server = struct {
 
     /// Gives the keyboard to a layer surface, or back to the focused view.
     pub fn focusLayer(server: *Server, ls: ?*LayerSurface) void {
-        if (server.session_lock.locked()) return;
+        if (server.session_lock.locked()) {
+            // The lock owns the keyboard. Giving focus up still has to drop
+            // the borrow, or unlock would restore a surface that may be gone;
+            // a new surface cannot take the keyboard while locked.
+            if (ls == null) server.layer_focus = null;
+            return;
+        }
         server.layer_focus = ls;
         if (ls) |l| return server.keyboardEnter(l.wlr_layer.surface);
         if (server.focused) |v| server.keyboardEnter(v.surface()) else server.seat.keyboardNotifyClearFocus();

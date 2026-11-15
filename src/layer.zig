@@ -110,6 +110,11 @@ pub const LayerSurface = struct {
     /// layout) are skipped: they are about to be closed.
     fn releaseKeyboard(ls: *LayerSurface) void {
         const server = ls.server;
+        // The borrow must not outlive this surface even while the session
+        // lock owns the keyboard: focusLayer() is a no-op then, so leaving
+        // layer_focus pointing here would be a dangling pointer at unlock.
+        if (server.layer_focus == ls) server.layer_focus = null;
+        if (server.session_lock.locked()) return;
         var best: ?*LayerSurface = null;
         var outs = server.outputs.iterator(.forward);
         while (outs.next()) |o| {
