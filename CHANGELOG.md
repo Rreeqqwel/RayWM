@@ -15,6 +15,12 @@ physical hardware compatibility.
 
 ### Tests and infrastructure
 
+- **The Release `build` job trusts the container checkout before
+  archiving `SOURCE-COMMIT`.** The `archlinux` container runs as root
+  while actions/checkout leaves the tree owned by the runner UID, so
+  `git archive` aborted with "dubious ownership" before any asset was
+  built. The first v0.2.4 Beta run failed there; nothing was published.
+  The fix ships with `v0.2.4-beta.2` from the same version.
 - **`tests/docs-sync.sh`** keeps the documentation tied to the public
   surface: it fails when a `raywm.*`/`ctx.*` name or event in
   `src/lua.zig`, a setting in `src/conf.zig`, an IPC method in
