@@ -160,6 +160,8 @@ jobs:
         env:
           SOURCE_COMMIT: ${{ needs.plan.outputs.source_commit }}
         run: |
+          # The container's checkout is owned by the runner UID, not root.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           mkdir -p master
           git archive "$SOURCE_COMMIT" | tar -x -C master
       - name: Zig ${{ env.ZIG_VERSION }} (checksum-verified)
