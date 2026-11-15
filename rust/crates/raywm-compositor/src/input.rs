@@ -18,6 +18,9 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
 impl State {
     pub fn focus_window(&mut self, id: Option<WindowId>) {
+        if self.popup_root.is_some_and(|root| id != Some(root)) {
+            return;
+        }
         if self.desktop.focus(id) {
             self.sync_focus();
             self.redraw = true;
@@ -25,6 +28,7 @@ impl State {
     }
 
     pub fn sync_focus(&mut self) {
+        self.sync_scene();
         let focused = self.desktop.focused();
         let mut target = None;
         for view in &self.views {
@@ -51,11 +55,17 @@ impl State {
             }
         }
         if let Some(keyboard) = self.seat.as_ref().and_then(|seat| seat.get_keyboard()) {
+            if let Some(grab) = &self.popup_grab {
+                target = grab.current_grab();
+            }
             keyboard.set_focus(self, target, SERIAL_COUNTER.next_serial());
         }
     }
 
     pub fn repair_pointer_focus(&mut self) {
+        if self.desktop.interaction_window().is_some() || self.popup_root.is_some() {
+            return;
+        }
         let time = smithay::utils::Clock::<smithay::utils::Monotonic>::new()
             .now()
             .as_millis();
@@ -63,13 +73,9 @@ impl State {
             return;
         };
         let valid = pointer.current_focus().is_some_and(|surface| {
-            let mut root = surface;
-            while let Some(parent) = smithay::wayland::compositor::get_parent(&root) {
-                root = parent;
-            }
-            self.space
-                .elements()
-                .any(|window| window.toplevel().is_some_and(|t| t.wl_surface() == &root))
+            self.surface_window(&surface)
+                .and_then(|id| self.desktop.get(id))
+                .is_some_and(|window| window.mapped)
         });
         if !valid {
             pointer.unset_grab(self, SERIAL_COUNTER.next_serial(), time);
@@ -103,6 +109,9 @@ impl State {
     }
 
     pub fn clear_input(&mut self) {
+        self.cancel_operation();
+        self.end_popup_grab();
+        self.key_grant = None;
         let time = smithay::utils::Clock::<smithay::utils::Monotonic>::new()
             .now()
             .as_millis();
@@ -150,16 +159,7 @@ impl State {
     pub fn host_focus(&mut self, focused: bool) {
         self.host_focused = focused;
         if focused {
-            let target = self
-                .views
-                .iter()
-                .rev()
-                .find(|view| {
-                    self.desktop
-                        .get(view.id)
-                        .is_some_and(|window| window.mapped)
-                })
-                .map(|view| view.id);
+            let target = self.desktop.topmost();
             self.focus_window(target);
         } else {
             self.clear_input();
@@ -198,11 +198,17 @@ impl State {
         match event {
             InputEvent::Keyboard { event } => {
                 if let Some(keyboard) = self.seat.as_ref().and_then(|seat| seat.get_keyboard()) {
+                    let serial = SERIAL_COUNTER.next_serial();
+                    if event.state() == KeyState::Pressed {
+                        self.key_grant = keyboard
+                            .current_focus()
+                            .map(|target| (serial, target, std::time::Instant::now()));
+                    }
                     keyboard.input::<(), _>(
                         self,
                         event.key_code(),
                         event.state(),
-                        SERIAL_COUNTER.next_serial(),
+                        serial,
                         event.time_msec(),
                         |_, _, _| FilterResult::Forward,
                     );
@@ -248,13 +254,8 @@ impl State {
                             .map(|(window, _)| window.clone());
                         let id = target
                             .as_ref()
-                            .and_then(|window| {
-                                self.views.iter().find(|view| &view.window == window)
-                            })
-                            .map(|view| view.id);
-                        if let Some(window) = target {
-                            self.space.raise_element(&window, false);
-                        }
+                            .and_then(|window| window.toplevel())
+                            .and_then(|top| self.window_id(top.wl_surface()));
                         self.focus_window(id);
                     }
                 } else {
@@ -286,6 +287,18 @@ impl State {
                         time: event.time_msec(),
                     },
                 );
+                if self.pressed_buttons.is_empty() && !pointer.is_grabbed() {
+                    let location = pointer.current_location();
+                    pointer.motion(
+                        self,
+                        self.surface_under(location),
+                        &MotionEvent {
+                            location,
+                            serial: SERIAL_COUNTER.next_serial(),
+                            time: event.time_msec(),
+                        },
+                    );
+                }
                 pointer.frame(self);
             }
             InputEvent::PointerAxis { event } => {

@@ -30,6 +30,8 @@ use wayland_client::{
 };
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
+mod floating;
+
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 const WAIT: Duration = Duration::from_secs(5);
 
@@ -119,6 +121,8 @@ struct Probe {
     globals: Vec<(u32, String, u32)>,
     synced: bool,
     frames: usize,
+    #[cfg(feature = "winit")]
+    barriers: Vec<u32>,
     hidden_frames: usize,
     released: usize,
     formats: Vec<wl_shm::Format>,
@@ -136,6 +140,20 @@ struct Probe {
     output_leaves: usize,
     modes: Vec<(i32, i32)>,
     wm_capabilities: Option<Vec<u8>>,
+    keyboard_focus: Option<wl_surface::WlSurface>,
+    pointer_focus: Option<wl_surface::WlSurface>,
+    pointer_position: Option<(f64, f64)>,
+    input_serials: Vec<(u32, WEnum<wl_pointer::ButtonState>)>,
+    key_serial: Option<u32>,
+    activated: bool,
+    resizing: bool,
+    surface_configures: Vec<(xdg_surface::XdgSurface, u32)>,
+    popup_geometry: Vec<(
+        wayland_protocols::xdg::shell::client::xdg_popup::XdgPopup,
+        (i32, i32, i32, i32),
+    )>,
+    popup_done: Vec<wayland_protocols::xdg::shell::client::xdg_popup::XdgPopup>,
+    repositioned: Vec<u32>,
 }
 
 impl Probe {
@@ -153,6 +171,8 @@ enum Callback {
     Sync,
     Frame,
     HiddenFrame,
+    #[cfg(feature = "winit")]
+    Barrier(u32),
 }
 
 // Unlike EventQueue::roundtrip, this helper has a deadline even if the server
@@ -220,6 +240,8 @@ impl Dispatch<wl_callback::WlCallback, Callback> for Probe {
             Callback::Sync => state.synced = true,
             Callback::Frame => state.frames += 1,
             Callback::HiddenFrame => state.hidden_frames += 1,
+            #[cfg(feature = "winit")]
+            Callback::Barrier(token) => state.barriers.push(*token),
         }
     }
 }
@@ -311,12 +333,24 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Probe {
     ) {
         match event {
             wl_keyboard::Event::Key {
+                serial,
                 key,
                 state: key_state,
                 ..
-            } => state.keys.push((key, key_state)),
-            wl_keyboard::Event::Enter { .. } => state.keyboard_enters += 1,
-            wl_keyboard::Event::Leave { .. } => state.keyboard_leaves += 1,
+            } => {
+                state.keys.push((key, key_state));
+                if key_state == WEnum::Value(wl_keyboard::KeyState::Pressed) {
+                    state.key_serial = Some(serial);
+                }
+            }
+            wl_keyboard::Event::Enter { surface, .. } => {
+                state.keyboard_enters += 1;
+                state.keyboard_focus = Some(surface);
+            }
+            wl_keyboard::Event::Leave { .. } => {
+                state.keyboard_leaves += 1;
+                state.keyboard_focus = None;
+            }
             _ => {}
         }
     }
@@ -332,13 +366,36 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Probe {
         _: &QueueHandle<Self>,
     ) {
         match event {
-            wl_pointer::Event::Motion { .. } => state.motions += 1,
+            wl_pointer::Event::Motion {
+                surface_x,
+                surface_y,
+                ..
+            } => {
+                state.motions += 1;
+                state.pointer_position = Some((surface_x, surface_y));
+            }
             wl_pointer::Event::Button {
+                serial,
                 button,
                 state: button_state,
                 ..
-            } => state.buttons.push((button, button_state)),
-            wl_pointer::Event::Leave { .. } => state.pointer_leaves += 1,
+            } => {
+                state.buttons.push((button, button_state));
+                state.input_serials.push((serial, button_state));
+            }
+            wl_pointer::Event::Enter {
+                surface,
+                surface_x,
+                surface_y,
+                ..
+            } => {
+                state.pointer_focus = Some(surface);
+                state.pointer_position = Some((surface_x, surface_y));
+            }
+            wl_pointer::Event::Leave { .. } => {
+                state.pointer_leaves += 1;
+                state.pointer_focus = None;
+            }
             _ => {}
         }
     }
@@ -377,7 +434,7 @@ impl Dispatch<xdg_wm_base::XdgWmBase, ()> for Probe {
 impl Dispatch<xdg_surface::XdgSurface, ()> for Probe {
     fn event(
         state: &mut Self,
-        _: &xdg_surface::XdgSurface,
+        surface: &xdg_surface::XdgSurface,
         event: xdg_surface::Event,
         _: &(),
         _: &Connection,
@@ -385,6 +442,7 @@ impl Dispatch<xdg_surface::XdgSurface, ()> for Probe {
     ) {
         if let xdg_surface::Event::Configure { serial } = event {
             state.configures.push(serial);
+            state.surface_configures.push((surface.clone(), serial));
         }
     }
 }
@@ -399,8 +457,20 @@ impl Dispatch<xdg_toplevel::XdgToplevel, ()> for Probe {
         _: &QueueHandle<Self>,
     ) {
         match event {
-            xdg_toplevel::Event::Configure { width, height, .. } => {
-                state.sizes.push((width, height))
+            xdg_toplevel::Event::Configure {
+                width,
+                height,
+                states,
+            } => {
+                state.sizes.push((width, height));
+                let states = states
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|bytes| u32::from_ne_bytes(*bytes))
+                    .collect::<Vec<_>>();
+                state.activated = states.contains(&(xdg_toplevel::State::Activated as u32));
+                state.resizing = states.contains(&(xdg_toplevel::State::Resizing as u32));
             }
             xdg_toplevel::Event::WmCapabilities { capabilities } => {
                 state.wm_capabilities = Some(capabilities)

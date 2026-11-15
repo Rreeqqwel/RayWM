@@ -37,7 +37,7 @@ impl Graphics {
         // WAYLAND_DISPLAY with the server's newly created client socket.
         let (backend, source) = winit::init_from_attributes::<GlesRenderer>(
             Window::default_attributes()
-                .with_title("RayWM — Smithay Stage 2")
+                .with_title("RayWM — Smithay Stage 3")
                 .with_inner_size(LogicalSize::new(800.0, 600.0)),
         )?;
         let mode = Mode {

@@ -2,7 +2,7 @@ use raywm_core::windows::Desktop;
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
     delegate_compositor, delegate_seat, delegate_shm,
-    desktop::{Space, Window},
+    desktop::{PopupGrab, PopupManager, Space, Window},
     input::{Seat, SeatHandler, SeatState},
     output::Output,
     reexports::wayland_server::{
@@ -36,6 +36,11 @@ pub struct State {
     pub host_focused: bool,
     pub pressed_buttons: Vec<u32>,
     pub pointer_blocked: bool,
+    pub popups: PopupManager,
+    pub popup_entries: Vec<crate::popups::PopupEntry>,
+    pub popup_grab: Option<PopupGrab<Self>>,
+    pub popup_root: Option<raywm_core::windows::WindowId>,
+    pub key_grant: Option<(smithay::utils::Serial, WlSurface, std::time::Instant)>,
 }
 
 impl State {
@@ -55,6 +60,11 @@ impl State {
             host_focused: false,
             pressed_buttons: Vec::new(),
             pointer_blocked: false,
+            popups: PopupManager::default(),
+            popup_entries: Vec::new(),
+            popup_grab: None,
+            popup_root: None,
+            key_grant: None,
         }
     }
 }
@@ -96,6 +106,7 @@ impl CompositorHandler for State {
         // or renderer is needed here. The graphics backend alone sends frame
         // callbacks, after a successful render/submit of mapped surfaces.
         on_commit_buffer_handler::<Self>(surface);
+        self.commit_popup(surface);
         self.commit_window(surface);
     }
 
@@ -109,6 +120,7 @@ impl CompositorHandler for State {
     }
 
     fn destroyed(&mut self, surface: &WlSurface) {
+        self.remove_popup(surface);
         self.remove_window(surface);
     }
 }

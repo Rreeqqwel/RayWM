@@ -1,0 +1,11 @@
+Recorded: 2026-11-16T01:35:57+03:00
+Graphical run: /tmp/raywm-stage3-amiv3uci
+Parent: private Zig headless pixman, 1280x720
+Child: Smithay 0.7.0 Winit Wayland, 800x600, scale 1
+No input or capture targeted the running desktop.
+rustc 1.99.1 (58cf8f9c3 2026-10-13) (Arch Linux rust 1:1.99.1-1)
+cargo 1.99.1 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.1-1)
+0.16.0
+3d013c67a66e58a7c7123bf19d1aba3bad82061e75f5bb5bbe0b6d22af355262  zig-out/test-input/bin/raywm
+5c13fe37d73222e4dc8f8e3e24284022e22283b5eebefdbe0ca32180bb752690  zig-out/test-input/bin/raywm-test-client
+13ebf5ec4973b4070e5bc20ed6d175e69fef01de21a5a8c44bf26736f9e2b310  zig-out/test-input/bin/raywm-test-input

@@ -1,8 +1,10 @@
 //! Experimental headless/XDG server and nested Winit compositor.
 
+mod grabs;
 mod input;
 #[cfg(feature = "winit")]
 mod nested;
+mod popups;
 mod shell;
 mod state;
 
@@ -205,6 +207,8 @@ fn run(config: Options) -> Result<()> {
             // Sleep until a socket, protocol request or signal is ready. No
             // frame timer, busy polling or synchronous plugin work is present.
             event_loop.dispatch(None, &mut runtime)?;
+            runtime.state.flush_geometry();
+            runtime.state.refresh_popups();
             runtime.display.flush_clients()?;
         }
         if let Some(error) = runtime.failure.take() {

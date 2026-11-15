@@ -306,7 +306,7 @@ virtual-input protocols that let any client inject input.
 
 ### Experimental Rust foundation
 
-`rust/` contains the Stage 2 Smithay prototype. The desktop session entry,
+`rust/` contains the Stage 3 Smithay floating prototype. The desktop session entry,
 updater and release packaging still use Zig. Build on Linux with Rust/Cargo
 (validated with 1.99.1), a C linker, pkg-config and xkbcommon development files.
 Winit additionally needs Wayland and an EGL/OpenGL ES 3 implementation (for
@@ -330,7 +330,9 @@ renderer-free build is `cargo build -p raywm-compositor --no-default-features
 | `DISPLAY` | Winit's upstream X11 fallback; unset it in the example to require the host Wayland connection |
 
 The logs report socket readiness, client connection/disconnection, window
-role/configure/ACK/map/unmap/destruction and nested output sizes. Startup,
+role/configure/ACK/map/unmap/destruction, nested output sizes and accepted
+interactive-operation starts (window ID and resize flag). Popup configure/grab
+failures log warnings; invalid client requests do not terminate the server. Startup,
 display, EGL/render/submit or loop failure exits nonzero; a failed client
 admission logs a warning. SIGINT/SIGTERM and closing the Winit window stop the
 server and remove its socket/lock. No ray.conf or Lua configuration is loaded.
@@ -366,12 +368,15 @@ For example, in another terminal from the repository root, run
 `XDG_RUNTIME_DIR=/tmp/PRIVATE_RUNTIME WAYLAND_DISPLAY=raywm-test
 RAYWM_TEST_ROUNDS=1 zig-out/bin/raywm-test-client` after the ordinary Zig build.
 This independent simple client performs configure/ACK, displays a real buffer
-and exits. Clipboard/data-device is outside Stage 2, so foot currently refuses
+and exits. Multiple clients receive independent floating placement, click focus,
+client-requested move/resize and standard XDG popups. There are no compositor
+modifier bindings or Lua settings yet. Clipboard/data-device is deferred, so foot currently refuses
 to start; general toolkit compatibility is not claimed.
 
 For an automated safe pixel/input/resize check, run
 `python3 rust/tests/nested-smoke.py` from the repository root. It creates its
-own headless parent and never injects input into the running desktop. See
+own headless parent and never injects input into the running desktop. Add
+`--stage3` to qualify multiple windows, move/resize and popup grabs. See
 [TESTING.md](TESTING.md#experimental-rust-foundation) and the
 [pipeline and limitations](RUST_MIGRATION.md#rendering-output-and-input).
 

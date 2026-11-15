@@ -4,9 +4,22 @@ All notable changes to RayWM. Versions follow [Semantic
 Versioning](https://semver.org/); before 1.0, minor versions may break
 the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
-## [Unreleased] — Rust migration foundation and nested prototype
+## [Unreleased] — Rust migration foundation and floating nested prototype
 
 ### Added
+
+- Rust floating compositor: simultaneous XDG windows, cascade placement,
+  click-to-raise, focus fallback and grab-aware activation. Standard client
+  move/resize requests validate seat, held input serial and target client;
+  all resize edges honor hints, coalesce configures and anchor actual ACKed
+  commits. Unmap/disconnect cancels operations and suppresses orphan releases.
+- Smithay popup trees: ACK-gated mapping, output-constrained positioners,
+  nested pointer/keyboard grabs, reposition tokens, outside-click dismissal,
+  subtree cleanup and parent/client destruction. Invalid parents and premature
+  buffers reject only the offending client.
+- Stage 3 real-client and private graphics qualification: three-window pixels,
+  focus/key routing, move/resize, delayed ACK/min/max, stale/foreign serials,
+  nested popup focus/coordinates, keyboard invocation and active-grab teardown.
 
 - Rust floating-policy core: explicit z-order/focus fallback, output-aware
   cascade placement, checked move/resize state and commit-time resize anchors.
@@ -16,7 +29,7 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 - XDG-toplevel lifecycle in Rust: initial bufferless configure, ACK-gated
   mapping, null-buffer unmap, fresh remap and role/client destruction.
   Real protocol tests cover early buffers and invalid ACKs without affecting
-  other clients. Popups are dismissed; headless mode sends no fake frames.
+  other clients. Headless mode sends no fake frames.
 - Optional nested Winit/EGL/GLES backend with one virtual output, positive-size
   mode/resize handling, real XDG rendering/frame callbacks and basic keyboard/
   pointer seat forwarding. Headless stays the default. Redraws are coalesced

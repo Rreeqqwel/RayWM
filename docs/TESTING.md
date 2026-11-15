@@ -28,23 +28,27 @@ cargo clippy --workspace --all-targets --no-default-features --locked -- -D warn
 cargo test --workspace --no-default-features --locked
 ```
 
-The default tests comprise seven core tests and five real headless process/
+The default tests comprise seven core tests and ten real headless process/
 protocol tests. They cover ID deletion/non-reuse/exhaustion, geometry and
 focus, cascade/stack/fallback policy, all resize edges, size limits, anchored
 commit geometry and operation cancellation; registry/sync, shm and synchronized subsurface buffer lifetimes;
 initial configure/ACK, map/unmap/remap and role recreation; premature-buffer/
 invalid-ACK isolation; disconnect, SIGINT/SIGTERM, socket ownership/cleanup and
-bad runtime/CLI/nested startup paths. Protocol errors printed by negative
+bad runtime/CLI/nested startup paths. Stage 3 adds three independent clients,
+rapid role creation/destruction, popup configure/ACK and reposition tokens,
+nested/ancestor cleanup, early-buffer isolation and correct wm_base errors for
+invalid/self/roleless parents. Protocol errors printed by negative
 cases are expected; the connection is rejected and a fresh client still works.
 Each process has a scrubbed environment, private mode-0700 runtime directory,
 bounded waits and a kill/reap guard. Headless mode sends no fabricated frames.
 
-The graphical test is explicitly ignored by default because it needs a parent.
-Run it through the separate harness from the repository root:
+Both graphical tests are explicitly ignored by default because they need a parent.
+Run them through the separate harness from the repository root:
 
 ```sh
 # Requires the unchanged Zig -Dtest-input build, Python 3 and grim.
 python3 rust/tests/nested-smoke.py
+python3 rust/tests/nested-smoke.py --stage3
 ```
 
 The harness builds the Rust test/binary with Cargo.lock, creates a private
@@ -58,11 +62,28 @@ cleanup and process/socket/lock destruction. All virtual input and screen
 capture target only the newly created parent. Test-only RAYWM_SMOKE_SOCKET
 and RAYWM_SMOKE_CONTROL are set by this harness, never inferred from the user's
 display. Missing tools and failed observations cause a nonzero exit, not a pass.
-The script prints a new `/tmp/raywm-stage2-*` directory containing logs/PNGs.
+The script prints a new `/tmp/raywm-stage2-*` or `/tmp/raywm-stage3-*` directory
+containing logs/PNGs. The Stage 3 scenario keeps a parent seat alive throughout
+the test: removing the last virtual keyboard would legitimately remove Winit
+host focus and invalidate the new-map focus precondition.
+
+Stage 3 asserts actual three-window overlap pixels, initial/click/fallback
+Activated and keyboard focus, exclusive key delivery, valid move and rejected
+stale/foreign serials, top-left/min and bottom-right/max resize, bounded
+configure traffic during withheld ACK and final committed anchor pixels. It
+checks nested popup constraints, local pointer coordinates, key routing,
+reposition tokens/pixels, outside-click, parent destruction while held, keyboard
+serial invocation, new-map isolation, popup disconnect, resize unmap/remap and
+mid-resize disconnect without release leakage into a new client. Three unchanged
+independent Zig clients additionally check concurrent rendering and a CSD move
+from a real synchronized subsurface. Screenshot
+barriers wait for real submitted frame callbacks. All helpers have bounded
+waits and child cleanup. Evidence is in
+[the Stage 3 qualification record](measurements/v0.3.0/stage3/qualification.md).
 
 This qualifies a nested software renderer and basic input, not physical
 hardware, general application/toolkit compatibility or full desktop parity.
-No Lua/IPC/config/clipboard/IME/Xwayland services are ported in Stage 2;
+No Lua/IPC/config/clipboard/IME/Xwayland services are ported in Stages 1–3;
 foot requires the absent data-device global. Rust checks remain local commands,
 not additional release or CI jobs.
 

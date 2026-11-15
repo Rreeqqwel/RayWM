@@ -5,9 +5,11 @@ does what must be correct and fast: Wayland protocols, input, outputs,
 rendering and resource lifetimes. Plugins decide where windows go and
 what keys do.
 
-The experimental `rust/` workspace implements a separate Stage 2 prototype.
-`raywm-core` owns checked window IDs and logical geometry/map/focus/output
-state. `raywm-compositor` integrates it with Smithay XDG windows, an optional
+The experimental `rust/` workspace implements a separate Stage 3 floating prototype.
+`raywm-core` owns checked IDs, committed geometry, stacking/focus, output
+assignment and move/resize state. `raywm-compositor` projects this authority
+into Smithay Space/Window, validates input serials, synchronizes configure/ACK/
+commit anchors and manages standard PopupManager trees/grabs. It uses an optional
 Winit virtual output, EGL/GLES rendering and keyboard/pointer seat forwarding.
 The existing calloop still owns listener/display/signal processing; headless
 mode remains available. Redraws are event-driven and frame callbacks follow

@@ -9,6 +9,7 @@ All logs/screenshots stay in a newly created /tmp/raywm-stage2-* directory.
 import argparse
 import json
 import os
+import runpy
 from pathlib import Path
 import shutil
 import signal
@@ -25,9 +26,13 @@ ROOT = Path(__file__).resolve().parents[2]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--zig-bin", type=Path, default=ROOT / "zig-out/test-input/bin")
+    parser.add_argument("--stage3", action="store_true", help="qualify floating windows and popups")
     args = parser.parse_args()
     zig_bin = args.zig_bin.resolve()
-    for executable in [zig_bin / "raywm", zig_bin / "raywm-test-input"]:
+    executables = [zig_bin / "raywm", zig_bin / "raywm-test-input"]
+    if args.stage3:
+        executables.append(zig_bin / "raywm-test-client")
+    for executable in executables:
         if not executable.is_file():
             parser.error(f"missing {executable}; build Zig with -Dtest-input first")
     for executable in ["cargo", "grim"]:
@@ -46,7 +51,7 @@ def main():
                       if item.get("reason") == "compiler-artifact"
                       and item.get("target", {}).get("name") == "raywm-smithay"
                       and not item.get("profile", {}).get("test") and item.get("executable"))
-    directory = Path(tempfile.mkdtemp(prefix="raywm-stage2-"))
+    directory = Path(tempfile.mkdtemp(prefix="raywm-stage3-" if args.stage3 else "raywm-stage2-"))
     directory.chmod(0o700)
     print(f"artifacts: {directory}", flush=True)
     parent_dir, nested_dir = directory / "parent", directory / "nested"
@@ -118,9 +123,6 @@ end }
         nested_socket = nested_dir / "nested"
         wait_for(lambda: nested_socket.exists() and "Nested Wayland server ready" in (directory / "nested.log").read_text(), "nested startup")
         probe_env = env(nested_dir) | {"RAYWM_SMOKE_SOCKET": str(nested_socket), "RAYWM_SMOKE_CONTROL": str(directory)}
-        client = start([probe, "nested_graphics_pixels_input_resize_and_unmap", "--exact", "--ignored", "--nocapture"], probe_env, "client")
-        wait_for(lambda: (directory / "client-ready").exists(), "initial submitted frame")
-
         driver_env = env(parent_dir) | {"WAYLAND_DISPLAY": parent_socket.name, "RAYWM_TEST_EXTENT": "1280x720"}
 
         def drive(*commands):
@@ -139,25 +141,49 @@ end }
             subprocess.run(command, timeout=10, check=True)
             print(f"pixels: PASS ({width}x{height})", flush=True)
 
-        screenshot("client-ready", "initial.png")
-        drive("move", "100", "100", "sleep", "100", "down", "left", "up", "left",
-              "key", "a", "down", "key", "a", "up", "sleep", "100")
-        wait_for(lambda: (directory / "client-input").exists(), "forwarded keyboard and pointer")
-        print("keyboard/pointer: PASS (actual client events)", flush=True)
-        drive("key", "super", "down", "key", "f9", "down", "key", "f9", "up", "key", "super", "up", "sleep", "200")
-        wait_for(lambda: (directory / "client-resized").exists(), "resize configure, ACK and frame")
-        screenshot("client-resized", "resized.png")
-        (directory / "finish").touch()
-        if client.wait(timeout=10):
-            raise RuntimeError("graphics client failed")
-        assert (directory / "client-done").exists()
+        if args.stage3:
+            # Give Winit real parent-seat focus before testing the policy that
+            # newly mapped clients activate while the host window has focus.
+            keeper = start([str(zig_bin / "raywm-test-input"), "move", "700", "550",
+                            "down", "left", "up", "left", "sleep", "60000"], driver_env, "seat-keeper")
+            time.sleep(0.15)
+            drive("move", "700", "550", "down", "left", "up", "left", "sleep", "150")
+            client = runpy.run_path(str(ROOT / "rust/tests/floating-smoke.py"))["qualify"](
+                ROOT, directory, probe, probe_env, driver_env, start, wait_for, drive, zig_bin)
+        else:
+            client = start([probe, "nested_graphics_pixels_input_resize_and_unmap", "--exact", "--ignored", "--nocapture"], probe_env, "client")
+            wait_for(lambda: (directory / "client-ready").exists(), "initial submitted frame")
+
+            screenshot("client-ready", "initial.png")
+            drive("move", "100", "100", "sleep", "100", "down", "left", "up", "left",
+                  "key", "a", "down", "key", "a", "up", "sleep", "100")
+            wait_for(lambda: (directory / "client-input").exists(), "forwarded keyboard and pointer")
+            print("keyboard/pointer: PASS (actual client events)", flush=True)
+            drive("key", "super", "down", "key", "f9", "down", "key", "f9", "up", "key", "super", "up", "sleep", "200")
+            wait_for(lambda: (directory / "client-resized").exists(), "resize configure, ACK and frame")
+            screenshot("client-resized", "resized.png")
+            (directory / "finish").touch()
+            if client.wait(timeout=10):
+                raise RuntimeError("graphics client failed")
+            assert (directory / "client-done").exists()
         processes.remove(("client", client))
+        independent = []
+        if args.stage3:
+            independent = runpy.run_path(str(ROOT / "rust/tests/floating-smoke.py"))["independent"](
+                ROOT, directory, probe_env, driver_env, start, wait_for, drive, zig_bin)
+            keeper.terminate()
+            keeper.wait(timeout=3)
+            processes.remove(("seat-keeper", keeper))
         stop(nested)
         processes.remove(("nested", nested))
+        for name, process in independent:
+            if process.wait(timeout=5):
+                raise RuntimeError(f"independent client {name} failed on compositor shutdown")
+            processes.remove((name, process))
         assert not nested_socket.exists() and not (nested_dir / "nested.lock").exists()
         stop(parent)
         processes.remove(("parent", parent))
-        print("nested graphics: PASS (pixels, frames, input, resize, unmap and cleanup)", flush=True)
+        print("nested graphics: PASS (scenario, submitted pixels and process/socket cleanup)", flush=True)
         return 0
     except Exception:
         for name in ["parent", "nested", "client"]:
