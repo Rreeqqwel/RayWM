@@ -3,6 +3,12 @@
 //! Clear that borrow before deactivation: a oneshot constraint is freed by
 //! sendDeactivated. Relative motion is sent before locking/confining the
 //! visible cursor, and never changes wl_pointer's implicit grab ownership.
+//!
+//! `set_region` is emitted from inside wlroots' `surface->synced` iteration
+//! (wlr_compositor.c), which is a non-safe `wl_list_for_each`. Deactivating
+//! there can free a oneshot constraint and leave that loop on freed memory,
+//! so the sync it triggers runs from the surface's commit signal instead:
+//! wlroots emits it after the iteration has finished.
 const std = @import("std");
 const wl = @import("wayland").server.wl;
 const wlr = @import("wlroots");
@@ -17,9 +23,13 @@ pub const Constraints = struct {
     /// Ctrl+Alt+Escape releases client captures until keyboard focus changes.
     suspended: bool = false,
     syncing: bool = false,
+    /// A region commit asked for a sync while wlroots was still iterating
+    /// `surface->synced`; it runs from `region_commit` after that loop.
+    region_pending: bool = false,
     new_constraint: wl.Listener(*wlr.PointerConstraintV1) = .init(onNew),
     active_destroy: wl.Listener(*wlr.PointerConstraintV1) = .init(onDestroy),
     active_region: wl.Listener(void) = .init(onRegion),
+    region_commit: wl.Listener(*wlr.Surface) = .init(onRegionCommit),
     pointer_focus: wl.Listener(*wlr.Seat.event.PointerFocusChange) = .init(onPointerFocus),
     keyboard_focus: wl.Listener(*wlr.Seat.event.KeyboardFocusChange) = .init(onKeyboardFocus),
     new_inhibitor: wl.Listener(*wlr.KeyboardShortcutsInhibitorV1) = .init(onInhibitor),
@@ -38,6 +48,7 @@ pub const Constraints = struct {
     }
 
     pub fn deinit(c: *Constraints) void {
+        c.cancelRegionSync();
         c.deactivate(false);
         inline for (.{ "new_constraint", "new_inhibitor", "pointer_focus", "keyboard_focus" }) |name| @field(c, name).link.remove();
     }
@@ -99,10 +110,20 @@ pub const Constraints = struct {
     }
 
     fn forget(c: *Constraints) void {
+        c.cancelRegionSync();
         if (c.active == null) return;
         c.active = null;
         c.active_destroy.link.remove();
         c.active_region.link.remove();
+    }
+
+    /// A deferred sync belongs to the active constraint's surface; dropout
+    /// before it runs (deactivation, constraint/surface destruction, shutdown)
+    /// must unlink it, or the commit signal would call into stale state.
+    fn cancelRegionSync(c: *Constraints) void {
+        if (!c.region_pending) return;
+        c.region_pending = false;
+        c.region_commit.link.remove();
     }
 
     fn deactivate(c: *Constraints, apply_hint: bool) void {
@@ -179,6 +200,20 @@ pub const Constraints = struct {
     }
     fn onRegion(listener: *wl.Listener(void)) void {
         const c: *Constraints = @fieldParentPtr("active_region", listener);
+        // Inside wlroots' `wl_list_for_each(synced, &surface->synced, link)`.
+        // A sync may send_deactivated, which frees a ONESHOT constraint and
+        // removes the very link that loop is walking. Defer it to the commit
+        // signal, emitted after the loop (see the module comment).
+        const active = c.active orelse return;
+        if (c.region_pending) return;
+        c.region_pending = true;
+        active.surface.events.commit.add(&c.region_commit);
+    }
+    fn onRegionCommit(listener: *wl.Listener(*wlr.Surface), _: *wlr.Surface) void {
+        const c: *Constraints = @fieldParentPtr("region_commit", listener);
+        if (!c.region_pending) return;
+        c.region_pending = false;
+        c.region_commit.link.remove();
         c.sync();
     }
     fn onPointerFocus(listener: *wl.Listener(*wlr.Seat.event.PointerFocusChange), _: *wlr.Seat.event.PointerFocusChange) void {

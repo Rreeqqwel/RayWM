@@ -164,4 +164,20 @@ c10() {
     stop
 }
 
-run_scenarios captures c1 c2 c3 c4 c5 c6 c7 c8 c9 c10
+c11() {
+    name="oneshot constraint: region commit deactivates it without a use-after-free"
+    begin
+    launch a $plain RAYWM_TEST_CONSTRAINT=lock RAYWM_TEST_ONESHOT=1
+    capture_ready locked
+    # setRegion + commit: wlroots emits set_region from inside its
+    # surface->synced iteration. Deactivating there frees the ONESHOT
+    # constraint and leaves the loop on freed memory.
+    client_key f8
+    wait_log a "constraint unlocked"
+    drive move 700 360 sleep 100
+    # The compositor survived and the pointer is free again.
+    has a "ptr motion 160,75"
+    stop
+}
+
+run_scenarios captures c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11
