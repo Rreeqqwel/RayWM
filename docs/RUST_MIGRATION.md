@@ -30,7 +30,13 @@ for Lua instead of exposing native pointers. Lua owns layout, bindings,
 rules, naming and optional effect policy. The updater is a separate process.
 
 Rust destinations below describe responsibilities, not pre-created modules.
-Only the bootstrap configuration and compositor state/loop exist in Stage 1.
+Stage 1 supplies bootstrap configuration and the compositor state/loop.
+Stage 2 starts with a framework-independent desktop model in
+`rust/crates/raywm-core/src/windows.rs`: non-recycled u32 window IDs with
+checked exhaustion, position/positive size, map/focus state and optional
+nested-output assignment. Removing or unmapping a focused window clears
+focus; invalid focus requests leave it unchanged. The compositor adapter
+will connect this model to actual committed surfaces.
 
 | Current module | Responsibility and dependencies | Smithay responsibility | RayWM Rust destination / ownership |
 |---|---|---|---|

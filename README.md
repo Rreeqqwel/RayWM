@@ -408,7 +408,8 @@ The experimental Rust/Smithay Stage 1 workspace is separate from the Zig
 desktop. From `rust/`, run `cargo fmt --all -- --check`,
 `cargo check --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`
 and `cargo test --workspace`. The tests start private headless protocol
-servers; there is no Rust window renderer or Lua host yet. See the
+servers and check the core window/ID/focus model; there is no Rust window
+renderer or Lua host yet. See the
 [migration audit and stages](docs/RUST_MIGRATION.md) and
 [Rust build instructions](docs/INSTALL.md#experimental-rust-foundation).
 Its `raywm-smithay` binary accepts `--socket NAME` and `--help` / `-h`;

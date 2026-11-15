@@ -1,5 +1,7 @@
 //! Framework-independent bootstrap configuration. Desktop policy comes later.
 
+pub mod windows;
+
 use std::{error::Error, fmt};
 
 /// A socket basename inside the private XDG runtime directory.

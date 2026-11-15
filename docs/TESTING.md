@@ -33,6 +33,9 @@ It checks registry/sync, shm formats, buffer commit/release/destruction,
 synchronized subsurfaces, reconnects, malformed-client isolation,
 SIGINT/SIGTERM with live clients, named/auto socket cleanup, socket
 collision and startup failures. A core test rejects unsafe socket basenames.
+Core window-model tests cover ID deletion/staleness, non-reuse and exhaustion,
+positive sizes, mapping geometry/output assignment and exclusive focus with
+unmap/removal cleanup.
 Invisible surfaces receive no fabricated frame callback. Stage 1 has no
 renderer, output, seat, XDG-shell, Lua, IPC or ray.conf implementation;
 there is no graphical/hardware parity claim. Rust checks are currently

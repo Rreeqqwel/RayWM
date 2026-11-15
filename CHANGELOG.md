@@ -8,6 +8,8 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ### Added
 
+- Framework-independent Rust window state with non-recycled IDs, checked
+  ID exhaustion, geometry, mapping/focus and output association tests.
 - Separate experimental `rust/` Cargo workspace: a dependency-free core
   configuration crate and a Smithay 0.7.0 headless protocol server with an
   owned Wayland socket, calloop dispatch, compositor/subcompositor/shm
