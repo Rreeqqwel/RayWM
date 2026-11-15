@@ -39,6 +39,20 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
   spent the budget (or to the nested runaway), not to an unrelated plugin
   that happened to be on the stack, and the remaining handlers of the
   aborted dispatch are not unloaded.
+- **A malformed IPC message could abort the compositor.** `{}` followed by
+  a comma passed the bracket-balance check and reached `std.json.Scanner`
+  with an empty nesting stack, which underflows in Debug/ReleaseSafe. IPC
+  now validates the structural envelope before parsing: matching brackets
+  up to depth 32, commas and colons only where a container allows them, no
+  trailing or double comma, and exactly one value (no trailing separator or
+  second value). Rejected messages get `invalid_json`, and the connection
+  and compositor stay usable.
+- **A layer surface destroyed or unmapped during session lock left
+  `layer_focus` dangling.** `focusLayer()` does nothing while locked, so
+  `releaseKeyboard()` could not clear the borrow; unlock then entered a
+  freed surface. Giving up layer focus now clears the pointer even while
+  locked (a new surface still cannot take the keyboard), so unlock restores
+  the focused window instead of dereferencing the dead layer surface.
 - Documentation drift: the CLI reference in `docs/INSTALL.md` and the
   options list in README omitted `raywm -t`; `docs/ARCHITECTURE.md`
   listed a non-existent `outputconfig.zig` and left `conf.zig`,

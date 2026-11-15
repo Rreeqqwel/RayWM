@@ -214,4 +214,25 @@ s9() {
     grep -q 'exited without unlocking' "$tmp/raywm.log" || fail "no abandoned lock"
     stop
 }
-run_scenarios session s1 s2 s3 s4 s5 s6 s7 s8 s9
+s10() {
+    name="a layer surface destroyed while locked does not leave stale keyboard focus"
+    WIN=$plain PLUGINS=$plugins start "$cfg" 1 panel-kbd
+    # Clients request a wl_keyboard once the virtual one exists.
+    drive sleep 300
+    wait_log panel "kbd enter"
+    locker l
+    wait_log l "locked"
+    kill "$(cat "$tmp/panel.pid")"
+    sleep 0.3
+    alive
+    drive sleep 300 key f12 down key f12 up sleep 300
+    wait_log l "unlocked"
+    sleep 0.2
+    alive
+    # The keyboard goes back to the window that had focus, not to a freed
+    # layer surface (or an unmapped one).
+    drive sleep 300 key j down key j up sleep 150
+    presses a 1
+    stop
+}
+run_scenarios session s1 s2 s3 s4 s5 s6 s7 s8 s9 s10
