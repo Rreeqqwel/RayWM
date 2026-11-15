@@ -2,8 +2,8 @@
 
 This is the foundation for a future v0.3 migration, **not a v0.3 release**.
 The working desktop remains Zig 0.16.0 + wlroots 0.20 + Lua 5.4.
-The planned `rust/` workspace starts with an experimental headless protocol
-server, without plugins, rendered windows, outputs or desktop input.
+`rust/` is a separate, experimental, headless protocol server. It does not
+load plugins, render windows, create outputs or provide desktop input.
 No Zig module, package payload, release branch or project version is replaced.
 
 ## Baseline and audit scope
@@ -30,12 +30,11 @@ for Lua instead of exposing native pointers. Lua owns layout, bindings,
 rules, naming and optional effect policy. The updater is a separate process.
 
 Rust destinations below describe responsibilities, not pre-created modules.
-The first implementation slice will supply bootstrap configuration and the
-compositor state/loop.
+Only the bootstrap configuration and compositor state/loop exist in Stage 1.
 
 | Current module | Responsibility and dependencies | Smithay responsibility | RayWM Rust destination / ownership |
 |---|---|---|---|
-| `server.zig`, `main.zig` | composition root, ordered teardown, focus, spawn, event delivery; connects every native subsystem to the Lua host | display/protocol building blocks and backend event sources | `raywm-compositor`: one owned runtime and explicit subsystems; bootstrap planned |
+| `server.zig`, `main.zig` | composition root, ordered teardown, focus, spawn, event delivery; connects every native subsystem to the Lua host | display/protocol building blocks and backend event sources | `raywm-compositor`: one owned runtime and explicit subsystems; bootstrap implemented |
 | `view.zig` | xdg/X11 view model, popups, configure/ack geometry, map/unmap, focus; uses server, outputs, workspace, input, effects | xdg-shell roles, transactions, surface state and popup helpers | compositor view/shell adapter; pure geometry/state transitions can move to core; no toplevels yet |
 | `output.zig` | tested output transactions, modes/scale/DPMS/gamma, hotplug recovery, frame/presentation; uses layers, workspace, lock, effects | output globals, backend output/rendering/damage helpers | compositor output/backend adapter; core validation and placement; no outputs yet |
 | `input.zig`, `inputconfig.zig` | keyboard matching/layouts, pointer focus, explicit/implicit grabs, move/resize, device settings; uses views, layers, lock, constraints, Lua | seat, keyboard/pointer handles, input events/grab primitives, later libinput/session backend | compositor input adapter with core key/geometry policy; no seat or input yet |
@@ -106,8 +105,8 @@ compositor state/loop.
 
 ## Dependency selection and references
 
-The foundation will pin Smithay to **`=0.7.0`** from crates.io and record
-checksums/transitive versions in `rust/Cargo.lock`. The matching upstream tag is
+Smithay is pinned to **`=0.7.0`** from crates.io with checksums/transitive
+versions in `rust/Cargo.lock`. The matching upstream tag is
 [`v0.7.0`, commit a166cf4c94b5aedc332a65aa1dd753e8148829c3](https://github.com/Smithay/smithay/tree/a166cf4c94b5aedc332a65aa1dd753e8148829c3).
 It is the newest published tag found during Stage 1. A released, exact version
 gives a reproducible baseline without depending on a moving master branch.
@@ -126,25 +125,81 @@ Reviewed official sources at that tag:
   [Upstream development documentation](https://smithay.github.io/smithay/)
   tracks master and must not be treated as the pinned API.
 
-The selected feature set is only `wayland_frontend`, with Smithay defaults off. There
+Only `wayland_frontend` is enabled; Smithay default features are off. There
 is no DRM, GBM, libinput, libseat, Winit, X11, GLES, pixman renderer or Xwayland
-backend planned for the first Rust build. The `drm-fourcc` crate in the lockfile supplies
+backend in the Rust build. The `drm-fourcc` crate in the lockfile supplies
 format types and does not open DRM devices. Smithay still requires
 `libxkbcommon` at link time. Calloop's `signals` feature supplies signalfd;
 rustix supplies safe runtime-directory UID validation (and test polling/signals).
 Tracing and its formatting subscriber supply diagnostics. `wayland-client`
 and `tempfile` are test dependencies. No Lua binding is chosen prematurely.
 
-## Planned foundation acceptance
+## Stage 1 implementation
 
-Create two Cargo crates: a framework-independent core and a compositor
-bootstrap. Require a display, private socket, sleeping event loop, initial
-protocol handlers and orderly signal-driven shutdown. Exercise actual client
-requests, buffers, disconnects and socket cleanup; successful compilation alone
-is insufficient. Keep Zig operational and defer graphical windows/input to
-Stage 2. Record implementation details and Rust validation with that change.
+```text
+rust/
+  Cargo.toml / Cargo.lock
+  crates/raywm-core/
+    src/lib.rs                 validated socket basename, config and error
+  crates/raywm-compositor/
+    src/main.rs                CLI, directory validation, display, loop, shutdown
+    src/state.rs               compositor/subcompositor/shm handlers, client data
+  tests/headless.rs            isolated process and real protocol tests
+```
 
-## Zig baseline
+Core has no dependencies on Smithay, Lua or native backends. IDs, general
+configuration models, geometry and state machines will be added when their
+first actual consumer is ported, with exhaustion/range behavior tested then.
+The private Cargo packages use `0.0.0` and `publish = false`; this is not a
+change to RayWM's release version.
+
+The compositor creates a display and registers an owned duplicate of its
+poll FD with calloop. The `Display` stays in runtime data, so dispatch uses
+ordinary disjoint mutable borrows instead of Smallvil's unsafe
+`Generic::get_mut`. Per-client `CompositorClientState` is always installed
+before dispatch. The one `expect` documents this internal type invariant;
+fallible startup, registration, I/O and loop paths return errors.
+Workspace lints forbid unsafe in RayWM code and reject unexplained
+`unwrap`/`expect`. This does not claim dependencies contain no unsafe.
+
+The listener owns socket cleanup and does not overwrite an occupied socket.
+Every loop iteration sleeps until an event, dispatches requests and flushes
+responses. A rejected client admission drops that stream and logs a warning;
+display/loop failures terminate with an error status. SIGINT/SIGTERM stop
+admission, disconnect clients, dispatch destruction while protocol state still
+exists, then remove event sources before dropping display/state. Startup
+failures release already-created resources through ordinary ownership.
+
+Advertised globals are exactly `wl_compositor`, `wl_subcompositor`, `wl_shm`.
+Smithay's commit buffer helper handles synchronized subsurfaces, current
+buffer replacement and destruction without reading pixels. No surface is
+visible, so frame callbacks remain pending; no presentation is fabricated.
+This is a renderer-free headless protocol harness, not Smithay's DRM/Winit
+backend or an off-screen graphical renderer. XDG-shell/window rendering and
+input are deliberately Stage 2 so they can be validated together.
+
+Manual private launch (Linux; build and install prerequisites are in
+[INSTALL.md](INSTALL.md#experimental-rust-foundation)):
+
+```sh
+cd rust
+cargo build --locked --workspace
+runtime=$(mktemp -d)
+chmod 700 "$runtime"
+env -i XDG_RUNTIME_DIR="$runtime" target/debug/raywm-smithay --socket raywm-test
+# The server logs the socket path. Press Ctrl+C to stop, then remove the directory.
+rmdir "$runtime"
+```
+
+`--help` needs no runtime directory. The default socket auto-selects
+`wayland-1` through `wayland-32` inside `XDG_RUNTIME_DIR`. `--socket NAME`
+accepts an ASCII basename (letters, digits, `.`, `_`, `-`, except `.`/`..`);
+OS path-length/bind errors are reported. The runtime directory must be
+absolute, owned by the current UID, private (mode 0700), and not a symlink.
+The process does not change `WAYLAND_DISPLAY`, connect to a parent display,
+read user configuration, request a VT or access input/DRM devices.
+
+## Verification and limits
 
 Baseline was recorded before Rust implementation, using Zig 0.16.0 at
 `/home/reyz/.local/opt/zig-x86_64-linux-0.16.0/zig` (not initially on PATH),
@@ -156,6 +211,40 @@ wlroots 0.20.2, Wayland 1.26.0, Lua 5.4.9 and xkbcommon 1.13.2:
 | `timeout 600 zig build test --summary all` | PASS: 77 Zig tests, six Lua runs; expected invalid-keymap diagnostics are not a failure |
 | `zig build -Dtest-input -p zig-out/test-input` | PASS |
 | `SUITES="smoke focus docs docs-sync captures session ipc" tests/run.sh zig-out/test-input/bin /tmp/raywm-stage1-zig-integration` | PASS: all seven suites; 8 documented plugin examples, 11 capture scenarios, 10 session scenarios, 3053 IPC checks plus lock/path lifecycle cases |
+
+Rust checks run from `rust/` with Rust/Cargo 1.99.1. This is the verified
+toolchain, not a claim that older Rust versions were tested:
+
+```sh
+cargo fmt --all -- --check
+cargo check --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+```
+
+All four commands PASS, including clippy with warnings denied and all four
+tests (one core test, three subprocess/protocol tests). `cargo build --locked
+--workspace` also links the runnable server. `tests/docs-sync.sh` passes.
+
+`cargo test` includes a core socket-path validation test and three real
+subprocess smoke tests: registry/sync and mandatory shm formats; buffer
+commit/detach/destroy; synchronized subsurface release ordering; no false
+frame completion; reconnects; malformed-client isolation; active-client
+shutdown by SIGINT/SIGTERM; auto/named socket cleanup; collision preserving
+the original server; bad arguments and missing, relative, public or symlinked
+runtime directories. Every
+server runs with a scrubbed environment and private directory. Startup,
+protocol reads and exit waits have five-second deadlines and children are
+killed/reaped on failure. These checks establish more than compilation.
+
+Remaining Zig integration suites, ReleaseSafe, GLES, leak checking,
+sanitizers and physical DRM/KMS/input/hotplug are not run for Stage 1.
+Rust has no graphical smoke result because it has no renderer yet. Neither
+the Zig headless baseline nor the Rust protocol tests establish physical
+hardware or GTK/Qt/Xwayland/IME interoperability. Lua, IPC and configuration
+compatibility are **not implemented in Rust** at this stage. The harness
+does not yet enforce production per-client object/buffer/memory budgets;
+it is for controlled local tests, not an installed desktop session.
 
 ## Lua API v1 preservation strategy
 

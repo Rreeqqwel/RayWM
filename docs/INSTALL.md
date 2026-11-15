@@ -304,6 +304,30 @@ rejects SFrame sections in recent GCC startup files. Pass
 Never distribute a build made with `-Dtest-input`. It contains test-only
 virtual-input protocols that let any client inject input.
 
+### Experimental Rust foundation
+
+`rust/` contains a separate Stage 1 Smithay protocol server. The desktop,
+session entry, updater and release packaging still use Zig. Build locally
+on Linux with Rust/Cargo (validated with 1.99.1), a C linker, `pkg-config`
+and the xkbcommon development library. No wlroots or Lua is linked into
+the Rust server. Smithay is exactly 0.7.0; keep `rust/Cargo.lock` and use
+`cargo build --locked --workspace` from `rust/`.
+
+| Experimental binary option/environment | Meaning |
+|---|---|
+| `raywm-smithay --socket NAME` | Bind an ASCII basename in the runtime directory; default: auto-select `wayland-1` through `wayland-32`; an occupied socket is an error |
+| `raywm-smithay --help` / `-h` | Print help and exit without initializing a display |
+| `XDG_RUNTIME_DIR` | Required absolute directory owned by the current UID, with mode 0700 and no symlink; tests create a private directory |
+
+The server logs readiness with its socket path, client connection/disconnection
+and shutdown. Startup or display/loop failure logs an error and exits nonzero;
+a failed client admission logs a warning. SIGINT/SIGTERM stop cleanly and remove
+the socket. It does not set `WAYLAND_DISPLAY` or connect to the user's display.
+There is no window renderer, output, seat or XDG-shell yet. For a controlled
+private launch and real protocol smoke checks, follow
+[RUST_MIGRATION.md](RUST_MIGRATION.md#stage-1-implementation) and
+[TESTING.md](TESTING.md#experimental-rust-foundation).
+
 ## 4. First start
 
 **Nested, inside your current Wayland session.** This is the safest way

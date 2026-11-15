@@ -8,6 +8,36 @@ All automated tests run **headless**:
 They never connect to, or inject input into, your running desktop
 session.
 
+## Experimental Rust foundation
+
+The separate `rust/` workspace does not replace any Zig test or the current
+desktop. Requirements and experimental CLI are in
+[INSTALL.md](INSTALL.md#experimental-rust-foundation); the architecture,
+baseline results and outstanding parity gates are in
+[RUST_MIGRATION.md](RUST_MIGRATION.md).
+
+Run from `rust/` (validated with Rust/Cargo 1.99.1):
+
+```sh
+cargo fmt --all -- --check
+cargo check --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+```
+
+The headless smoke suite in `rust/tests/headless.rs` runs through `cargo test`
+and talks to actual `raywm-smithay` subprocesses with `wayland-client`.
+Each has a private mode-0700 runtime directory, a scrubbed environment,
+five-second startup/protocol/exit deadlines and a child kill/reap guard.
+It checks registry/sync, shm formats, buffer commit/release/destruction,
+synchronized subsurfaces, reconnects, malformed-client isolation,
+SIGINT/SIGTERM with live clients, named/auto socket cleanup, socket
+collision and startup failures. A core test rejects unsafe socket basenames.
+Invisible surfaces receive no fabricated frame callback. Stage 1 has no
+renderer, output, seat, XDG-shell, Lua, IPC or ray.conf implementation;
+there is no graphical/hardware parity claim. Rust checks are currently
+local commands, not additional release or CI jobs.
+
 ## Requirements
 
 - Zig 0.16.0 and the build dependencies from [INSTALL.md](INSTALL.md).

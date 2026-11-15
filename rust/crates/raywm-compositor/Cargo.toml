@@ -1,0 +1,30 @@
+[package]
+name = "raywm-compositor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "raywm-smithay"
+path = "src/main.rs"
+
+[[test]]
+name = "headless"
+path = "../../tests/headless.rs"
+
+[dependencies]
+raywm-core.workspace = true
+smithay.workspace = true
+calloop.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+rustix = { version = "1", features = ["process"] }
+
+[dev-dependencies]
+wayland-client = "0.31.10"
+tempfile = "3"
+rustix = { version = "1", features = ["event"] }
+
+[lints]
+workspace = true

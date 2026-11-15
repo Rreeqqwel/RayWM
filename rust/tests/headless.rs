@@ -1,0 +1,387 @@
+//! Real socket/protocol tests. Each subprocess has a private runtime directory,
+//! a scrubbed environment, bounded waits and a kill/reap guard on failure.
+
+use std::{
+    error::Error,
+    fs::{self, File},
+    io::{Read, Write},
+    os::{
+        fd::AsFd,
+        unix::{fs::PermissionsExt, net::UnixStream},
+    },
+    path::PathBuf,
+    process::{Child, Command, ExitStatus, Stdio},
+    thread,
+    time::{Duration, Instant},
+};
+
+use rustix::{
+    event::{poll, PollFd, PollFlags, Timespec},
+    process::{kill_process, Pid, Signal},
+};
+use tempfile::TempDir;
+use wayland_client::{
+    delegate_noop,
+    protocol::{
+        wl_buffer, wl_callback, wl_compositor, wl_registry, wl_shm, wl_shm_pool, wl_subcompositor,
+        wl_subsurface, wl_surface,
+    },
+    Connection, Dispatch, EventQueue, QueueHandle, WEnum,
+};
+
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
+const WAIT: Duration = Duration::from_secs(5);
+
+struct Server {
+    child: Child,
+    dir: TempDir,
+    socket: PathBuf,
+}
+
+impl Server {
+    fn start(name: Option<&str>) -> Result<Self> {
+        let dir = tempfile::tempdir()?;
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700))?;
+        let log = File::create(dir.path().join("server.log"))?;
+        let mut command = Command::new(env!("CARGO_BIN_EXE_raywm-smithay"));
+        command
+            .env_clear()
+            .env("XDG_RUNTIME_DIR", dir.path())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(log);
+        if let Some(name) = name {
+            command.args(["--socket", name]);
+        }
+        let child = command.spawn()?;
+        let socket = dir.path().join(name.unwrap_or("wayland-1"));
+        let mut server = Self { child, dir, socket };
+        let deadline = Instant::now() + WAIT;
+        while !server.socket.exists() {
+            if server.child.try_wait()?.is_some() || Instant::now() >= deadline {
+                return Err(format!("startup failed: {}", server.log()?).into());
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        Ok(server)
+    }
+
+    fn log(&self) -> Result<String> {
+        Ok(fs::read_to_string(self.dir.path().join("server.log"))?)
+    }
+
+    fn connect(&self) -> Result<(Connection, EventQueue<Probe>, Probe)> {
+        let connection = Connection::from_socket(UnixStream::connect(&self.socket)?)?;
+        let mut queue = connection.new_event_queue();
+        connection.display().get_registry(&queue.handle(), ());
+        let mut probe = Probe::default();
+        roundtrip(&connection, &mut queue, &mut probe)?;
+        Ok((connection, queue, probe))
+    }
+
+    fn stop(&mut self, signal: Signal) -> Result<()> {
+        let pid = Pid::from_raw(self.child.id() as i32).ok_or("invalid child PID")?;
+        kill_process(pid, signal)?;
+        let status = wait(&mut self.child)?;
+        assert!(status.success(), "{}\n{}", status, self.log()?);
+        assert!(!self.socket.exists(), "socket survived shutdown");
+        assert!(!self.socket.with_extension("lock").exists());
+        assert!(self.log()?.contains("Headless Wayland server stopped"));
+        Ok(())
+    }
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+fn wait(child: &mut Child) -> Result<ExitStatus> {
+    let deadline = Instant::now() + WAIT;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(status);
+        }
+        if Instant::now() >= deadline {
+            child.kill()?;
+            let _ = child.wait();
+            return Err("subprocess did not finish within five seconds".into());
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[derive(Default)]
+struct Probe {
+    globals: Vec<(u32, String, u32)>,
+    synced: bool,
+    frames: usize,
+    released: usize,
+    formats: Vec<wl_shm::Format>,
+}
+
+impl Probe {
+    fn global(&self, interface: &str) -> Result<(u32, u32)> {
+        self.globals
+            .iter()
+            .find(|(_, name, _)| name == interface)
+            .map(|(id, _, version)| (*id, *version))
+            .ok_or_else(|| format!("missing global {interface}").into())
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Callback {
+    Sync,
+    Frame,
+}
+
+// Unlike EventQueue::roundtrip, this helper has a deadline even if the server
+// accepts a connection but never dispatches or flushes any protocol requests.
+fn roundtrip(
+    connection: &Connection,
+    queue: &mut EventQueue<Probe>,
+    probe: &mut Probe,
+) -> Result<()> {
+    probe.synced = false;
+    connection.display().sync(&queue.handle(), Callback::Sync);
+    let deadline = Instant::now() + WAIT;
+    while !probe.synced {
+        queue.dispatch_pending(probe)?;
+        if probe.synced {
+            break;
+        }
+        connection.flush()?;
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err("Wayland roundtrip timed out".into());
+        }
+        if let Some(guard) = queue.prepare_read() {
+            let timeout = Timespec::try_from(remaining)?;
+            let mut fds = [PollFd::new(connection, PollFlags::IN)];
+            if poll(&mut fds, Some(&timeout))? == 0 {
+                return Err("Wayland socket read timed out".into());
+            }
+            guard.read()?;
+        }
+    }
+    Ok(())
+}
+
+impl Dispatch<wl_registry::WlRegistry, ()> for Probe {
+    fn event(
+        state: &mut Self,
+        _: &wl_registry::WlRegistry,
+        event: wl_registry::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_registry::Event::Global {
+            name,
+            interface,
+            version,
+        } = event
+        {
+            state.globals.push((name, interface, version));
+        }
+    }
+}
+
+impl Dispatch<wl_callback::WlCallback, Callback> for Probe {
+    fn event(
+        state: &mut Self,
+        _: &wl_callback::WlCallback,
+        _: wl_callback::Event,
+        kind: &Callback,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        match kind {
+            Callback::Sync => state.synced = true,
+            Callback::Frame => state.frames += 1,
+        }
+    }
+}
+
+impl Dispatch<wl_shm::WlShm, ()> for Probe {
+    fn event(
+        state: &mut Self,
+        _: &wl_shm::WlShm,
+        event: wl_shm::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_shm::Event::Format {
+            format: WEnum::Value(format),
+        } = event
+        {
+            state.formats.push(format);
+        }
+    }
+}
+
+impl Dispatch<wl_buffer::WlBuffer, ()> for Probe {
+    fn event(
+        state: &mut Self,
+        _: &wl_buffer::WlBuffer,
+        _: wl_buffer::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        state.released += 1;
+    }
+}
+
+delegate_noop!(Probe: ignore wl_compositor::WlCompositor);
+delegate_noop!(Probe: ignore wl_surface::WlSurface);
+delegate_noop!(Probe: ignore wl_subcompositor::WlSubcompositor);
+delegate_noop!(Probe: ignore wl_subsurface::WlSubsurface);
+delegate_noop!(Probe: ignore wl_shm_pool::WlShmPool);
+
+#[test]
+fn globals_buffers_subsurfaces_disconnect_and_sigterm() -> Result<()> {
+    let mut server = Server::start(Some("raywm-test"))?;
+    let (connection, mut queue, mut probe) = server.connect()?;
+    let qh = queue.handle();
+    assert_eq!(
+        probe.globals.len(),
+        3,
+        "only implemented protocols are advertised"
+    );
+    let registry = connection.display().get_registry(&qh, ());
+    let (id, version) = probe.global("wl_compositor")?;
+    let compositor: wl_compositor::WlCompositor = registry.bind(id, version.min(6), &qh, ());
+    let (id, _) = probe.global("wl_subcompositor")?;
+    let subs: wl_subcompositor::WlSubcompositor = registry.bind(id, 1, &qh, ());
+    let (id, _) = probe.global("wl_shm")?;
+    let shm: wl_shm::WlShm = registry.bind(id, 1, &qh, ());
+    let mut file = tempfile::tempfile()?;
+    file.write_all(&[0xff; 16])?;
+    let pool = shm.create_pool(file.as_fd(), 16, &qh, ());
+    let buffer = pool.create_buffer(0, 2, 2, 8, wl_shm::Format::Argb8888, &qh, ());
+    pool.destroy();
+    let parent = compositor.create_surface(&qh, ());
+    let surface = compositor.create_surface(&qh, ());
+    let subsurface = subs.get_subsurface(&surface, &parent, &qh, ());
+    surface.frame(&qh, Callback::Frame);
+    surface.attach(Some(&buffer), 0, 0);
+    surface.damage_buffer(0, 0, 2, 2);
+    surface.commit();
+    parent.commit();
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    assert!(probe.formats.contains(&wl_shm::Format::Argb8888));
+    assert!(probe.formats.contains(&wl_shm::Format::Xrgb8888));
+    assert_eq!(probe.released, 0, "current buffer must remain owned");
+    assert_eq!(probe.frames, 0, "invisible surfaces get no fake frame done");
+
+    surface.attach(None, 0, 0);
+    surface.commit();
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    assert_eq!(probe.released, 0, "sync child waits for parent commit");
+    parent.commit();
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    assert_eq!(
+        probe.released, 1,
+        "detach releases buffer after parent commit"
+    );
+
+    // Destroy a surface with a current buffer and a pending frame callback.
+    surface.attach(Some(&buffer), 0, 0);
+    surface.commit();
+    parent.commit();
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    subsurface.destroy();
+    surface.destroy();
+    parent.destroy();
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    assert_eq!(probe.released, 2, "destroy releases the current buffer");
+    assert_eq!(probe.frames, 0);
+    buffer.destroy();
+
+    // Abrupt disconnects and reconnects must not affect the original client.
+    for _ in 0..8 {
+        let (other, mut events, mut state) = server.connect()?;
+        let qh = events.handle();
+        let registry = other.display().get_registry(&qh, ());
+        let (id, version) = state.global("wl_compositor")?;
+        let compositor: wl_compositor::WlCompositor = registry.bind(id, version.min(6), &qh, ());
+        let (id, _) = state.global("wl_shm")?;
+        let shm: wl_shm::WlShm = registry.bind(id, 1, &qh, ());
+        let pool = shm.create_pool(file.as_fd(), 16, &qh, ());
+        let buffer = pool.create_buffer(0, 2, 2, 8, wl_shm::Format::Argb8888, &qh, ());
+        let surface = compositor.create_surface(&qh, ());
+        surface.attach(Some(&buffer), 0, 0);
+        surface.frame(&qh, Callback::Frame);
+        surface.commit();
+        roundtrip(&other, &mut events, &mut state)?;
+        // Drop the connection with surface, pool, buffer and callback alive.
+    }
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    server.stop(Signal::TERM)?; // original connection still alive at shutdown
+    Ok(())
+}
+
+#[test]
+fn malformed_client_is_isolated_and_sigint_cleans_auto_socket() -> Result<()> {
+    let mut server = Server::start(None)?;
+    let mut bad = UnixStream::connect(&server.socket)?;
+    bad.set_read_timeout(Some(WAIT))?;
+    bad.write_all(&1_u32.to_ne_bytes())?;
+    bad.write_all(&((8_u32 << 16) | 0xffff).to_ne_bytes())?; // unknown wl_display opcode
+    let mut reply = Vec::new();
+    bad.read_to_end(&mut reply)?;
+    let (connection, mut queue, mut probe) = server.connect()?;
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    server.stop(Signal::INT)?;
+    Ok(())
+}
+
+#[test]
+fn bad_startup_and_socket_collision_fail_without_removing_live_socket() -> Result<()> {
+    let mut server = Server::start(Some("occupied"))?;
+    for args in [
+        vec!["--socket", "../escape"],
+        vec!["--socket"],
+        vec!["--unknown"],
+        vec!["--socket", "occupied"],
+    ] {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_raywm-smithay"))
+            .env_clear()
+            .env("XDG_RUNTIME_DIR", server.dir.path())
+            .args(args)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+        assert!(!wait(&mut child)?.success());
+    }
+    let mut child = Command::new(env!("CARGO_BIN_EXE_raywm-smithay"))
+        .env_clear()
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    assert!(!wait(&mut child)?.success());
+
+    let public = server.dir.path().join("public");
+    fs::create_dir(&public)?;
+    fs::set_permissions(&public, fs::Permissions::from_mode(0o755))?;
+    let symlink = server.dir.path().join("runtime-link");
+    std::os::unix::fs::symlink(server.dir.path(), &symlink)?;
+    for directory in [PathBuf::from("relative"), public, symlink] {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_raywm-smithay"))
+            .env_clear()
+            .env("XDG_RUNTIME_DIR", directory)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+        assert!(!wait(&mut child)?.success());
+    }
+    let (connection, mut queue, mut probe) = server.connect()?;
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    server.stop(Signal::TERM)?;
+    Ok(())
+}

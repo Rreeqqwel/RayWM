@@ -4,6 +4,21 @@ All notable changes to RayWM. Versions follow [Semantic
 Versioning](https://semver.org/); before 1.0, minor versions may break
 the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
+## [Unreleased] — Rust migration foundation
+
+### Added
+
+- Separate experimental `rust/` Cargo workspace: a dependency-free core
+  configuration crate and a Smithay 0.7.0 headless protocol server with an
+  owned Wayland socket, calloop dispatch, compositor/subcompositor/shm
+  handlers, lifecycle logging and orderly SIGINT/SIGTERM shutdown.
+- Isolated real-client Rust tests for buffers, synchronized subsurfaces,
+  disconnect/error isolation, socket lifetime and startup failures.
+- Migration audit, Zig-to-Rust responsibility map, Lua API v1 preservation
+  strategy and staged regression/cutover gates in `docs/RUST_MIGRATION.md`.
+  Rendering, input and XDG-shell are planned for the next stage; the current
+  Zig desktop and release version remain in place.
+
 ## [v0.2.4] — Security hotfixes, candidate prepared 2026-11-15
 
 The first Beta after v0.2.3: five hotfixes from the 2026-11-15 forensic

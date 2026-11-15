@@ -7,6 +7,9 @@
 /zig-pkg/
 /dist/
 
+# Experimental Rust workspace
+/rust/target/
+
 # Python test/client caches
 __pycache__/
 stress-results/

@@ -404,6 +404,16 @@ See [docs/TESTING.md](docs/TESTING.md) for every suite, CI, and the
 known coverage gaps. CI runs on GitHub Actions in an Arch Linux
 container (`.github/workflows/ci.yml`).
 
+The experimental Rust/Smithay Stage 1 workspace is separate from the Zig
+desktop. From `rust/`, run `cargo fmt --all -- --check`,
+`cargo check --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`
+and `cargo test --workspace`. The tests start private headless protocol
+servers; there is no Rust window renderer or Lua host yet. See the
+[migration audit and stages](docs/RUST_MIGRATION.md) and
+[Rust build instructions](docs/INSTALL.md#experimental-rust-foundation).
+Its `raywm-smithay` binary accepts `--socket NAME` and `--help` / `-h`;
+it requires a private `XDG_RUNTIME_DIR` and logs its socket and lifecycle.
+
 ## Project layout
 
 ```
@@ -420,6 +430,7 @@ src/            Zig core
 config/         example ~/.config/raywm (layout, state, workspaces, rules, devices, autostart)
 docs/           INSTALL, CONFIGURATION, API, ARCHITECTURE, TESTING, screenshots/
 tests/          unit, integration, input, pointer, navigation, screenshot and stress tests
+rust/           experimental core/compositor Cargo workspace and isolated protocol tests
 scripts/        source-archive.sh, arch-package.sh, release-meta.py, raywmctl, install.sh
 ```
 
