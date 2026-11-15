@@ -330,6 +330,39 @@ const text_only =
     \\end
 ;
 
+/// Every Lua coroutine runs under the instruction hook before its first
+/// instruction. Lua 5.4 copies the hook into a new thread, but that is an
+/// implementation detail, not an API guarantee: a thread created while no
+/// hook is armed would never get one. create/wrap arm the new thread at
+/// once, and resume arms a thread that somehow has none. An already armed
+/// thread is left alone: resetting its count on every resume would let a
+/// coroutine that yields often postpone the hook forever. `debug` is
+/// removed, so plugins have no Lua-side sethook.
+const coroutine_guard =
+    \\local arm = ...
+    \\local create, resume, type, error = coroutine.create, coroutine.resume, type, error
+    \\local pack, unpack = table.pack, table.unpack
+    \\local function guarded(f)
+    \\  local co = create(f)
+    \\  arm(co)
+    \\  return co
+    \\end
+    \\coroutine.create = guarded
+    \\local function resume_guarded(co, ...)
+    \\  if type(co) == "thread" then arm(co) end
+    \\  return resume(co, ...)
+    \\end
+    \\coroutine.resume = resume_guarded
+    \\coroutine.wrap = function(f)
+    \\  local co = guarded(f)
+    \\  return function(...)
+    \\    local r = pack(resume_guarded(co, ...))
+    \\    if not r[1] then error(r[2], 0) end
+    \\    return unpack(r, 2, r.n)
+    \\  end
+    \\end
+;
+
 /// raywm.settings: { general = {...}, appearance = {...}, input = {...} }.
 fn pushSettings(L: ?*c.lua_State, s: *const conf.Settings) void {
     c.lua_createtable(L, 0, 4);
@@ -553,6 +586,14 @@ pub fn Runtime(comptime H: type) type {
                 c.lua_setfield(L, -2, g[0]);
             }
             c.lua_setglobal(L, "raywm");
+            // Arm every coroutine with the instruction hook before it can run
+            // plugin code (see coroutine_guard).
+            c.lua_pushlightuserdata(L, self);
+            c.lua_pushcclosure(L, armThread, 1);
+            if (c.luaL_loadbufferx(L, coroutine_guard, coroutine_guard.len, "=raywm-coroutines", "t") != c.LUA_OK) return c.lua_error(L);
+            c.lua_pushvalue(L, -2);
+            c.lua_callk(L, 1, 0, 0, null);
+            c.lua_settop(L, -2);
             // Runs before any configuration code, with the libraries intact.
             if (c.luaL_loadbufferx(L, text_only, text_only.len, "=raywm", "t") != c.LUA_OK) return c.lua_error(L);
             c.lua_callk(L, 0, 0, 0, null);
@@ -820,6 +861,16 @@ pub fn Runtime(comptime H: type) type {
             const p = std.c.realloc(ptr, nsize) orelse return null;
             self.mem_used = self.mem_used - old + nsize;
             return p;
+        }
+
+        /// `arm(co)`, called by the coroutine shim. Sets the counting hook on
+        /// a thread that has none; an armed thread keeps its count.
+        fn armThread(L: ?*c.lua_State) callconv(.c) c_int {
+            const self = get(L);
+            const co = c.lua_tothread(L, 1) orelse return 0;
+            if (c.lua_gethookmask(co) == 0)
+                c.lua_sethook(co, hook, c.LUA_MASKCOUNT, if (self.exhausted) 1 else hook_step);
+            return 0;
         }
 
         fn hook(L: ?*c.lua_State, _: ?*c.lua_Debug) callconv(.c) void {
