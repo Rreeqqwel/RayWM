@@ -28,6 +28,7 @@ use wayland_client::{
     },
     Connection, Dispatch, EventQueue, QueueHandle, WEnum,
 };
+use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 const WAIT: Duration = Duration::from_secs(5);
@@ -120,6 +121,8 @@ struct Probe {
     frames: usize,
     released: usize,
     formats: Vec<wl_shm::Format>,
+    configures: Vec<u32>,
+    sizes: Vec<(i32, i32)>,
 }
 
 impl Probe {
@@ -243,6 +246,88 @@ delegate_noop!(Probe: ignore wl_subcompositor::WlSubcompositor);
 delegate_noop!(Probe: ignore wl_subsurface::WlSubsurface);
 delegate_noop!(Probe: ignore wl_shm_pool::WlShmPool);
 
+impl Dispatch<xdg_wm_base::XdgWmBase, ()> for Probe {
+    fn event(
+        _: &mut Self,
+        shell: &xdg_wm_base::XdgWmBase,
+        event: xdg_wm_base::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let xdg_wm_base::Event::Ping { serial } = event {
+            shell.pong(serial);
+        }
+    }
+}
+
+impl Dispatch<xdg_surface::XdgSurface, ()> for Probe {
+    fn event(
+        state: &mut Self,
+        _: &xdg_surface::XdgSurface,
+        event: xdg_surface::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let xdg_surface::Event::Configure { serial } = event {
+            state.configures.push(serial);
+        }
+    }
+}
+
+impl Dispatch<xdg_toplevel::XdgToplevel, ()> for Probe {
+    fn event(
+        state: &mut Self,
+        _: &xdg_toplevel::XdgToplevel,
+        event: xdg_toplevel::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let xdg_toplevel::Event::Configure { width, height, .. } = event {
+            state.sizes.push((width, height));
+        }
+    }
+}
+
+struct ClientWindow {
+    surface: wl_surface::WlSurface,
+    xdg: xdg_surface::XdgSurface,
+    top: xdg_toplevel::XdgToplevel,
+    buffer: wl_buffer::WlBuffer,
+}
+
+fn create_window(
+    connection: &Connection,
+    queue: &EventQueue<Probe>,
+    probe: &Probe,
+) -> Result<ClientWindow> {
+    let qh = queue.handle();
+    let registry = connection.display().get_registry(&qh, ());
+    let (id, version) = probe.global("wl_compositor")?;
+    let compositor: wl_compositor::WlCompositor = registry.bind(id, version.min(6), &qh, ());
+    let (id, version) = probe.global("xdg_wm_base")?;
+    let shell: xdg_wm_base::XdgWmBase = registry.bind(id, version.min(6), &qh, ());
+    let surface = compositor.create_surface(&qh, ());
+    let xdg = shell.get_xdg_surface(&surface, &qh, ());
+    let top = xdg.get_toplevel(&qh, ());
+    top.set_title("RayWM protocol probe".into());
+    let (id, _) = probe.global("wl_shm")?;
+    let shm: wl_shm::WlShm = registry.bind(id, 1, &qh, ());
+    let mut file = tempfile::tempfile()?;
+    file.write_all(&[0xff; 16])?;
+    let pool = shm.create_pool(file.as_fd(), 16, &qh, ());
+    let buffer = pool.create_buffer(0, 2, 2, 8, wl_shm::Format::Argb8888, &qh, ());
+    pool.destroy();
+    Ok(ClientWindow {
+        surface,
+        xdg,
+        top,
+        buffer,
+    })
+}
+
 #[test]
 fn globals_buffers_subsurfaces_disconnect_and_sigterm() -> Result<()> {
     let mut server = Server::start(Some("raywm-test"))?;
@@ -250,7 +335,7 @@ fn globals_buffers_subsurfaces_disconnect_and_sigterm() -> Result<()> {
     let qh = queue.handle();
     assert_eq!(
         probe.globals.len(),
-        3,
+        4,
         "only implemented protocols are advertised"
     );
     let registry = connection.display().get_registry(&qh, ());
@@ -379,6 +464,119 @@ fn bad_startup_and_socket_collision_fail_without_removing_live_socket() -> Resul
             .stderr(Stdio::null())
             .spawn()?;
         assert!(!wait(&mut child)?.success());
+    }
+    let (connection, mut queue, mut probe) = server.connect()?;
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    server.stop(Signal::TERM)?;
+    Ok(())
+}
+
+#[test]
+fn xdg_initial_ack_map_unmap_remap_and_role_destruction() -> Result<()> {
+    let mut server = Server::start(Some("xdg-lifecycle"))?;
+    let (connection, mut queue, mut probe) = server.connect()?;
+    let window = create_window(&connection, &queue, &probe)?;
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    assert!(
+        probe.configures.is_empty(),
+        "get_toplevel must not map or configure before initial commit"
+    );
+    assert!(!server.log()?.contains("Window mapped"));
+    window.surface.commit();
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    let initial = *probe.configures.last().ok_or("missing initial configure")?;
+    window.xdg.ack_configure(initial);
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    assert!(
+        !server.log()?.contains("Window mapped"),
+        "ACK without a buffer does not map"
+    );
+    window.surface.attach(Some(&window.buffer), 0, 0);
+    window.surface.frame(&queue.handle(), Callback::Frame);
+    window.surface.commit();
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    assert!(server.log()?.contains("Window mapped"));
+    assert_eq!(
+        probe.frames, 0,
+        "headless mode does not fabricate presentation"
+    );
+    window.surface.attach(None, 0, 0);
+    window.surface.commit();
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    assert!(server.log()?.contains("Window unmapped"));
+    assert_eq!(probe.released, 1);
+    let before = probe.configures.len();
+    window.surface.commit();
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    assert!(
+        probe.configures.len() > before,
+        "remap needs a new configure"
+    );
+    let remap = *probe.configures.last().ok_or("missing remap configure")?;
+    assert_ne!(initial, remap);
+    window.xdg.ack_configure(remap);
+    window.surface.attach(Some(&window.buffer), 0, 0);
+    window.surface.commit();
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    assert_eq!(server.log()?.matches("Window mapped").count(), 2);
+    window.surface.attach(None, 0, 0);
+    window.surface.commit();
+    window.top.destroy();
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    assert!(server.log()?.contains("Window destroyed"));
+    let top = window.xdg.get_toplevel(&queue.handle(), ());
+    window.surface.commit();
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    window.xdg.ack_configure(
+        *probe
+            .configures
+            .last()
+            .ok_or("missing recreated role configure")?,
+    );
+    window.surface.attach(Some(&window.buffer), 0, 0);
+    window.surface.commit();
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    top.destroy();
+    window.xdg.destroy();
+    window.surface.destroy();
+    window.buffer.destroy();
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    assert_eq!(server.log()?.matches("Window destroyed").count(), 2);
+    server.stop(Signal::TERM)?;
+    Ok(())
+}
+
+#[test]
+fn xdg_unconfigured_buffer_invalid_ack_and_disconnect_are_isolated() -> Result<()> {
+    let mut server = Server::start(Some("xdg-errors"))?;
+    for mode in 0..4 {
+        let (connection, mut queue, mut probe) = server.connect()?;
+        let window = create_window(&connection, &queue, &probe)?;
+        if mode != 0 {
+            window.surface.commit();
+            roundtrip(&connection, &mut queue, &mut probe)?;
+        }
+        if mode == 2 {
+            window.xdg.ack_configure(u32::MAX);
+        } else {
+            if mode == 3 {
+                window
+                    .xdg
+                    .ack_configure(*probe.configures.last().ok_or("configure missing")?);
+            }
+            window.surface.attach(Some(&window.buffer), 0, 0);
+            window.surface.commit();
+        }
+        let result = roundtrip(&connection, &mut queue, &mut probe);
+        if mode == 3 {
+            result?;
+        } else {
+            assert!(
+                result.is_err(),
+                "unconfigured buffer or invalid ACK must fail"
+            );
+        }
+        // mode 3 drops a mapped client with live resources and no destroy requests.
     }
     let (connection, mut queue, mut probe) = server.connect()?;
     roundtrip(&connection, &mut queue, &mut probe)?;

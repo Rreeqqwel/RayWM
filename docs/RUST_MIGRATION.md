@@ -1,9 +1,10 @@
-# Rust / Smithay migration — Stage 1
+# Rust / Smithay migration — Stages 1–2
 
 This is the foundation for a future v0.3 migration, **not a v0.3 release**.
 The working desktop remains Zig 0.16.0 + wlroots 0.20 + Lua 5.4.
-`rust/` is a separate, experimental, headless protocol server. It does not
-load plugins, render windows, create outputs or provide desktop input.
+`rust/` is an experimental Rust foundation. Its headless mode now serves
+XDG-toplevel lifecycle as well as core Wayland protocols. The graphical
+nested backend is the next Stage 2 slice; no Lua host is implemented.
 No Zig module, package payload, release branch or project version is replaced.
 
 ## Baseline and audit scope
@@ -35,13 +36,12 @@ Stage 2 starts with a framework-independent desktop model in
 `rust/crates/raywm-core/src/windows.rs`: non-recycled u32 window IDs with
 checked exhaustion, position/positive size, map/focus state and optional
 nested-output assignment. Removing or unmapping a focused window clears
-focus; invalid focus requests leave it unchanged. The compositor adapter
-will connect this model to actual committed surfaces.
+focus; invalid focus requests leave it unchanged. The compositor adapter connects this model to actual committed XDG surfaces.
 
 | Current module | Responsibility and dependencies | Smithay responsibility | RayWM Rust destination / ownership |
 |---|---|---|---|
 | `server.zig`, `main.zig` | composition root, ordered teardown, focus, spawn, event delivery; connects every native subsystem to the Lua host | display/protocol building blocks and backend event sources | `raywm-compositor`: one owned runtime and explicit subsystems; bootstrap implemented |
-| `view.zig` | xdg/X11 view model, popups, configure/ack geometry, map/unmap, focus; uses server, outputs, workspace, input, effects | xdg-shell roles, transactions, surface state and popup helpers | compositor view/shell adapter; pure geometry/state transitions can move to core; no toplevels yet |
+| `view.zig` | xdg/X11 view model, popups, configure/ack geometry, map/unmap, focus; uses server, outputs, workspace, input, effects | xdg-shell roles, transactions, surface state and popup helpers | compositor view/shell adapter; pure geometry/state transitions can move to core; XDG initial configure/ACK/map/unmap and role destruction implemented; rendering follows |
 | `output.zig` | tested output transactions, modes/scale/DPMS/gamma, hotplug recovery, frame/presentation; uses layers, workspace, lock, effects | output globals, backend output/rendering/damage helpers | compositor output/backend adapter; core validation and placement; no outputs yet |
 | `input.zig`, `inputconfig.zig` | keyboard matching/layouts, pointer focus, explicit/implicit grabs, move/resize, device settings; uses views, layers, lock, constraints, Lua | seat, keyboard/pointer handles, input events/grab primitives, later libinput/session backend | compositor input adapter with core key/geometry policy; no seat or input yet |
 | `lua.zig`, `host.zig` | Lua VM, plugin registrations, limits and protected ordered callbacks; host resolves IDs into server/views/workspaces | no Lua/plugin policy | later separate Lua-host crate, framework-independent host command/event boundary; API v1 preserved by contract tests |
@@ -131,7 +131,7 @@ Reviewed official sources at that tag:
   [Upstream development documentation](https://smithay.github.io/smithay/)
   tracks master and must not be treated as the pinned API.
 
-Only `wayland_frontend` is enabled; Smithay default features are off. There
+`wayland_frontend` and `desktop` are enabled; Smithay default features are off. There
 is no DRM, GBM, libinput, libseat, Winit, X11, GLES, pixman renderer or Xwayland
 backend in the Rust build. The `drm-fourcc` crate in the lockfile supplies
 format types and does not open DRM devices. Smithay still requires
@@ -149,13 +149,14 @@ rust/
     src/lib.rs                 validated socket basename, config and error
   crates/raywm-compositor/
     src/main.rs                CLI, directory validation, display, loop, shutdown
-    src/state.rs               compositor/subcompositor/shm handlers, client data
+    src/state.rs               core protocol handlers and client data
+    src/shell.rs               XDG lifecycle, committed windows and ID adapter
   tests/headless.rs            isolated process and real protocol tests
 ```
 
-Core has no dependencies on Smithay, Lua or native backends. IDs, general
-configuration models, geometry and state machines will be added when their
-first actual consumer is ported, with exhaustion/range behavior tested then.
+Core has no dependencies on Smithay, Lua or native backends. Its desktop
+model supplies checked IDs, geometry, map/focus state and output association;
+full ray.conf and desktop policy remain future work.
 The private Cargo packages use `0.0.0` and `publish = false`; this is not a
 change to RayWM's release version.
 
@@ -176,13 +177,20 @@ admission, disconnect clients, dispatch destruction while protocol state still
 exists, then remove event sources before dropping display/state. Startup
 failures release already-created resources through ordinary ownership.
 
-Advertised globals are exactly `wl_compositor`, `wl_subcompositor`, `wl_shm`.
-Smithay's commit buffer helper handles synchronized subsurfaces, current
-buffer replacement and destruction without reading pixels. No surface is
-visible, so frame callbacks remain pending; no presentation is fabricated.
-This is a renderer-free headless protocol harness, not Smithay's DRM/Winit
-backend or an off-screen graphical renderer. XDG-shell/window rendering and
-input are deliberately Stage 2 so they can be validated together.
+Headless globals are `wl_compositor`, `wl_subcompositor`, `wl_shm` and
+`xdg_wm_base`. Smithay owns buffers and synchronized subsurface state.
+The XDG adapter waits for the initial empty commit before sending configure,
+requires an accepted ACK before committing a buffer, maps only committed
+renderable buffers, unmaps on null buffers and requires a fresh configure/ACK
+on remap. Removing a role or disconnecting removes the view and model ID.
+A small delegating XDG-surface dispatch retains the correct protocol resource
+for `UnconfiguredBuffer` errors, while Smithay handles the actual requests.
+This is necessary with the pinned 0.7.0 API; current master examples differ.
+Unsupported popups are dismissed, not inserted into the desktop space.
+
+Headless mode has no output, renderer or seat global. Frame callbacks remain
+pending because no surface is visible; no presentation is fabricated.
+Stage 1 at `aab3b3c` passed its original four tests before Stage 2 changes.
 
 Manual private launch (Linux; build and install prerequisites are in
 [INSTALL.md](INSTALL.md#experimental-rust-foundation)):
@@ -223,16 +231,17 @@ toolchain, not a claim that older Rust versions were tested:
 
 ```sh
 cargo fmt --all -- --check
-cargo check --workspace
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo check --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+cargo build --workspace --locked
 ```
 
-All four commands PASS, including clippy with warnings denied and all four
-tests (one core test, three subprocess/protocol tests). `cargo build --locked
+The XDG milestone passes fmt, check, clippy with warnings denied and nine
+tests (four core tests, five subprocess/protocol tests). `cargo build --locked
 --workspace` also links the runnable server. `tests/docs-sync.sh` passes.
 
-`cargo test` includes a core socket-path validation test and three real
+`cargo test` includes a core socket-path validation test and five real
 subprocess smoke tests: registry/sync and mandatory shm formats; buffer
 commit/detach/destroy; synchronized subsurface release ordering; no false
 frame completion; reconnects; malformed-client isolation; active-client
@@ -241,7 +250,10 @@ the original server; bad arguments and missing, relative, public or symlinked
 runtime directories. Every
 server runs with a scrubbed environment and private directory. Startup,
 protocol reads and exit waits have five-second deadlines and children are
-killed/reaped on failure. These checks establish more than compilation.
+killed/reaped on failure. XDG tests additionally observe initial configure/ACK,
+bufferless non-mapping, map/unmap, fresh remap, role recreation, invalid ACK
+and early-buffer protocol errors, release and abrupt disconnect. These checks
+establish more than compilation.
 
 Remaining Zig integration suites, ReleaseSafe, GLES, leak checking,
 sanitizers and physical DRM/KMS/input/hotplug are not run for Stage 1.

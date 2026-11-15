@@ -8,7 +8,7 @@ what keys do.
 The separate experimental `rust/` workspace begins a Rust/Smithay migration.
 Its `raywm-core` crate holds framework-independent bootstrap configuration;
 `raywm-compositor` owns the headless display, calloop lifecycle and initial
-compositor/subcompositor/shm handlers. It has no desktop renderer or Lua host
+compositor/subcompositor/shm and XDG-shell handlers. It has no desktop renderer or Lua host
 yet. The current architecture described below remains the Zig implementation;
 the module mapping, lifetime invariants and parity gates are in
 [RUST_MIGRATION.md](RUST_MIGRATION.md).

@@ -36,8 +36,8 @@ collision and startup failures. A core test rejects unsafe socket basenames.
 Core window-model tests cover ID deletion/staleness, non-reuse and exhaustion,
 positive sizes, mapping geometry/output assignment and exclusive focus with
 unmap/removal cleanup.
-Invisible surfaces receive no fabricated frame callback. Stage 1 has no
-renderer, output, seat, XDG-shell, Lua, IPC or ray.conf implementation;
+Invisible surfaces receive no fabricated frame callback. The headless mode supports XDG configure/ACK, map/unmap/remap, role recreation
+and invalid-client isolation. It has no renderer, output, seat, Lua, IPC or ray.conf;
 there is no graphical/hardware parity claim. Rust checks are currently
 local commands, not additional release or CI jobs.
 

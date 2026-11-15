@@ -10,6 +10,10 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 - Framework-independent Rust window state with non-recycled IDs, checked
   ID exhaustion, geometry, mapping/focus and output association tests.
+- XDG-toplevel lifecycle in Rust: initial bufferless configure, ACK-gated
+  mapping, null-buffer unmap, fresh remap and role/client destruction.
+  Real protocol tests cover early buffers and invalid ACKs without affecting
+  other clients. Popups are dismissed; headless mode sends no fake frames.
 - Separate experimental `rust/` Cargo workspace: a dependency-free core
   configuration crate and a Smithay 0.7.0 headless protocol server with an
   owned Wayland socket, calloop dispatch, compositor/subcompositor/shm
@@ -18,7 +22,7 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
   disconnect/error isolation, socket lifetime and startup failures.
 - Migration audit, Zig-to-Rust responsibility map, Lua API v1 preservation
   strategy and staged regression/cutover gates in `docs/RUST_MIGRATION.md`.
-  Rendering, input and XDG-shell are planned for the next stage; the current
+  Rendering and input are the next Stage 2 slice; the current
   Zig desktop and release version remain in place.
 
 ## [v0.2.4] — Security hotfixes, candidate prepared 2026-11-15

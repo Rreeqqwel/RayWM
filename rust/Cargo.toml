@@ -11,7 +11,7 @@ publish = false
 [workspace.dependencies]
 raywm-core = { path = "crates/raywm-core" }
 # Match all examples/handlers to the released v0.7.0 API, not master.
-smithay = { version = "=0.7.0", default-features = false, features = ["wayland_frontend"] }
+smithay = { version = "=0.7.0", default-features = false, features = ["wayland_frontend", "desktop"] }
 calloop = { version = "0.14.0", features = ["signals"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }

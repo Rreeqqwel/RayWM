@@ -1,5 +1,6 @@
 //! Experimental headless protocol server. Desktop rendering is Stage 2.
 
+mod shell;
 mod state;
 
 use std::{
@@ -143,7 +144,7 @@ fn run(config: HeadlessConfig) -> Result<()> {
         state,
         running: true,
     };
-    tracing::info!(socket = ?runtime_dir.join(&socket_name), "Headless Wayland server ready (no renderer, seat or XDG shell)");
+    tracing::info!(socket = ?runtime_dir.join(&socket_name), "Headless Wayland server ready (XDG lifecycle only; no renderer or input)");
 
     let result = (|| -> Result<()> {
         while runtime.running {

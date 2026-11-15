@@ -1,6 +1,9 @@
+use raywm_core::windows::Desktop;
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
-    delegate_compositor, delegate_shm,
+    delegate_compositor, delegate_seat, delegate_shm,
+    desktop::{Space, Window},
+    input::{Seat, SeatHandler, SeatState},
     reexports::wayland_server::{
         backend::{ClientData, ClientId, DisconnectReason},
         protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface},
@@ -9,13 +12,22 @@ use smithay::{
     wayland::{
         buffer::BufferHandler,
         compositor::{CompositorClientState, CompositorHandler, CompositorState},
+        shell::xdg::XdgShellState,
         shm::{ShmHandler, ShmState},
     },
 };
 
+use crate::shell::View;
+
 pub struct State {
     compositor: CompositorState,
     shm: ShmState,
+    pub xdg: XdgShellState,
+    pub space: Space<Window>,
+    pub desktop: Desktop,
+    pub views: Vec<View>,
+    pub redraw: bool,
+    pub seat_state: SeatState<Self>,
 }
 
 impl State {
@@ -23,6 +35,12 @@ impl State {
         Self {
             compositor: CompositorState::new::<Self>(display),
             shm: ShmState::new::<Self>(display, vec![]),
+            xdg: XdgShellState::new::<Self>(display),
+            space: Space::default(),
+            desktop: Desktop::default(),
+            views: Vec::new(),
+            redraw: true,
+            seat_state: SeatState::new(),
         }
     }
 }
@@ -63,6 +81,20 @@ impl CompositorHandler for State {
         // buffers and releases them on replacement/destruction. No pixel read
         // or renderer is needed. Surfaces are invisible: do not fake frame done.
         on_commit_buffer_handler::<Self>(surface);
+        self.commit_window(surface);
+    }
+
+    fn new_surface(&mut self, surface: &WlSurface) {
+        smithay::wayland::compositor::add_pre_commit_hook::<Self, _>(
+            surface,
+            |state, _, surface| {
+                state.validate_window_commit(surface);
+            },
+        );
+    }
+
+    fn destroyed(&mut self, surface: &WlSurface) {
+        self.remove_window(surface);
     }
 }
 
@@ -78,3 +110,16 @@ impl ShmHandler for State {
 
 delegate_compositor!(State);
 delegate_shm!(State);
+
+impl SeatHandler for State {
+    type KeyboardFocus = WlSurface;
+    type PointerFocus = WlSurface;
+    type TouchFocus = WlSurface;
+
+    fn seat_state(&mut self) -> &mut SeatState<Self> {
+        &mut self.seat_state
+    }
+    fn cursor_image(&mut self, _: &Seat<Self>, _: smithay::input::pointer::CursorImageStatus) {}
+}
+
+delegate_seat!(State);

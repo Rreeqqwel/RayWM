@@ -323,7 +323,8 @@ The server logs readiness with its socket path, client connection/disconnection
 and shutdown. Startup or display/loop failure logs an error and exits nonzero;
 a failed client admission logs a warning. SIGINT/SIGTERM stop cleanly and remove
 the socket. It does not set `WAYLAND_DISPLAY` or connect to the user's display.
-There is no window renderer, output, seat or XDG-shell yet. For a controlled
+Headless XDG configure/ACK and window lifecycle are implemented; there is no
+window renderer, output or seat yet. For a controlled
 private launch and real protocol smoke checks, follow
 [RUST_MIGRATION.md](RUST_MIGRATION.md#stage-1-implementation) and
 [TESTING.md](TESTING.md#experimental-rust-foundation).
