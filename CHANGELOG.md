@@ -4,7 +4,7 @@ All notable changes to RayWM. Versions follow [Semantic
 Versioning](https://semver.org/); before 1.0, minor versions may break
 the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
-## [Unreleased] — Rust migration foundation
+## [Unreleased] — Rust migration foundation and nested prototype
 
 ### Added
 
@@ -14,6 +14,12 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
   mapping, null-buffer unmap, fresh remap and role/client destruction.
   Real protocol tests cover early buffers and invalid ACKs without affecting
   other clients. Popups are dismissed; headless mode sends no fake frames.
+- Optional nested Winit/EGL/GLES backend with one virtual output, positive-size
+  mode/resize handling, real XDG rendering/frame callbacks and basic keyboard/
+  pointer seat forwarding. Headless stays the default. Redraws are coalesced
+  on events; an idle scene does not redraw continuously.
+- Private graphical smoke verifies pixels, real input, output/window resize
+  and client/server cleanup. No input is injected into the running desktop.
 - Separate experimental `rust/` Cargo workspace: a dependency-free core
   configuration crate and a Smithay 0.7.0 headless protocol server with an
   owned Wayland socket, calloop dispatch, compositor/subcompositor/shm
@@ -22,8 +28,8 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
   disconnect/error isolation, socket lifetime and startup failures.
 - Migration audit, Zig-to-Rust responsibility map, Lua API v1 preservation
   strategy and staged regression/cutover gates in `docs/RUST_MIGRATION.md`.
-  Rendering and input are the next Stage 2 slice; the current
-  Zig desktop and release version remain in place.
+  Full desktop policy and services remain future stages; the current Zig
+  desktop and release version remain in place.
 
 ## [v0.2.4] — Security hotfixes, candidate prepared 2026-11-15
 

@@ -21,6 +21,10 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 rustix = { version = "1", features = ["process"] }
 
+[features]
+default = ["winit"]
+winit = ["smithay/backend_winit", "smithay/renderer_gl"]
+
 [dev-dependencies]
 wayland-client = "0.31.10"
 wayland-protocols = { version = "0.32", features = ["client"] }

@@ -404,16 +404,23 @@ See [docs/TESTING.md](docs/TESTING.md) for every suite, CI, and the
 known coverage gaps. CI runs on GitHub Actions in an Arch Linux
 container (`.github/workflows/ci.yml`).
 
-The experimental Rust/Smithay Stage 1 workspace is separate from the Zig
-desktop. From `rust/`, run `cargo fmt --all -- --check`,
-`cargo check --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`
-and `cargo test --workspace`. The tests start private headless protocol
-servers, XDG configure/ACK/lifecycle and the core window/ID/focus model; there is no Rust window
-renderer or Lua host yet. See the
-[migration audit and stages](docs/RUST_MIGRATION.md) and
-[Rust build instructions](docs/INSTALL.md#experimental-rust-foundation).
-Its `raywm-smithay` binary accepts `--socket NAME` and `--help` / `-h`;
-it requires a private `XDG_RUNTIME_DIR` and logs its socket and lifecycle.
+The experimental Rust/Smithay workspace is separate from the Zig desktop.
+From `rust/`, run `cargo fmt --all -- --check`,
+`cargo check --workspace --locked`,
+`cargo clippy --workspace --all-targets --locked -- -D warnings`,
+`cargo test --workspace --locked` and `cargo build --workspace --locked`.
+These check the core window/ID/focus model and real XDG configure/ACK/lifecycle.
+The graphical smoke is separate: `python3 rust/tests/nested-smoke.py` checks
+pixels, frames, input, resize and cleanup inside a private headless parent.
+
+`raywm-smithay --backend winit` opens one nested EGL/GLES window/output with
+basic keyboard/pointer input; `--backend headless` is the default protocol-only
+mode. Other options are `--socket NAME` and `--help` / `-h`. It requires a
+private XDG_RUNTIME_DIR and keeps incoming WAYLAND_DISPLAY for the parent;
+logs report socket/window/output lifecycle. Lua, clipboard and full desktop
+policy are not ported; this is an experimental prototype. See
+[build and nested launch](docs/INSTALL.md#experimental-rust-foundation) and
+[the migration map, qualification and limits](docs/RUST_MIGRATION.md).
 
 ## Project layout
 

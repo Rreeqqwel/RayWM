@@ -2,7 +2,7 @@
 //! commit. The custom surface dispatch retains the public XDG error resource;
 //! all protocol requests still run through Smithay's versioned implementation.
 
-use raywm_core::windows::{Position, Size, WindowId};
+use raywm_core::windows::{OutputId, Position, Size, WindowId};
 use smithay::{
     backend::renderer::utils::with_renderer_surface_state,
     desktop::Window,
@@ -104,7 +104,12 @@ impl State {
             } else if root == *surface && view.initial.is_none() {
                 // Initial configure follows the initial bufferless commit,
                 // never get_toplevel. Remap performs the handshake again.
-                toplevel.with_pending_state(|state| state.size = None);
+                let size = self
+                    .output
+                    .as_ref()
+                    .and_then(|output| output.current_mode())
+                    .map(|mode| mode.size.to_logical(1));
+                toplevel.with_pending_state(|state| state.size = size);
                 view.initial = Some(toplevel.send_configure());
                 tracing::info!(window = view.id.get(), "Initial configure sent");
             }
@@ -113,15 +118,25 @@ impl State {
             if let Some(size) =
                 Size::new(geometry.size.w.max(0) as u32, geometry.size.h.max(0) as u32)
             {
-                self.desktop.map(view.id, Position::default(), size, None);
+                self.desktop.map(
+                    view.id,
+                    Position::default(),
+                    size,
+                    self.output.as_ref().map(|_| OutputId::Nested),
+                );
                 self.space.map_element(view.window.clone(), (0, 0), false);
                 if !was_mapped {
                     tracing::info!(window = view.id.get(), "Window mapped");
+                    if self.host_focused {
+                        self.desktop.focus(Some(view.id));
+                    }
                 }
             }
         }
         self.redraw = true;
         self.space.refresh();
+        self.sync_focus();
+        self.repair_pointer_focus();
     }
 
     pub fn remove_window(&mut self, surface: &WlSurface) {
@@ -138,6 +153,23 @@ impl State {
         self.space.refresh();
         self.redraw = true;
         tracing::info!(window = view.id.get(), "Window destroyed");
+        self.sync_focus();
+        self.repair_pointer_focus();
+    }
+
+    #[cfg(feature = "winit")]
+    pub fn request_window_size(
+        &mut self,
+        size: smithay::utils::Size<i32, smithay::utils::Logical>,
+    ) {
+        for view in &self.views {
+            if view.initial.is_some() {
+                if let Some(toplevel) = view.window.toplevel() {
+                    toplevel.with_pending_state(|state| state.size = Some(size));
+                    toplevel.send_pending_configure();
+                }
+            }
+        }
     }
 }
 

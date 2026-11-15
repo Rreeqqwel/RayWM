@@ -23,8 +23,8 @@ use tempfile::TempDir;
 use wayland_client::{
     delegate_noop,
     protocol::{
-        wl_buffer, wl_callback, wl_compositor, wl_registry, wl_shm, wl_shm_pool, wl_subcompositor,
-        wl_subsurface, wl_surface,
+        wl_buffer, wl_callback, wl_compositor, wl_keyboard, wl_output, wl_pointer, wl_registry,
+        wl_seat, wl_shm, wl_shm_pool, wl_subcompositor, wl_subsurface, wl_surface,
     },
     Connection, Dispatch, EventQueue, QueueHandle, WEnum,
 };
@@ -119,10 +119,23 @@ struct Probe {
     globals: Vec<(u32, String, u32)>,
     synced: bool,
     frames: usize,
+    hidden_frames: usize,
     released: usize,
     formats: Vec<wl_shm::Format>,
     configures: Vec<u32>,
     sizes: Vec<(i32, i32)>,
+    keyboard: Option<wl_keyboard::WlKeyboard>,
+    pointer: Option<wl_pointer::WlPointer>,
+    keys: Vec<(u32, WEnum<wl_keyboard::KeyState>)>,
+    buttons: Vec<(u32, WEnum<wl_pointer::ButtonState>)>,
+    motions: usize,
+    keyboard_enters: usize,
+    keyboard_leaves: usize,
+    pointer_leaves: usize,
+    output_enters: usize,
+    output_leaves: usize,
+    modes: Vec<(i32, i32)>,
+    wm_capabilities: Option<Vec<u8>>,
 }
 
 impl Probe {
@@ -139,6 +152,7 @@ impl Probe {
 enum Callback {
     Sync,
     Frame,
+    HiddenFrame,
 }
 
 // Unlike EventQueue::roundtrip, this helper has a deadline even if the server
@@ -205,6 +219,7 @@ impl Dispatch<wl_callback::WlCallback, Callback> for Probe {
         match kind {
             Callback::Sync => state.synced = true,
             Callback::Frame => state.frames += 1,
+            Callback::HiddenFrame => state.hidden_frames += 1,
         }
     }
 }
@@ -241,10 +256,108 @@ impl Dispatch<wl_buffer::WlBuffer, ()> for Probe {
 }
 
 delegate_noop!(Probe: ignore wl_compositor::WlCompositor);
-delegate_noop!(Probe: ignore wl_surface::WlSurface);
 delegate_noop!(Probe: ignore wl_subcompositor::WlSubcompositor);
 delegate_noop!(Probe: ignore wl_subsurface::WlSubsurface);
 delegate_noop!(Probe: ignore wl_shm_pool::WlShmPool);
+
+impl Dispatch<wl_surface::WlSurface, ()> for Probe {
+    fn event(
+        state: &mut Self,
+        _: &wl_surface::WlSurface,
+        event: wl_surface::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        match event {
+            wl_surface::Event::Enter { .. } => state.output_enters += 1,
+            wl_surface::Event::Leave { .. } => state.output_leaves += 1,
+            _ => {}
+        }
+    }
+}
+
+impl Dispatch<wl_seat::WlSeat, ()> for Probe {
+    fn event(
+        state: &mut Self,
+        seat: &wl_seat::WlSeat,
+        event: wl_seat::Event,
+        _: &(),
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+    ) {
+        if let wl_seat::Event::Capabilities {
+            capabilities: WEnum::Value(capabilities),
+        } = event
+        {
+            if capabilities.contains(wl_seat::Capability::Keyboard) && state.keyboard.is_none() {
+                state.keyboard = Some(seat.get_keyboard(qh, ()));
+            }
+            if capabilities.contains(wl_seat::Capability::Pointer) && state.pointer.is_none() {
+                state.pointer = Some(seat.get_pointer(qh, ()));
+            }
+        }
+    }
+}
+
+impl Dispatch<wl_keyboard::WlKeyboard, ()> for Probe {
+    fn event(
+        state: &mut Self,
+        _: &wl_keyboard::WlKeyboard,
+        event: wl_keyboard::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        match event {
+            wl_keyboard::Event::Key {
+                key,
+                state: key_state,
+                ..
+            } => state.keys.push((key, key_state)),
+            wl_keyboard::Event::Enter { .. } => state.keyboard_enters += 1,
+            wl_keyboard::Event::Leave { .. } => state.keyboard_leaves += 1,
+            _ => {}
+        }
+    }
+}
+
+impl Dispatch<wl_pointer::WlPointer, ()> for Probe {
+    fn event(
+        state: &mut Self,
+        _: &wl_pointer::WlPointer,
+        event: wl_pointer::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        match event {
+            wl_pointer::Event::Motion { .. } => state.motions += 1,
+            wl_pointer::Event::Button {
+                button,
+                state: button_state,
+                ..
+            } => state.buttons.push((button, button_state)),
+            wl_pointer::Event::Leave { .. } => state.pointer_leaves += 1,
+            _ => {}
+        }
+    }
+}
+
+impl Dispatch<wl_output::WlOutput, ()> for Probe {
+    fn event(
+        state: &mut Self,
+        _: &wl_output::WlOutput,
+        event: wl_output::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_output::Event::Mode { width, height, .. } = event {
+            state.modes.push((width, height));
+        }
+    }
+}
 
 impl Dispatch<xdg_wm_base::XdgWmBase, ()> for Probe {
     fn event(
@@ -285,8 +398,14 @@ impl Dispatch<xdg_toplevel::XdgToplevel, ()> for Probe {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let xdg_toplevel::Event::Configure { width, height, .. } = event {
-            state.sizes.push((width, height));
+        match event {
+            xdg_toplevel::Event::Configure { width, height, .. } => {
+                state.sizes.push((width, height))
+            }
+            xdg_toplevel::Event::WmCapabilities { capabilities } => {
+                state.wm_capabilities = Some(capabilities)
+            }
+            _ => {}
         }
     }
 }
@@ -434,6 +553,10 @@ fn bad_startup_and_socket_collision_fail_without_removing_live_socket() -> Resul
         vec!["--socket"],
         vec!["--unknown"],
         vec!["--socket", "occupied"],
+        vec!["--backend"],
+        vec!["--backend", "invalid"],
+        vec!["--backend", "headless", "--backend", "winit"],
+        vec!["--backend", "winit"], // scrubbed environment has no parent display
     ] {
         let mut child = Command::new(env!("CARGO_BIN_EXE_raywm-smithay"))
             .env_clear()
@@ -443,6 +566,10 @@ fn bad_startup_and_socket_collision_fail_without_removing_live_socket() -> Resul
             .stderr(Stdio::null())
             .spawn()?;
         assert!(!wait(&mut child)?.success());
+        assert!(
+            !server.dir.path().join("wayland-1").exists(),
+            "startup failure left a socket"
+        );
     }
     let mut child = Command::new(env!("CARGO_BIN_EXE_raywm-smithay"))
         .env_clear()
@@ -485,6 +612,11 @@ fn xdg_initial_ack_map_unmap_remap_and_role_destruction() -> Result<()> {
     window.surface.commit();
     roundtrip(&connection, &mut queue, &mut probe)?;
     let initial = *probe.configures.last().ok_or("missing initial configure")?;
+    assert_eq!(
+        probe.wm_capabilities,
+        Some(Vec::new()),
+        "do not advertise unsupported WM capabilities"
+    );
     window.xdg.ack_configure(initial);
     roundtrip(&connection, &mut queue, &mut probe)?;
     assert!(
@@ -549,7 +681,7 @@ fn xdg_initial_ack_map_unmap_remap_and_role_destruction() -> Result<()> {
 #[test]
 fn xdg_unconfigured_buffer_invalid_ack_and_disconnect_are_isolated() -> Result<()> {
     let mut server = Server::start(Some("xdg-errors"))?;
-    for mode in 0..4 {
+    for mode in 0..5 {
         let (connection, mut queue, mut probe) = server.connect()?;
         let window = create_window(&connection, &queue, &probe)?;
         if mode != 0 {
@@ -559,13 +691,23 @@ fn xdg_unconfigured_buffer_invalid_ack_and_disconnect_are_isolated() -> Result<(
         if mode == 2 {
             window.xdg.ack_configure(u32::MAX);
         } else {
-            if mode == 3 {
+            if mode >= 3 {
                 window
                     .xdg
                     .ack_configure(*probe.configures.last().ok_or("configure missing")?);
             }
             window.surface.attach(Some(&window.buffer), 0, 0);
             window.surface.commit();
+            if mode == 4 {
+                roundtrip(&connection, &mut queue, &mut probe)?;
+                window.surface.attach(None, 0, 0);
+                window.surface.commit();
+                window.surface.commit();
+                roundtrip(&connection, &mut queue, &mut probe)?;
+                // The original ACK must not authorize a remap buffer.
+                window.surface.attach(Some(&window.buffer), 0, 0);
+                window.surface.commit();
+            }
         }
         let result = roundtrip(&connection, &mut queue, &mut probe);
         if mode == 3 {
@@ -581,5 +723,178 @@ fn xdg_unconfigured_buffer_invalid_ack_and_disconnect_are_isolated() -> Result<(
     let (connection, mut queue, mut probe) = server.connect()?;
     roundtrip(&connection, &mut queue, &mut probe)?;
     server.stop(Signal::TERM)?;
+    Ok(())
+}
+
+fn pump_until(
+    connection: &Connection,
+    queue: &mut EventQueue<Probe>,
+    probe: &mut Probe,
+    predicate: impl Fn(&Probe) -> bool,
+) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !predicate(probe) {
+        if Instant::now() >= deadline {
+            return Err("graphics probe observation timed out".into());
+        }
+        roundtrip(connection, queue, probe)?;
+        thread::sleep(Duration::from_millis(10));
+    }
+    Ok(())
+}
+
+fn quadrants(
+    connection: &Connection,
+    queue: &EventQueue<Probe>,
+    probe: &Probe,
+    width: i32,
+    height: i32,
+) -> Result<wl_buffer::WlBuffer> {
+    assert!(width > 0 && height > 0 && width <= 4096 && height <= 4096);
+    let registry = connection.display().get_registry(&queue.handle(), ());
+    let (id, _) = probe.global("wl_shm")?;
+    let shm: wl_shm::WlShm = registry.bind(id, 1, &queue.handle(), ());
+    let mut pixels = Vec::with_capacity((width * height * 4) as usize);
+    for y in 0..height {
+        for x in 0..width {
+            let color: u32 = match (x < width / 2, y < height / 2) {
+                (true, true) => 0xffff0000,
+                (false, true) => 0xff00ff00,
+                (true, false) => 0xff0000ff,
+                (false, false) => 0xffffffff,
+            };
+            pixels.extend_from_slice(&color.to_ne_bytes());
+        }
+    }
+    let mut file = tempfile::tempfile()?;
+    file.write_all(&pixels)?;
+    let pool = shm.create_pool(file.as_fd(), pixels.len() as i32, &queue.handle(), ());
+    let buffer = pool.create_buffer(
+        0,
+        width,
+        height,
+        width * 4,
+        wl_shm::Format::Argb8888,
+        &queue.handle(),
+        (),
+    );
+    pool.destroy();
+    Ok(buffer)
+}
+
+#[test]
+#[ignore = "requires rust/tests/nested-smoke.py private graphical parent"]
+fn nested_graphics_pixels_input_resize_and_unmap() -> Result<()> {
+    // Explicit test socket/control paths, never the ambient WAYLAND_DISPLAY.
+    let socket = std::env::var_os("RAYWM_SMOKE_SOCKET").ok_or("run nested-smoke.py")?;
+    let control =
+        PathBuf::from(std::env::var_os("RAYWM_SMOKE_CONTROL").ok_or("run nested-smoke.py")?);
+    let connection = Connection::from_socket(UnixStream::connect(socket)?)?;
+    let mut queue = connection.new_event_queue();
+    let registry = connection.display().get_registry(&queue.handle(), ());
+    let mut probe = Probe::default();
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    let (id, version) = probe.global("wl_seat")?;
+    let _seat: wl_seat::WlSeat = registry.bind(id, version.min(7), &queue.handle(), ());
+    let (id, version) = probe.global("wl_output")?;
+    let _output: wl_output::WlOutput = registry.bind(id, version.min(4), &queue.handle(), ());
+    let window = create_window(&connection, &queue, &probe)?;
+    let (id, version) = probe.global("wl_compositor")?;
+    let compositor: wl_compositor::WlCompositor =
+        registry.bind(id, version.min(6), &queue.handle(), ());
+    let (id, _) = probe.global("wl_subcompositor")?;
+    let subs: wl_subcompositor::WlSubcompositor = registry.bind(id, 1, &queue.handle(), ());
+    let hidden = compositor.create_surface(&queue.handle(), ());
+    let hidden_role = subs.get_subsurface(&hidden, &window.surface, &queue.handle(), ());
+    hidden.frame(&queue.handle(), Callback::HiddenFrame);
+    hidden.commit();
+    window.surface.commit();
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    let mut buffers = Vec::new();
+    for pass in 0..2 {
+        if pass != 0 {
+            pump_until(&connection, &mut queue, &mut probe, |probe| {
+                probe.sizes.contains(&(700, 500))
+            })?;
+        }
+        let (width, height) = *probe.sizes.last().ok_or("missing graphics configure")?;
+        assert!(width > 0 && height > 0);
+        window
+            .xdg
+            .ack_configure(*probe.configures.last().ok_or("configure serial missing")?);
+        let buffer = quadrants(&connection, &queue, &probe, width, height)?;
+        window.xdg.set_window_geometry(0, 0, width, height);
+        window.surface.attach(Some(&buffer), 0, 0);
+        window.surface.damage_buffer(0, 0, width, height);
+        let before = probe.frames;
+        window.surface.frame(&queue.handle(), Callback::Frame);
+        window.surface.commit();
+        buffers.push(buffer);
+        pump_until(&connection, &mut queue, &mut probe, |probe| {
+            probe.frames > before
+        })?;
+        assert!(
+            probe.output_enters > 0,
+            "mapped surface must enter the output"
+        );
+        fs::write(
+            control.join(if pass == 0 {
+                "client-ready"
+            } else {
+                "client-resized"
+            }),
+            format!("{width} {height}"),
+        )?;
+        if pass == 0 {
+            pump_until(&connection, &mut queue, &mut probe, |probe| {
+                probe
+                    .keys
+                    .contains(&(30, WEnum::Value(wl_keyboard::KeyState::Pressed)))
+                    && probe
+                        .keys
+                        .contains(&(30, WEnum::Value(wl_keyboard::KeyState::Released)))
+                    && probe.motions > 0
+                    && probe
+                        .buttons
+                        .contains(&(0x110, WEnum::Value(wl_pointer::ButtonState::Pressed)))
+                    && probe
+                        .buttons
+                        .contains(&(0x110, WEnum::Value(wl_pointer::ButtonState::Released)))
+            })?;
+            assert!(probe.keyboard_enters > 0);
+            fs::write(
+                control.join("client-input"),
+                "keyboard/pointer press and release observed",
+            )?;
+        }
+    }
+    pump_until(&connection, &mut queue, &mut probe, |_| {
+        control.join("finish").exists()
+    })?;
+    assert!(
+        probe.modes.contains(&(700, 500)),
+        "wl_output must publish resize"
+    );
+    assert_eq!(
+        probe.hidden_frames, 0,
+        "a bufferless subsurface was not rendered and must not get frame done"
+    );
+    window.surface.attach(None, 0, 0);
+    window.surface.commit();
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    assert!(probe.output_leaves > 0);
+    assert!(probe.keyboard_leaves > 0);
+    assert!(probe.pointer_leaves > 0);
+    hidden_role.destroy();
+    hidden.destroy();
+    window.top.destroy();
+    window.xdg.destroy();
+    window.surface.destroy();
+    window.buffer.destroy();
+    for buffer in buffers {
+        buffer.destroy();
+    }
+    roundtrip(&connection, &mut queue, &mut probe)?;
+    fs::write(control.join("client-done"), "unmapped and destroyed")?;
     Ok(())
 }

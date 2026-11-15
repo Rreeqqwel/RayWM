@@ -4,6 +4,7 @@ use smithay::{
     delegate_compositor, delegate_seat, delegate_shm,
     desktop::{Space, Window},
     input::{Seat, SeatHandler, SeatState},
+    output::Output,
     reexports::wayland_server::{
         backend::{ClientData, ClientId, DisconnectReason},
         protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface},
@@ -12,6 +13,7 @@ use smithay::{
     wayland::{
         buffer::BufferHandler,
         compositor::{CompositorClientState, CompositorHandler, CompositorState},
+        output::OutputManagerState,
         shell::xdg::XdgShellState,
         shm::{ShmHandler, ShmState},
     },
@@ -28,6 +30,12 @@ pub struct State {
     pub views: Vec<View>,
     pub redraw: bool,
     pub seat_state: SeatState<Self>,
+    pub seat: Option<Seat<Self>>,
+    pub output: Option<Output>,
+    pub output_manager: Option<OutputManagerState>,
+    pub host_focused: bool,
+    pub pressed_buttons: Vec<u32>,
+    pub pointer_blocked: bool,
 }
 
 impl State {
@@ -35,12 +43,18 @@ impl State {
         Self {
             compositor: CompositorState::new::<Self>(display),
             shm: ShmState::new::<Self>(display, vec![]),
-            xdg: XdgShellState::new::<Self>(display),
+            xdg: XdgShellState::new_with_capabilities::<Self>(display, std::iter::empty::<smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities>()),
             space: Space::default(),
             desktop: Desktop::default(),
             views: Vec::new(),
             redraw: true,
             seat_state: SeatState::new(),
+            seat: None,
+            output: None,
+            output_manager: None,
+            host_focused: false,
+            pressed_buttons: Vec::new(),
+            pointer_blocked: false,
         }
     }
 }
@@ -79,7 +93,8 @@ impl CompositorHandler for State {
     fn commit(&mut self, surface: &WlSurface) {
         // Smithay applies synchronized subsurface transactions, owns current
         // buffers and releases them on replacement/destruction. No pixel read
-        // or renderer is needed. Surfaces are invisible: do not fake frame done.
+        // or renderer is needed here. The graphics backend alone sends frame
+        // callbacks, after a successful render/submit of mapped surfaces.
         on_commit_buffer_handler::<Self>(surface);
         self.commit_window(surface);
     }

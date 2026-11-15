@@ -1,6 +1,6 @@
 # Testing RayWM
 
-All automated tests run **headless**:
+The Zig automated tests run **headless**:
 - in a private `XDG_RUNTIME_DIR`, with a scrubbed environment (`env -i`);
 - with a virtual output (`WLR_BACKENDS=headless`);
 - with no real input devices.
@@ -10,36 +10,60 @@ session.
 
 ## Experimental Rust foundation
 
-The separate `rust/` workspace does not replace any Zig test or the current
-desktop. Requirements and experimental CLI are in
-[INSTALL.md](INSTALL.md#experimental-rust-foundation); the architecture,
-baseline results and outstanding parity gates are in
+The `rust/` workspace preserves the current Zig desktop and tests. Its build,
+CLI and nested launch are in [INSTALL.md](INSTALL.md#experimental-rust-foundation);
+architecture, historical baselines and qualification limits are in
 [RUST_MIGRATION.md](RUST_MIGRATION.md).
 
-Run from `rust/` (validated with Rust/Cargo 1.99.1):
+From `rust/` (validated with Rust/Cargo 1.99.1):
 
 ```sh
 cargo fmt --all -- --check
-cargo check --workspace
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo check --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+cargo build --workspace --locked
+# Additional renderer-free regression checks:
+cargo clippy --workspace --all-targets --no-default-features --locked -- -D warnings
+cargo test --workspace --no-default-features --locked
 ```
 
-The headless smoke suite in `rust/tests/headless.rs` runs through `cargo test`
-and talks to actual `raywm-smithay` subprocesses with `wayland-client`.
-Each has a private mode-0700 runtime directory, a scrubbed environment,
-five-second startup/protocol/exit deadlines and a child kill/reap guard.
-It checks registry/sync, shm formats, buffer commit/release/destruction,
-synchronized subsurfaces, reconnects, malformed-client isolation,
-SIGINT/SIGTERM with live clients, named/auto socket cleanup, socket
-collision and startup failures. A core test rejects unsafe socket basenames.
-Core window-model tests cover ID deletion/staleness, non-reuse and exhaustion,
-positive sizes, mapping geometry/output assignment and exclusive focus with
-unmap/removal cleanup.
-Invisible surfaces receive no fabricated frame callback. The headless mode supports XDG configure/ACK, map/unmap/remap, role recreation
-and invalid-client isolation. It has no renderer, output, seat, Lua, IPC or ray.conf;
-there is no graphical/hardware parity claim. Rust checks are currently
-local commands, not additional release or CI jobs.
+The default tests comprise four core tests and five real headless process/
+protocol tests. They cover ID deletion/non-reuse/exhaustion, geometry and
+focus; registry/sync, shm and synchronized subsurface buffer lifetimes;
+initial configure/ACK, map/unmap/remap and role recreation; premature-buffer/
+invalid-ACK isolation; disconnect, SIGINT/SIGTERM, socket ownership/cleanup and
+bad runtime/CLI/nested startup paths. Protocol errors printed by negative
+cases are expected; the connection is rejected and a fresh client still works.
+Each process has a scrubbed environment, private mode-0700 runtime directory,
+bounded waits and a kill/reap guard. Headless mode sends no fabricated frames.
+
+The graphical test is explicitly ignored by default because it needs a parent.
+Run it through the separate harness from the repository root:
+
+```sh
+# Requires the unchanged Zig -Dtest-input build, Python 3 and grim.
+python3 rust/tests/nested-smoke.py
+```
+
+The harness builds the Rust test/binary with Cargo.lock, creates a private
+headless pixman Zig parent, then starts Winit with software EGL/GLES in a
+separate runtime. Its client uses actual XDG/shm/seat/output requests; parent
+PNG screenshots check four color quadrants and orientation before/after
+800x600 → 700x500 resize. Assertions cover configure/ACK, frame callbacks,
+output enter/leave/mode, no callback for a bufferless child surface,
+key/button press/release, pointer motion, unmap focus
+cleanup and process/socket/lock destruction. All virtual input and screen
+capture target only the newly created parent. Test-only RAYWM_SMOKE_SOCKET
+and RAYWM_SMOKE_CONTROL are set by this harness, never inferred from the user's
+display. Missing tools and failed observations cause a nonzero exit, not a pass.
+The script prints a new `/tmp/raywm-stage2-*` directory containing logs/PNGs.
+
+This qualifies a nested software renderer and basic input, not physical
+hardware, general application/toolkit compatibility or full desktop parity.
+No Lua/IPC/config/clipboard/IME/Xwayland services are ported in Stage 2;
+foot requires the absent data-device global. Rust checks remain local commands,
+not additional release or CI jobs.
 
 ## Requirements
 

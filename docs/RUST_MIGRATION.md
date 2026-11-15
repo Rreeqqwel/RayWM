@@ -2,9 +2,10 @@
 
 This is the foundation for a future v0.3 migration, **not a v0.3 release**.
 The working desktop remains Zig 0.16.0 + wlroots 0.20 + Lua 5.4.
-`rust/` is an experimental Rust foundation. Its headless mode now serves
-XDG-toplevel lifecycle as well as core Wayland protocols. The graphical
-nested backend is the next Stage 2 slice; no Lua host is implemented.
+`rust/` is an experimental Rust compositor with a headless protocol mode
+and a nested Winit/EGL/GLES mode. Stage 2 supplies one virtual output,
+XDG-toplevel rendering and basic keyboard/pointer input. No Lua host exists;
+this is not a daily-use replacement for the Zig desktop.
 No Zig module, package payload, release branch or project version is replaced.
 
 ## Baseline and audit scope
@@ -36,14 +37,15 @@ Stage 2 starts with a framework-independent desktop model in
 `rust/crates/raywm-core/src/windows.rs`: non-recycled u32 window IDs with
 checked exhaustion, position/positive size, map/focus state and optional
 nested-output assignment. Removing or unmapping a focused window clears
-focus; invalid focus requests leave it unchanged. The compositor adapter connects this model to actual committed XDG surfaces.
+focus; invalid focus requests leave it unchanged. The compositor adapter connects this model to actual committed XDG surfaces,
+Smithay desktop windows and the nested output.
 
 | Current module | Responsibility and dependencies | Smithay responsibility | RayWM Rust destination / ownership |
 |---|---|---|---|
 | `server.zig`, `main.zig` | composition root, ordered teardown, focus, spawn, event delivery; connects every native subsystem to the Lua host | display/protocol building blocks and backend event sources | `raywm-compositor`: one owned runtime and explicit subsystems; bootstrap implemented |
-| `view.zig` | xdg/X11 view model, popups, configure/ack geometry, map/unmap, focus; uses server, outputs, workspace, input, effects | xdg-shell roles, transactions, surface state and popup helpers | compositor view/shell adapter; pure geometry/state transitions can move to core; XDG initial configure/ACK/map/unmap and role destruction implemented; rendering follows |
-| `output.zig` | tested output transactions, modes/scale/DPMS/gamma, hotplug recovery, frame/presentation; uses layers, workspace, lock, effects | output globals, backend output/rendering/damage helpers | compositor output/backend adapter; core validation and placement; no outputs yet |
-| `input.zig`, `inputconfig.zig` | keyboard matching/layouts, pointer focus, explicit/implicit grabs, move/resize, device settings; uses views, layers, lock, constraints, Lua | seat, keyboard/pointer handles, input events/grab primitives, later libinput/session backend | compositor input adapter with core key/geometry policy; no seat or input yet |
+| `view.zig` | xdg/X11 view model, popups, configure/ack geometry, map/unmap, focus; uses server, outputs, workspace, input, effects | xdg-shell roles, transactions, surface state and popup helpers | compositor view/shell adapter; pure geometry/state transitions can move to core; XDG initial configure/ACK/map/unmap, rendering and role destruction implemented; advanced shell policy deferred |
+| `output.zig` | tested output transactions, modes/scale/DPMS/gamma, hotplug recovery, frame/presentation; uses layers, workspace, lock, effects | output globals, backend output/rendering/damage helpers | compositor output/backend adapter; one virtual nested output with positive-size mode updates; physical output transactions deferred |
+| `input.zig`, `inputconfig.zig` | keyboard matching/layouts, pointer focus, explicit/implicit grabs, move/resize, device settings; uses views, layers, lock, constraints, Lua | seat, keyboard/pointer handles, input events/grab primitives, later libinput/session backend | compositor input adapter with core key/geometry policy; nested keyboard/pointer forwarding, focus and cleanup implemented; device policy deferred |
 | `lua.zig`, `host.zig` | Lua VM, plugin registrations, limits and protected ordered callbacks; host resolves IDs into server/views/workspaces | no Lua/plugin policy | later separate Lua-host crate, framework-independent host command/event boundary; API v1 preserved by contract tests |
 | `animation.zig`, `visual.zig` | bounded generation handles, monotonic tweens, retained snapshots/rectangles, plugin ownership; uses output frames and views | buffer lifetime, render elements, damage and synchronization primitives | core easing/handle logic, compositor rendering/snapshot ownership; no Lua frame hooks |
 | `workspace.zig` | visibility, output affiliation, active/special overlays, orphan/adopt across reload; depends on server/views/outputs | surface/output primitives only | core desktop state machine plus compositor application of visibility/focus |
@@ -131,27 +133,39 @@ Reviewed official sources at that tag:
   [Upstream development documentation](https://smithay.github.io/smithay/)
   tracks master and must not be treated as the pinned API.
 
-`wayland_frontend` and `desktop` are enabled; Smithay default features are off. There
-is no DRM, GBM, libinput, libseat, Winit, X11, GLES, pixman renderer or Xwayland
-backend in the Rust build. The `drm-fourcc` crate in the lockfile supplies
-format types and does not open DRM devices. Smithay still requires
-`libxkbcommon` at link time. Calloop's `signals` feature supplies signalfd;
-rustix supplies safe runtime-directory UID validation (and test polling/signals).
-Tracing and its formatting subscriber supply diagnostics. `wayland-client`
-and `tempfile` are test dependencies. No Lua binding is chosen prematurely.
+`wayland_frontend` and `desktop` are always enabled. The compositor's optional
+`winit` Cargo feature (enabled by default) adds `backend_winit` and
+`renderer_gl`, which pull in `backend_egl` and the parent Wayland client.
+Smithay defaults remain disabled. No DRM/GBM/libinput/libseat, Smithay X11
+backend, pixman renderer, Vulkan or Xwayland backend is enabled. Upstream
+Winit itself compiles Wayland/X11 frontend support; use an absolute host
+Wayland socket and unset DISPLAY for deterministic Wayland-only launch.
+EGL/Mesa may use a render node internally; this does not acquire a KMS device,
+VT, input device or session. `--no-default-features` retains a renderer-free
+headless build. The small `drm-fourcc` dependency supplies format types.
 
-## Stage 1 implementation
+System requirements are a C linker, pkg-config, xkbcommon, Wayland and an
+EGL/OpenGL ES 3 implementation for Winit. Calloop's `signals` feature supplies
+signalfd; rustix supplies safe UID validation and test polling/signals.
+Tracing formats diagnostics. `wayland-client`, client `wayland-protocols` and
+`tempfile` support real-client tests. No Lua binding is selected prematurely.
+
+## Rust implementation (Stages 1–2)
 
 ```text
 rust/
   Cargo.toml / Cargo.lock
   crates/raywm-core/
     src/lib.rs                 validated socket basename, config and error
+    src/windows.rs             checked window IDs, geometry, map/focus/output state
   crates/raywm-compositor/
     src/main.rs                CLI, directory validation, display, loop, shutdown
     src/state.rs               core protocol handlers and client data
     src/shell.rs               XDG lifecycle, committed windows and ID adapter
-  tests/headless.rs            isolated process and real protocol tests
+    src/nested.rs              Winit output, EGL/GLES rendering and resize
+    src/input.rs               seat focus, keyboard/pointer forwarding and cleanup
+  tests/headless.rs            protocol tests and opt-in graphical probe
+  tests/nested-smoke.py        private graphical parent and pixel/input assertions
 ```
 
 Core has no dependencies on Smithay, Lua or native backends. Its desktop
@@ -174,7 +188,8 @@ Every loop iteration sleeps until an event, dispatches requests and flushes
 responses. A rejected client admission drops that stream and logs a warning;
 display/loop failures terminate with an error status. SIGINT/SIGTERM stop
 admission, disconnect clients, dispatch destruction while protocol state still
-exists, then remove event sources before dropping display/state. Startup
+exists, release client GPU resources and the EGL renderer while Winit is
+still alive, then remove event sources before dropping display/state. Startup
 failures release already-created resources through ordinary ownership.
 
 Headless globals are `wl_compositor`, `wl_subcompositor`, `wl_shm` and
@@ -186,32 +201,71 @@ on remap. Removing a role or disconnecting removes the view and model ID.
 A small delegating XDG-surface dispatch retains the correct protocol resource
 for `UnconfiguredBuffer` errors, while Smithay handles the actual requests.
 This is necessary with the pinned 0.7.0 API; current master examples differ.
-Unsupported popups are dismissed, not inserted into the desktop space.
+Unsupported popups are dismissed, not inserted into the desktop space. The
+shell advertises an empty WM-capability set: maximize, minimize, fullscreen
+and window menus are not implemented.
 
 Headless mode has no output, renderer or seat global. Frame callbacks remain
 pending because no surface is visible; no presentation is fabricated.
 Stage 1 at `aab3b3c` passed its original four tests before Stage 2 changes.
 
-Manual private launch (Linux; build and install prerequisites are in
-[INSTALL.md](INSTALL.md#experimental-rust-foundation)):
+### Rendering, output and input
 
-```sh
-cd rust
-cargo build --locked --workspace
-runtime=$(mktemp -d)
-chmod 700 "$runtime"
-env -i XDG_RUNTIME_DIR="$runtime" target/debug/raywm-smithay --socket raywm-test
-# The server logs the socket path. Press Ctrl+C to stop, then remove the directory.
-rmdir "$runtime"
-```
+Winit's event source shares the existing calloop with the listener, display
+poll FD and signalfd. It opens a normal host window and creates one
+`raywm-nested` output, `wl_seat` with keyboard/pointer, and
+`zxdg_output_manager_v1`. Logical coordinates deliberately match physical
+nested pixels (output scale 1); host scale-factor changes update pixel size.
+Resize updates current/preferred mode, discards the old local mode and sends
+new size suggestions through XDG configure. Window model geometry follows
+committed buffers, never a configure request alone. Zero-size targets are not
+rendered until a positive resize.
 
-`--help` needs no runtime directory. The default socket auto-selects
-`wayland-1` through `wayland-32` inside `XDG_RUNTIME_DIR`. `--socket NAME`
-accepts an ASCII basename (letters, digits, `.`, `_`, `-`, except `.`/`..`);
-OS path-length/bind errors are reported. The runtime directory must be
-absolute, owned by the current UID, private (mode 0700), and not a symlink.
-The process does not change `WAYLAND_DISPLAY`, connect to a parent display,
-read user configuration, request a VT or access input/DRM devices.
+The rendering path uses `Space<Window>`, `OutputDamageTracker` and Smithay's
+GLES surface render elements. Each requested frame binds the EGL framebuffer,
+clears the background and draws the committed windows. Buffer age zero gives
+safe full redraws; texture/import caches remain owned by Smithay. GPU objects
+are not recreated in an idle loop. Winit's submit performs pre-present
+notification and swaps; only a successful render/submit allows frame callbacks
+for surfaces present in the render report. Bufferless/occluded surfaces do not
+receive fabricated callbacks. This is frame readiness, not a physical presentation-time
+or latency guarantee. EGL/startup/render/submit errors exit through teardown;
+context recreation is deferred.
+
+Redraws are coalesced for commits (including frame requests), resize, focus and
+host exposure. There is no perpetual `request_redraw`, polling frame timer or
+idle animation. The event loop sleeps when there is no work. Rendering is
+still a full-output operation when work is requested; optimized damage/buffer
+age policy and explicit synchronization are later work.
+
+Keyboard events use Smithay's keyboard state and target the focused mapped
+window. Pointer hit testing uses the desktop space, with Smithay's implicit
+click grab; a click selects/raises the target. Host focus loss releases held
+keys/buttons and clears child focus. Unmap/destruction clears invalid native
+focus; an orphaned held-button interaction cannot send a release to a new
+surface. No host input is injected by the compositor. Host pointer imagery
+remains Winit's cursor; client cursor surfaces are not rendered yet. Smithay
+0.7 Winit does not expose a distinct cursor-leave event, so pointer leave is
+handled through hit testing, focus loss and surface lifetime. Scroll axes are
+forwarded; touch, gestures, compositor bindings and interactive moves/resizes
+are outside this stage.
+
+### Running
+
+The CLI is `raywm-smithay [--backend headless|winit] [--socket NAME]`.
+Headless remains the default and needs no parent display. `--help` / `-h`
+needs no runtime directory; a headless-only binary rejects Winit explicitly.
+The default socket auto-selects `wayland-1` through `wayland-32` inside
+XDG_RUNTIME_DIR. Names are ASCII basenames (letters, digits, `.`, `_`, `-`,
+except `.`/`..`); bind/path-length errors are reported. The runtime directory
+must be absolute, owned, mode 0700 and not a symlink.
+
+For nested launch, preserve the original host socket as an absolute path
+before selecting a private child runtime. RayWM never changes WAYLAND_DISPLAY
+inside its process; Winit must connect to the parent and clients must connect
+to the new server socket. Build/run commands, prerequisites and both launch
+modes are in [INSTALL.md](INSTALL.md#experimental-rust-foundation). The process
+reads no ray.conf/Lua configuration and never acquires a VT or session.
 
 ## Verification and limits
 
@@ -237,9 +291,13 @@ cargo test --workspace --locked
 cargo build --workspace --locked
 ```
 
-The XDG milestone passes fmt, check, clippy with warnings denied and nine
-tests (four core tests, five subprocess/protocol tests). `cargo build --locked
---workspace` also links the runnable server. `tests/docs-sync.sh` passes.
+Stage 2 passes all five commands above. The default test command runs nine
+automatic tests (four core, five protocol/process); the graphical test is
+explicitly ignored there and is run by the separate smoke script below.
+Headless-only clippy/tests and `tests/docs-sync.sh` also pass. The three
+original Stage 1 process tests remain in place; only the expected registry
+set expands for XDG. Source equality confirms Zig/build/config/protocol files
+are unchanged.
 
 `cargo test` includes a core socket-path validation test and five real
 subprocess smoke tests: registry/sync and mandatory shm formats; buffer
@@ -255,14 +313,46 @@ bufferless non-mapping, map/unmap, fresh remap, role recreation, invalid ACK
 and early-buffer protocol errors, release and abrupt disconnect. These checks
 establish more than compilation.
 
-Remaining Zig integration suites, ReleaseSafe, GLES, leak checking,
-sanitizers and physical DRM/KMS/input/hotplug are not run for Stage 1.
-Rust has no graphical smoke result because it has no renderer yet. Neither
-the Zig headless baseline nor the Rust protocol tests establish physical
-hardware or GTK/Qt/Xwayland/IME interoperability. Lua, IPC and configuration
-compatibility are **not implemented in Rust** at this stage. The harness
-does not yet enforce production per-client object/buffer/memory budgets;
-it is for controlled local tests, not an installed desktop session.
+The graphics qualification command is:
+
+```sh
+python3 rust/tests/nested-smoke.py
+```
+
+It uses the unchanged Zig `-Dtest-input` binary as a private headless pixman
+parent, with llvmpipe OpenGL ES 3.2 / EGL 1.5. All inherited display/socket
+variables are scrubbed; all virtual input goes only to the parent created by
+this invocation. The Rust client checks frame callbacks, XDG configure/ACK,
+wl_output resize, actual key/button/motion events and unmap focus/output leave.
+The parent screenshots verify red/green/blue/white quadrants at 800x600 and
+700x500 after resize, including orientation. Client, Rust compositor and parent
+must exit; socket/lock cleanup is asserted. Logs and PNGs remain in the printed
+new `/tmp/raywm-stage2-*` directory, not in the repository.
+
+Stage 2 passes the graphical smoke, including a bufferless child surface
+that must receive no frame callback. An additional nested launch in the
+existing host Wayland session passes with the unchanged independent Zig
+raywm-test-client: configure/ACK, a real submitted frame, role destruction and
+SIGTERM/socket cleanup. That host run injects no keyboard/pointer events;
+input/pixel/resize assertions belong to the private parent test. These are
+nested/software qualifications, not physical hardware or GPU-driver coverage.
+
+### Prototype limits
+
+The prototype supports one nested output and is qualified with one actual
+XDG-toplevel. Minimal overlapping windows can share the space; there is no
+full window manager, placement policy, move/resize grabs or focus-navigation
+API. Popups, clipboard/data-device, client cursor rendering, decorations,
+layer-shell, Xwayland, Lua, IPC, ray.conf and effects are not implemented.
+In particular, foot currently exits because it requires wl_data_device_manager;
+this stage makes no general toolkit/application compatibility claim.
+
+Physical DRM/KMS/input/hotplug, hardware GL, GTK/Qt, IME, clipboard/DnD, device
+rules, fractional client scaling, presentation-time, sanitizers and production
+resource/admission budgets remain unqualified. The unchanged Zig suites are
+not rerun wholesale in Stage 2; the Stage 1 baseline above remains historical
+and source equality is checked. Context-loss recovery and advanced damage
+tracking are deferred. This is a controlled prototype, not an installed desktop.
 
 ## Lua API v1 preservation strategy
 
@@ -288,12 +378,13 @@ it is for controlled local tests, not an installed desktop session.
 
 ## Subsequent stages and release gates
 
-1. **Stage 2 — one nested graphical window:** optional Winit backend,
+1. **Stage 2 — implemented:** optional Winit backend,
    compositor-owned output/render target, xdg-shell initial configure/ack/map,
    real shm rendering/damage, visible frame callbacks, buffer release and basic
    pointer/keyboard focus. Test parent resize, null-buffer unmap, role destroy,
    abrupt disconnect and shutdown, all within a private nested test session.
-2. **Desktop state:** checked IDs, configure geometry/resize, popup roles/grabs,
+2. **Stage 3 — desktop state:** build on checked IDs and the minimal model;
+   extend configure geometry/resize, popup roles/grabs,
    seat serials, focus/input matching, output scale/hotplug and pure workspace
    state machines. Port existing exact-event and pixel tests before expanding.
 3. **Lua host and settings:** compatibility boundary and unchanged API v1,

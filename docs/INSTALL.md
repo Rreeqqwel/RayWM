@@ -306,28 +306,74 @@ virtual-input protocols that let any client inject input.
 
 ### Experimental Rust foundation
 
-`rust/` contains a separate Stage 1 Smithay protocol server. The desktop,
-session entry, updater and release packaging still use Zig. Build locally
-on Linux with Rust/Cargo (validated with 1.99.1), a C linker, `pkg-config`
-and the xkbcommon development library. No wlroots or Lua is linked into
-the Rust server. Smithay is exactly 0.7.0; keep `rust/Cargo.lock` and use
-`cargo build --locked --workspace` from `rust/`.
+`rust/` contains the Stage 2 Smithay prototype. The desktop session entry,
+updater and release packaging still use Zig. Build on Linux with Rust/Cargo
+(validated with 1.99.1), a C linker, pkg-config and xkbcommon development files.
+Winit additionally needs Wayland and an EGL/OpenGL ES 3 implementation (for
+example Mesa). It uses the host compositor's ordinary client connection; it
+does not acquire a VT, KMS device, libinput devices or session. No wlroots or
+Lua is linked into the Rust server. Smithay stays exactly 0.7.0.
+
+From `rust/`, keep Cargo.lock and run `cargo build --workspace --locked`.
+The default Cargo feature `winit` enables the graphical backend. A
+renderer-free build is `cargo build -p raywm-compositor --no-default-features
+--locked`; that binary rejects `--backend winit` with a clear error.
 
 | Experimental binary option/environment | Meaning |
 |---|---|
-| `raywm-smithay --socket NAME` | Bind an ASCII basename in the runtime directory; default: auto-select `wayland-1` through `wayland-32`; an occupied socket is an error |
-| `raywm-smithay --help` / `-h` | Print help and exit without initializing a display |
-| `XDG_RUNTIME_DIR` | Required absolute directory owned by the current UID, with mode 0700 and no symlink; tests create a private directory |
+| `raywm-smithay --backend headless` | Default: core protocols and XDG lifecycle, no output, renderer or input |
+| `raywm-smithay --backend winit` | One nested host window, EGL/GLES rendering, virtual output and keyboard/pointer seat |
+| `raywm-smithay --socket NAME` | ASCII basename in XDG_RUNTIME_DIR; default: `wayland-1` through `wayland-32`; an occupied socket is an error |
+| `raywm-smithay --help` / `-h` | Print help without initializing display/backend |
+| `XDG_RUNTIME_DIR` | Absolute, owned, mode-0700 directory, not a symlink; contains the new server socket |
+| `WAYLAND_DISPLAY` | In Winit mode: incoming **parent** socket, preferably absolute when using a private child runtime; RayWM never overwrites it |
+| `DISPLAY` | Winit's upstream X11 fallback; unset it in the example to require the host Wayland connection |
 
-The server logs readiness with its socket path, client connection/disconnection
-and shutdown. Startup or display/loop failure logs an error and exits nonzero;
-a failed client admission logs a warning. SIGINT/SIGTERM stop cleanly and remove
-the socket. It does not set `WAYLAND_DISPLAY` or connect to the user's display.
-Headless XDG configure/ACK and window lifecycle are implemented; there is no
-window renderer, output or seat yet. For a controlled
-private launch and real protocol smoke checks, follow
-[RUST_MIGRATION.md](RUST_MIGRATION.md#stage-1-implementation) and
-[TESTING.md](TESTING.md#experimental-rust-foundation).
+The logs report socket readiness, client connection/disconnection, window
+role/configure/ACK/map/unmap/destruction and nested output sizes. Startup,
+display, EGL/render/submit or loop failure exits nonzero; a failed client
+admission logs a warning. SIGINT/SIGTERM and closing the Winit window stop the
+server and remove its socket/lock. No ray.conf or Lua configuration is loaded.
+
+Private headless launch from `rust/`:
+
+```sh
+runtime=$(mktemp -d)
+chmod 700 "$runtime"
+XDG_RUNTIME_DIR="$runtime" target/debug/raywm-smithay --backend headless --socket raywm-test
+# Ctrl+C stops it; then:
+rmdir "$runtime"
+```
+
+Nested Wayland launch from `rust/` (inside a running Wayland session):
+
+```sh
+case "$WAYLAND_DISPLAY" in
+  /*) parent_display=$WAYLAND_DISPLAY ;;
+  *) parent_display=$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY ;;
+esac
+nested_runtime=$(mktemp -d)
+chmod 700 "$nested_runtime"
+env -u DISPLAY WAYLAND_DISPLAY="$parent_display" XDG_RUNTIME_DIR="$nested_runtime" \
+  target/debug/raywm-smithay --backend winit --socket raywm-test
+# Close the nested window or press Ctrl+C, then:
+rmdir "$nested_runtime"
+```
+
+Before starting Winit, keep WAYLAND_DISPLAY pointed at the host. Connect child
+applications to `raywm-test` in the private runtime printed in the ready log.
+For example, in another terminal from the repository root, run
+`XDG_RUNTIME_DIR=/tmp/PRIVATE_RUNTIME WAYLAND_DISPLAY=raywm-test
+RAYWM_TEST_ROUNDS=1 zig-out/bin/raywm-test-client` after the ordinary Zig build.
+This independent simple client performs configure/ACK, displays a real buffer
+and exits. Clipboard/data-device is outside Stage 2, so foot currently refuses
+to start; general toolkit compatibility is not claimed.
+
+For an automated safe pixel/input/resize check, run
+`python3 rust/tests/nested-smoke.py` from the repository root. It creates its
+own headless parent and never injects input into the running desktop. See
+[TESTING.md](TESTING.md#experimental-rust-foundation) and the
+[pipeline and limitations](RUST_MIGRATION.md#rendering-output-and-input).
 
 ## 4. First start
 
