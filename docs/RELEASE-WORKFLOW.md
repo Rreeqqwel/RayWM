@@ -72,6 +72,7 @@ package's channel and never changes it, so Beta ↔ Stable upgrades keep it.
 | `v0.2.1-stable` | `0.2.1-1` |
 | `v0.2.2-beta` | `0.2.2beta-1` |
 | `v0.2.3-beta` | `0.2.3beta-1` |
+| `v0.2.4-beta` | `0.2.4beta-1` |
 
 `vercmp` orders these as listed: a Beta is older than the Stable of the same
 version and newer than every earlier Stable, so an older Stable is never

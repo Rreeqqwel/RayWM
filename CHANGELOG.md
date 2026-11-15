@@ -4,7 +4,14 @@ All notable changes to RayWM. Versions follow [Semantic
 Versioning](https://semver.org/); before 1.0, minor versions may break
 the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
-## [Unreleased]
+## [v0.2.4] — Security hotfixes, candidate prepared 2026-11-15
+
+The first Beta after v0.2.3: five hotfixes from the 2026-11-15 forensic
+audit, plus the existing documentation checks. `raywm.api_version` stays
+1; the public Lua and IPC surfaces are unchanged. The Lua instruction
+limit is now enforced per dispatched event instead of per callback, and
+every coroutine is explicitly armed. Headless tests do not establish
+physical hardware compatibility.
 
 ### Tests and infrastructure
 
@@ -62,6 +69,27 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
   forced text mode since v0.2.3, and it placed screenshot clipboard
   temporary files in `$XDG_RUNTIME_DIR` only, while the shipped plugin
   falls back to `/tmp` when it is unset.
+
+### Regression tests
+
+- `tests/captures.sh` c11: a ONESHOT locked pointer changes its committed
+  region; the compositor must survive, the client must be unlocked and the
+  pointer must be free. The old build aborts on wlroots' assertion.
+- `tests/lua_test.zig`: a fresh budget per event but one shared budget per
+  dispatch; the nested hog and the nested runaway are unloaded without
+  killing an innocent caller; `coroutine.create`, `wrap`, nested and
+  load-time coroutines end in a budget error; a thread created or resumed
+  without a hook is re-armed; normal `yield`/`resume`/`wrap` and coroutine
+  errors still work, including after a reload. Unit tests run under an
+  external timeout because the fixtures contain infinite loops.
+- `tests/session.sh` s10: an exclusive layer panel and a window are locked,
+  the panel is killed while locked and the session is unlocked; the
+  compositor must survive and the window must get the keyboard. The old
+  build segfaults in `restoreKeyboard()`.
+- `tests/ipc_test.py` and the core unit tests send `{},`, a trailing comma
+  after a full request, `{}]`, `{} {}`, `[1,]`, nested trailing commas and
+  `1,`; each must return `invalid_json` and leave the connection and
+  compositor usable.
 
 ## [v0.2.3] — Sticky, pinned and ray.conf, candidate prepared 2026-11-14
 

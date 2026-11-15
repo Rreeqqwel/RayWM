@@ -16,10 +16,11 @@ correctness ahead of artificial code reduction.
 - Basic settings (focus, gaps, borders, drag modifier) live in one small,
   validated file, `ray.conf`.
 
-> **Status: v0.2.3 (Sticky, pinned and ray.conf), Beta, experimental.**
-> v0.2.3 adds sticky and pinned windows, special (scratchpad) workspaces,
-> the `raywm.conf` → `ray.conf` rename, session autostart in `ray.conf`,
-> and the first torture-suite hardening pass; see [CHANGELOG.md](CHANGELOG.md).
+> **Status: v0.2.4 (Security hotfixes), Beta, experimental.**
+> v0.2.4 fixes a ONESHOT pointer-constraint use-after-free, malformed IPC
+> JSON aborting the compositor, a layer-focus use-after-free after session
+> lock, the Lua coroutine instruction-hook guarantee, and per-event Lua
+> instruction budgets; see [CHANGELOG.md](CHANGELOG.md).
 > Earlier implementation and validation are recorded in [the development
 > ledger](docs/DEVELOPMENT.md) and [candidate acceptance](docs/RELEASE-STATUS.md).
 > Headless tests do not establish physical hardware compatibility.
@@ -148,10 +149,10 @@ Releases come in two channels ([docs/RELEASE-WORKFLOW.md](docs/RELEASE-WORKFLOW.
   built into a pacman package as your user (needs `base-devel`,
   `wayland-protocols`, `pkgconf`):
   ```sh
-  sha256sum -c raywm-v0.2.3-beta.tar.gz.sha256
-  tar -xzf raywm-v0.2.3-beta.tar.gz
-  raywm-v0.2.3-beta/scripts/arch-package.sh v0.2.3-beta raywm-v0.2.3-beta.tar.gz pkg
-  sudo pacman -U pkg/raywm-0.2.3beta-1-x86_64.pkg.tar.zst
+  sha256sum -c raywm-v0.2.4-beta.tar.gz.sha256
+  tar -xzf raywm-v0.2.4-beta.tar.gz
+  raywm-v0.2.4-beta/scripts/arch-package.sh v0.2.4-beta raywm-v0.2.4-beta.tar.gz pkg
+  sudo pacman -U pkg/raywm-0.2.4beta-1-x86_64.pkg.tar.zst
   ```
   Other distributions: [docs/INSTALL.md](docs/INSTALL.md#install-a-beta-release-source-built-into-a-pacman-package).
 
