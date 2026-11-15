@@ -74,7 +74,7 @@ jobs:
         run: zig build -Dtest-input -p zig-out/test-input
 
       - name: Unit tests (core, Lua host, dwindle)
-        run: zig build test --summary all
+        run: timeout 600 zig build test --summary all
 
       - name: Headless smoke (pixman)
         run: tests/smoke.sh

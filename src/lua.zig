@@ -404,7 +404,9 @@ pub fn Runtime(comptime H: type) type {
         const Api = H.Api;
 
         /// `warned_dup`: a duplicate binding of this plugin was reported.
-        const Plugin = struct { name: [:0]u8, teardown: c_int, dead: bool = false, torn_down: bool = false, warned_dup: bool = false };
+        /// `chain_used`: instructions this plugin ran in the current dispatch
+        /// chain, for blaming a shared-budget failure (see hook()).
+        const Plugin = struct { name: [:0]u8, teardown: c_int, dead: bool = false, torn_down: bool = false, warned_dup: bool = false, chain_used: u64 = 0 };
         /// `manage`: the plugin lays out this view (no free move/resize).
         /// `workspace`: the plugin owns this workspace (see workspace.zig).
         const Kind = union(enum) { event: Event, bind: Key, timer: u64, manage: u32, workspace: u32, animation: u32, visual: u32 };
@@ -420,6 +422,23 @@ pub fn Runtime(comptime H: type) type {
         mem_used: usize = 0,
         budget: u64 = 0,
         depth: u32 = 0,
+        /// The innermost plugin callback on the stack. Instructions are
+        /// charged to it, so blame follows executed code, not whichever
+        /// `pcall` happens to catch the budget error.
+        exec_plugin: ?u32 = null,
+        /// The plugin whose callback opened the current chain (the first
+        /// plugin frame above init.lua/startup/a host dispatch). A budget
+        /// failure inside a nested event is charged to this chain, not to
+        /// an unrelated handler it synchronously called.
+        chain_plugin: ?u32 = null,
+        /// Plugin with the largest charge when the shared budget ran out;
+        /// used for errors raised inside a nested plugin frame.
+        budget_blame: ?u32 = null,
+        /// The budget error of this chain was already reported (a nested
+        /// frame and its caller both catch the same error).
+        budget_reported: bool = false,
+        /// The chain is over budget: stop dispatching further handlers.
+        chain_aborted: bool = false,
         in_config: bool = false,
         config_ok: bool = false,
         sweeping: bool = false,
@@ -623,14 +642,48 @@ pub fn Runtime(comptime H: type) type {
                 self.limits.warn("event dropped: plugin re-entry depth limit reached");
                 return false;
             }
-            if (self.depth == 0) self.budget = self.limits.instructions;
+            if (self.depth == 0) self.beginChain();
             self.depth += 1;
             return true;
         }
 
+        /// One instruction budget for a whole dispatch chain: every handler
+        /// of an event (and every nested event it emits) draws from it, so a
+        /// series of callbacks cannot each claim a fresh 10 M instructions.
+        /// The next independent entry starts clean.
+        fn beginChain(self: *Self) void {
+            self.budget = self.limits.instructions;
+            self.chain_plugin = null;
+            self.exec_plugin = null;
+            self.budget_blame = null;
+            self.budget_reported = false;
+            self.chain_aborted = false;
+            for (self.plugins.items) |*p| p.chain_used = 0;
+            if (self.exhausted) {
+                self.exhausted = false;
+                c.lua_sethook(self.L, hook, c.LUA_MASKCOUNT, hook_step);
+            }
+        }
+
+        fn finishChain(self: *Self) void {
+            self.budget = 0;
+            self.chain_plugin = null;
+            self.exec_plugin = null;
+            self.budget_blame = null;
+            self.budget_reported = false;
+            self.chain_aborted = false;
+            if (self.exhausted) {
+                self.exhausted = false;
+                if (self.alive) c.lua_sethook(self.L, hook, c.LUA_MASKCOUNT, hook_step);
+            }
+        }
+
         fn leave(self: *Self) void {
             self.depth -= 1;
-            if (self.depth == 0) self.leaveOuter();
+            if (self.depth == 0) {
+                self.finishChain();
+                self.leaveOuter();
+            }
         }
 
         /// Deferred work, run only when no Lua code is on the stack.
@@ -673,9 +726,10 @@ pub fn Runtime(comptime H: type) type {
                     if (p.teardown == no_ref) continue;
                     _ = c.lua_rawgeti(self.L, c.LUA_REGISTRYINDEX, p.teardown);
                     self.depth += 1;
-                    if (self.depth == 1) self.budget = self.limits.instructions;
+                    if (self.depth == 1) self.beginChain();
                     _ = self.pcall(@intCast(i), 0, 0);
                     self.depth -= 1;
+                    if (self.depth == 0) self.finishChain();
                 }
                 var j: usize = 0;
                 var released_manage = false;
@@ -702,12 +756,13 @@ pub fn Runtime(comptime H: type) type {
         /// reported as `source` and unload nothing.
         fn pcallAs(self: *Self, source: []const u8, nargs: c_int, nres: c_int) bool {
             const L = self.L;
-            if (self.depth <= 1) {
-                self.budget = self.limits.instructions;
-                if (self.exhausted) {
-                    self.exhausted = false;
-                    c.lua_sethook(L, hook, c.LUA_MASKCOUNT, hook_step);
-                }
+            if (self.depth == 0) self.beginChain();
+            const prev_exec = self.exec_plugin;
+            const prev_chain = self.chain_plugin;
+            self.exec_plugin = null;
+            defer {
+                self.exec_plugin = prev_exec;
+                self.chain_plugin = prev_chain;
             }
             const base = c.lua_gettop(L) - nargs;
             c.lua_pushcclosure(L, traceback, 0);
@@ -716,8 +771,7 @@ pub fn Runtime(comptime H: type) type {
             c.lua_rotate(L, base, -1);
             c.lua_settop(L, -2);
             if (rc == c.LUA_OK) return true;
-            self.limits.report(source, str(L, -1, "error"));
-            c.lua_settop(L, -2);
+            self.reportFailure(null, source, false);
             return false;
         }
 
@@ -725,14 +779,19 @@ pub fn Runtime(comptime H: type) type {
         /// logs a traceback and unloads the plugin (null = the config file).
         fn pcall(self: *Self, plugin: ?u32, nargs: c_int, nres: c_int) bool {
             const L = self.L;
-            // Each top-level callback gets the full budget, so a slow handler
-            // cannot get a later, innocent one killed.
-            if (self.depth <= 1) {
-                self.budget = self.limits.instructions;
-                if (self.exhausted) {
-                    self.exhausted = false;
-                    c.lua_sethook(L, hook, c.LUA_MASKCOUNT, hook_step);
-                }
+            if (self.depth == 0) self.beginChain();
+            const prev_exec = self.exec_plugin;
+            const prev_chain = self.chain_plugin;
+            // The outermost plugin frame of a chain is the one that asked
+            // for the work; a nested frame is not (see reportFailure).
+            const root_frame = plugin != null and prev_chain == null;
+            self.exec_plugin = plugin;
+            if (plugin) |p| {
+                if (self.chain_plugin == null) self.chain_plugin = p;
+            }
+            defer {
+                self.exec_plugin = prev_exec;
+                self.chain_plugin = prev_chain;
             }
             const base = c.lua_gettop(L) - nargs;
             c.lua_pushcclosure(L, traceback, 0);
@@ -741,11 +800,37 @@ pub fn Runtime(comptime H: type) type {
             c.lua_rotate(L, base, -1);
             c.lua_settop(L, -2);
             if (rc == c.LUA_OK) return true;
-            const name = if (plugin) |p| self.plugins.items[p].name else "init.lua";
-            self.limits.report(name, str(L, -1, "error"));
-            c.lua_settop(L, -2);
-            if (plugin) |p| self.kill(p);
+            // A shared budget failure is charged to the frame that owns the
+            // chain: the callback that synchronously dispatched other plugins
+            // must not get one of them unloaded for its own work (and cannot
+            // spend an unbounded budget through them either). When the failing
+            // frame is the chain root itself, it is the one that crossed the
+            // limit.
+            const culprit = if (self.exhausted and !root_frame) self.budget_blame orelse plugin else plugin;
+            self.reportFailure(culprit, "init.lua", true);
             return false;
+        }
+
+        /// Reports the error at the top of the stack and (for pcall) unloads
+        /// the plugin responsible. A budget failure is reported and charged
+        /// once per chain, even though each nested pcall sees the same error.
+        fn reportFailure(self: *Self, culprit: ?u32, fallback: []const u8, allow_kill: bool) void {
+            const L = self.L;
+            const msg = str(L, -1, "error");
+            if (self.exhausted) {
+                if (!self.budget_reported) {
+                    self.budget_reported = true;
+                    const name = if (culprit) |p| self.plugins.items[p].name else fallback;
+                    self.limits.report(name, msg);
+                    if (allow_kill) if (culprit) |p| self.kill(p);
+                }
+                self.chain_aborted = true;
+            } else {
+                const name = if (culprit) |p| self.plugins.items[p].name else fallback;
+                self.limits.report(name, msg);
+                if (allow_kill) if (culprit) |p| self.kill(p);
+            }
+            c.lua_settop(L, -2);
         }
 
         // ---- calls from the compositor -----------------------------------
@@ -778,6 +863,10 @@ pub fn Runtime(comptime H: type) type {
                     .nil => c.lua_pushnil(self.L),
                 };
                 _ = self.pcall(r.plugin, @intCast(1 + args.len), 0);
+                // The shared budget is gone: later handlers would fail on
+                // their first instruction. They keep their state (and are
+                // dispatched normally by the next event).
+                if (self.chain_aborted) break;
             }
         }
 
@@ -814,6 +903,7 @@ pub fn Runtime(comptime H: type) type {
                 self.sweep_needed = true;
                 _ = c.lua_rawgeti(self.L, c.LUA_REGISTRYINDEX, r.ref);
                 _ = self.pcall(r.plugin, 0, 0);
+                if (self.chain_aborted) break;
             }
             self.leave();
             self.armTimer();
@@ -890,18 +980,43 @@ pub fn Runtime(comptime H: type) type {
                 return;
             }
             if (self.budget > hook_step) {
+                self.charge(hook_step);
                 self.budget -= hook_step;
                 return;
             }
+            // The step that crosses the limit belongs to whoever was running.
+            self.charge(self.budget);
+            self.budget = 0;
             // Plugin code may catch this error with pcall and loop on; from
-            // now on the hook fires on every instruction until RayWM regains
-            // control (pcall() restores the normal step).
+            // now on the hook fires on every instruction until the chain ends
+            // (finishChain() restores the normal step).
             if (!self.exhausted) {
                 self.exhausted = true;
+                self.budget_blame = self.largestCharge();
                 c.lua_sethook(self.L, hook, c.LUA_MASKCOUNT, 1);
                 if (L != self.L) c.lua_sethook(L, hook, c.LUA_MASKCOUNT, 1);
             }
             _ = c.luaL_error(L, "instruction budget exceeded (runaway loop?)");
+        }
+
+        /// Charges `n` instructions to the plugin frame executing now.
+        fn charge(self: *Self, n: u64) void {
+            const p = self.exec_plugin orelse return;
+            if (p < self.plugins.items.len) self.plugins.items[p].chain_used += n;
+        }
+
+        /// Plugin that spent the most of the shared budget. Used when a
+        /// nested frame catches the error: the chain root may have spent the
+        /// budget itself, or the callee may be the runaway.
+        fn largestCharge(self: *Self) ?u32 {
+            var plugin: ?u32 = self.exec_plugin;
+            var most: u64 = 0;
+            for (self.plugins.items, 0..) |p, i| {
+                if (p.dead or p.chain_used <= most) continue;
+                most = p.chain_used;
+                plugin = @intCast(i);
+            }
+            return plugin;
         }
 
         fn traceback(L: ?*c.lua_State) callconv(.c) c_int {
@@ -1110,7 +1225,13 @@ pub fn Runtime(comptime H: type) type {
                 self.exhausted = false;
                 c.lua_sethook(self.L, hook, c.LUA_MASKCOUNT, hook_step);
             }
+            // A plugin load is isolated from init.lua's chain: its charge and
+            // its budget error must not follow the configuration code.
             self.budget = saved;
+            self.budget_blame = null;
+            self.budget_reported = false;
+            self.chain_aborted = false;
+            for (self.plugins.items) |*p| p.chain_used = 0;
         }
 
         fn fail(L: ?*c.lua_State, name: []const u8) c_int {

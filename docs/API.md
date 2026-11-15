@@ -106,15 +106,18 @@ plugin. See [SECURITY.md](../SECURITY.md).
 | Limit | Default | Behaviour |
 |---|---|---|
 | Lua memory | 64 MiB, **shared by all plugins** | an allocation over the cap fails with a Lua memory error in whichever plugin is running, which need not be the plugin that used the memory |
-| Instructions | about 10 M per top-level callback and plugin load | the running plugin gets `instruction budget exceeded`. Catching it with `pcall`, in any coroutine, does not help: the error is raised again on every instruction, in every Lua thread, until control returns to RayWM |
+| Instructions | about 10 M per dispatched event and per plugin load; all handlers of that event, and the events they emit synchronously, share it | the plugin that spends the budget gets `instruction budget exceeded`. Catching it with `pcall`, in any coroutine, does not help: the error is raised again on every instruction, in every Lua thread, until control returns to RayWM. A budget failure inside a nested event is charged to the callback that dispatched it, or to the nested handler when that one spent the most; the other plugin is not unloaded |
 | Registrations | 65 536 at once (all plugins together; registrations released during a callback count until it returns) | `too many registrations` |
 | `debug` library, native modules | not available: no `debug`, no `package.loadlib`, no C module searchers | they could rewrite internal upvalues and the registry, or load native code |
 | Precompiled chunks | refused (since v0.2.2-beta+1): `init.lua` and plugin files must be Lua source; `load`, `loadfile`, `dofile` and `require` load text only, whatever mode is asked for (`string.dump` still works) | Lua does not check binary chunks, and a damaged one (a corrupted plugin file) crashed the whole compositor |
 
 The instruction budget was reduced from 200 M to 10 M. Custom plugins that
-previously performed more work in a single callback or during loading may now
-be unloaded and should split work into smaller callbacks. The limit counts Lua
-instructions, not time spent inside native calls.
+previously performed more work in a single event dispatch or during loading
+may now be unloaded and should split work into smaller events. The limit
+counts Lua instructions, not time spent inside native calls. Independent
+events (a later key press, timer or compositor event) start with a fresh
+budget; a dispatch that exceeds it is stopped at the failing handler rather
+than letting the remaining handlers run without one.
 
 For context, profiling the shipped dwindle, focus, workspaces, window-rules,
 and screenshot test scenarios with a 10,000-instruction Lua hook found a

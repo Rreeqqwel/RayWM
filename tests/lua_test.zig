@@ -267,6 +267,15 @@ fn hasError(needle: []const u8) bool {
     for (0..error_count) |i| if (std.mem.indexOf(u8, error_lines[i][0..error_lens[i]], needle) != null) return true;
     return false;
 }
+/// A budget error attributed to `source`. Lua adds "file:line:" to the
+/// message, so the source and the reason are searched in the same line.
+fn hasBudgetError(source: []const u8) bool {
+    for (0..error_count) |i| {
+        const line = error_lines[i][0..error_lens[i]];
+        if (std.mem.indexOf(u8, line, source) != null and std.mem.indexOf(u8, line, "instruction budget exceeded") != null) return true;
+    }
+    return false;
+}
 /// Warnings (missing config, ignored reload, dropped events): counted, and
 /// the last one kept, without allocating.
 var warn_count: usize = 0;
@@ -547,7 +556,46 @@ test "failed reload disables Lua safely until the next reload" {
     _ = takeErrors();
 }
 
-test "instruction budget is per callback" {
+/// Runs a source chunk directly in the runtime's state (unit tests that
+/// need to inspect or disturb Lua-level structures). Returns false and
+/// clears the stack on error.
+fn runChunk(rt: *RT, src: []const u8) bool {
+    const ok = lua.c.luaL_loadbufferx(rt.L, src.ptr, src.len, "=test", "t") == lua.c.LUA_OK and
+        lua.c.lua_pcallk(rt.L, 0, 0, 0, 0, null) == lua.c.LUA_OK;
+    lua.c.lua_settop(rt.L, 0);
+    return ok;
+}
+
+test "a thread created or resumed without a hook is armed before it runs" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/coroutines.lua", .{ .instructions = 1_000_000, .report = report, .warn = warn });
+    defer rt.destroy();
+    const lc = lua.c;
+    const t = std.testing;
+
+    // Simulate a Lua that does not copy hooks into new threads: clear the
+    // main thread's hook. create/wrap must arm the new thread themselves.
+    lc.lua_sethook(rt.L, null, 0, 0);
+    try t.expect(runChunk(rt, "co = coroutine.create(function() while true do end end)"));
+    _ = lc.lua_getglobal(rt.L, "co");
+    const co = lc.lua_tothread(rt.L, -1);
+    lc.lua_settop(rt.L, 0);
+    try t.expect(co != null);
+    try t.expect(lc.lua_gethookmask(co.?) & lc.LUA_MASKCOUNT != 0);
+
+    // A thread that somehow lost its hook must get it back on resume:
+    // resetting an armed thread's count is not done (see coroutine_guard).
+    lc.lua_sethook(co.?, null, 0, 0);
+    // The coroutine runs over budget, and the step-1 hook it installs for
+    // the chain aborts this main-thread chunk too (that is the designed
+    // "cannot swallow the error" behaviour). Without the resume guard the
+    // coroutine would run to completion and this chunk would succeed.
+    try t.expect(!runChunk(rt, "coroutine.resume(co)"));
+    _ = takeErrors(); // the hook error is returned to resume, not reported
+}
+
+test "one dispatch shares one instruction budget; the next event starts fresh" {
     var f: Fake = .{};
     defer f.deinit();
     const rt = try start(&f, "tests/lua/budget.lua", .{ .instructions = 1_000_000, .report = report, .warn = warn });
@@ -557,6 +605,116 @@ test "instruction budget is per callback" {
     try std.testing.expectEqual(2, f.count("slow_a"));
     try std.testing.expectEqual(2, f.count("slow_b"));
     try std.testing.expectEqual(0, takeErrors());
+}
+
+test "a chain of handlers cannot multiply the budget" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/chain_budget.lua", .{ .instructions = 2_000_000, .report = report, .warn = warn });
+    defer rt.destroy();
+    rt.emit(.view_map, 1);
+    // The first handler spent about 1.2M of 2M and finished; the second
+    // cannot start over with a fresh 2M, so it fails alone.
+    try std.testing.expectEqual(1, f.count("chain_a"));
+    try std.testing.expectEqual(0, f.count("chain_b"));
+    try std.testing.expectEqual(0, f.count("teardown:chain_a"));
+    try std.testing.expectEqual(1, f.count("teardown:chain_b"));
+    try std.testing.expect(hasBudgetError("chain_b"));
+
+    // The next event is independent: its budget is fresh.
+    rt.emit(.view_map, 2);
+    try std.testing.expectEqual(2, f.count("chain_a"));
+    _ = takeErrors();
+}
+
+test "a nested event is charged to the handler that spent the budget" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/nested_hog.lua", .{ .instructions = 2_000_000, .report = report, .warn = warn });
+    defer rt.destroy();
+    f.rt = rt;
+    rt.emit(.view_title, 1);
+    // outer_hog used most of the chain, then caused the nested dispatch; the
+    // nested handler it woke is not unloaded for it.
+    try std.testing.expect(hasBudgetError("outer_hog"));
+    try std.testing.expectEqual(1, f.count("teardown:outer_hog"));
+    try std.testing.expectEqual(0, f.count("teardown:inner_busy"));
+    try std.testing.expectEqual(0, f.count("inner_done"));
+
+    // inner_busy is intact and runs with a fresh budget on its own event.
+    rt.emit(.view_focus, 1);
+    try std.testing.expectEqual(1, f.count("inner_done"));
+    _ = takeErrors();
+}
+
+test "a runaway nested handler is unloaded, not its caller" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/nested_runaway.lua", .{ .instructions = 2_000_000, .report = report, .warn = warn });
+    defer rt.destroy();
+    f.rt = rt;
+    rt.emit(.view_title, 1);
+    try std.testing.expect(hasBudgetError("inner_spin"));
+    try std.testing.expectEqual(0, f.count("teardown:outer_call"));
+    try std.testing.expectEqual(1, f.count("teardown:inner_spin"));
+    // outer_call's callback was cut short by the shared budget...
+    try std.testing.expectEqual(0, f.count("outer_after"));
+
+    // ...but it is still loaded and the next event gets a fresh budget.
+    rt.emit(.view_title, 2);
+    try std.testing.expectEqual(1, f.count("outer_after"));
+    _ = takeErrors();
+}
+
+test "coroutines obey the instruction budget; normal coroutines keep working" {
+    var f: Fake = .{};
+    defer f.deinit();
+    const rt = try start(&f, "tests/lua/coroutines.lua", .{ .instructions = 1_000_000, .report = report, .warn = warn });
+    defer rt.destroy();
+    // Baseline: a runaway in the main thread.
+    rt.emit(.view_map, 1);
+    // create, wrap, a nested coroutine, and one created during load.
+    rt.emit(.view_title, 1);
+    rt.emit(.view_app_id, 1);
+    rt.emit(.view_resized, 1);
+    rt.emit(.view_workspace, 1);
+    for ([_]struct { source: []const u8, teardown: []const u8 }{
+        .{ .source = "co_main", .teardown = "teardown:co_main" },
+        .{ .source = "co_create", .teardown = "teardown:co_create" },
+        .{ .source = "co_wrap", .teardown = "teardown:co_wrap" },
+        .{ .source = "co_nested", .teardown = "teardown:co_nested" },
+        .{ .source = "co_early", .teardown = "teardown:co_early" },
+    }) |p| {
+        if (!hasError(p.source) or !hasBudgetError(p.source)) {
+            std.debug.print("missing budget error for {s}; got {d} error(s):\n", .{ p.source, error_count });
+            for (0..error_count) |ei| std.debug.print("  {s}\n", .{error_lines[ei][0..error_lens[ei]]});
+            return error.TestUnexpectedResult;
+        }
+        try std.testing.expectEqual(1, f.count(p.teardown));
+    }
+
+    // yield/resume and wrap still behave, and a coroutine's own error stays
+    // with its resumer.
+    rt.emit(.view_focus, 1);
+    for ([_][]const u8{
+        "create-yield:true:2", "create-done:true:20",
+        "wrap-yield:10",       "wrap-done:8",
+        "co-error:false:true",
+    }) |want| {
+        if (f.count(want) != 1) {
+            std.debug.print("missing {s}\n", .{want});
+            return error.TestUnexpectedResult;
+        }
+    }
+
+    // A handler after a chain was aborted still runs, and a reload installs
+    // the guards on the new VM too.
+    rt.emit(.view_focus, 1);
+    try std.testing.expectEqual(2, f.count("create-yield:true:2"));
+    rt.requestReload();
+    rt.emit(.view_focus, 1);
+    try std.testing.expectEqual(3, f.count("create-yield:true:2"));
+    try std.testing.expectEqual(5, takeErrors()); // five budget errors; co_normal reports none
 }
 
 test "ctx.manage: owned by the plugin, released on request, unmap, reload and unload" {

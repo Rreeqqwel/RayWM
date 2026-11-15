@@ -18,6 +18,27 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ### Fixed
 
+- **A ONESHOT pointer constraint could crash the compositor when its region
+  changed.** wlroots emits `set_region` from inside its non-safe
+  `surface->synced` iteration; deactivating the constraint there freed it
+  while the loop was still walking the list. The region-triggered sync now
+  runs from the surface's commit signal, which wlroots emits after the
+  iteration, and is cancelled when the constraint or surface goes away
+  first. PERSISTENT constraints keep their existing behaviour.
+- **Coroutines were not guaranteed to run under the instruction hook.**
+  `coroutine.create` and `coroutine.wrap` now arm the new thread before any
+  plugin code can run in it, and `coroutine.resume` arms a thread that has
+  no hook without resetting the count of one that has (which would let a
+  coroutine postpone the budget by yielding). Nested and load-time
+  coroutines, and the `pcall` bypass, end with the budget error; normal
+  `yield`/`resume`, `wrap` and coroutine errors are unchanged.
+- **The instruction budget was granted to every handler instead of every
+  event.** All handlers of one dispatch, and the events they emit
+  synchronously, now share one budget; an independent event starts fresh.
+  When a nested event exhausts it, the error is charged to the plugin that
+  spent the budget (or to the nested runaway), not to an unrelated plugin
+  that happened to be on the stack, and the remaining handlers of the
+  aborted dispatch are not unloaded.
 - Documentation drift: the CLI reference in `docs/INSTALL.md` and the
   options list in README omitted `raywm -t`; `docs/ARCHITECTURE.md`
   listed a non-existent `outputconfig.zig` and left `conf.zig`,

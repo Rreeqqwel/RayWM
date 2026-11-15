@@ -34,7 +34,7 @@ tests/docs-sync.sh                          # docs cover the public surface
 
 zig build                                   # Debug build  -> zig-out/bin
 zig build -Dtest-input -p zig-out/test-input # TEST build with virtual input
-zig build test --summary all                # unit tests (Zig + Lua)
+timeout 600 zig build test --summary all   # unit tests (Zig + Lua); bounded: some regressions are infinite loops
 
 tests/smoke.sh                              # each script: RENDERER=gles2 to use GLES2
 tests/focus.sh
@@ -68,7 +68,7 @@ their session helpers in
 
 The recovered-state ledger is [DEVELOPMENT.md](DEVELOPMENT.md); final candidate
 acceptance and limitations are recorded separately from historical results.
-The combined unit suite contains 38 Zig tests (12 core, 26 Lua host), plus
+The combined unit suite contains 46 Zig tests (12 core, 34 Lua host), plus
 25 dwindle / 19 focus / 12 workspace / 10 rule Lua scenarios and 145 screenshot
 checks. Negative keymap compilation deliberately logs xkb errors; that test
 passes when the invalid keymap is rejected.
@@ -98,17 +98,18 @@ and physical input-to-photon latency remain SKIPPED. Follow
 
 ## Test suites
 
-`tests/captures.sh` adds ten real-client scenarios for pointer locking,
+`tests/captures.sh` adds eleven real-client scenarios for pointer locking,
 confinement, relative motion, shortcut inhibition, oneshot and persistent
-lifetime, client destruction, region updates and holes, cursor hints,
-plugin warps, emergency capture release, and session-lock interactions.
+lifetime, client destruction, region updates and holes (including a ONESHOT
+region commit), cursor hints, plugin warps, emergency capture release, and
+session-lock interactions.
 Its default build directory is `zig-out/test-input/bin`; an alternate
 test build directory can be passed as its first argument.
 
 | Suite | Kind | What it covers |
 |---|---|---|
 | `tests/core_test.zig` | Zig unit (12) | configure serial wrap-around, key spec parsing (including the screenshot plugin's `Print` bindings, with real xkb), **the keysym used for bindings with real xkb keymaps** (`us,ru` with either layout active, `ru,us`, `ru` alone, `de,us`), coordinate clamping, `spawn` (no zombie, unblocked signals) |
-| `tests/lua_test.zig` | Zig unit (26), fake compositor | the plugin contract (api version, rejection), dispatch, error isolation, deferred cleanup, cancellation during dispatch, stale/invalid ids, timers (injected clock), memory and instruction limits incl. `pcall`/coroutine bypass attempts (also via a coroutine created before the budget ran out), no `debug` library and no native module loading, nested dispatch depth limit, duplicate bindings, setup/teardown failures, reload (from a binding, init.lua, teardown, 25× with flat memory, failed reload), `ctx.manage` lifecycle, registration cap; **v0.1.2:** `raywm.pointer`, `pointer_warp` (incl. a refused warp), `view_border` (stale ids, bad widths and colors), `view().visible`, premultiplied color parsing, the duplicate-binding warning (once per plugin) and the no-bindings warning, binding thousands of keys in a loop without quadratic native work |
+| `tests/lua_test.zig` | Zig unit (34), fake compositor | the plugin contract (api version, rejection), dispatch, error isolation, deferred cleanup, cancellation during dispatch, stale/invalid ids, timers (injected clock), memory and instruction limits incl. `pcall`/coroutine bypass attempts (also via a coroutine created before the budget ran out), one shared budget per dispatched event (the next event starts fresh), nested-budget attribution (the hog or the nested runaway is unloaded, an innocent caller is not), `coroutine.create`/`wrap`/nested/load-time hooks, a thread created or resumed without a hook being re-armed, and normal `yield`/`resume`/errors, no `debug` library and no native module loading, nested dispatch depth limit, duplicate bindings, setup/teardown failures, reload (from a binding, init.lua, teardown, 25× with flat memory, failed reload), `ctx.manage` lifecycle, registration cap; **v0.1.2:** `raywm.pointer`, `pointer_warp` (incl. a refused warp), `view_border` (stale ids, bad widths and colors), `view().visible`, premultiplied color parsing, the duplicate-binding warning (once per plugin) and the no-bindings warning, binding thousands of keys in a loop without quadratic native work |
 | `tests/dwindle_test.lua` | Lua (25), mock API that follows the core's rules | layouts with 1–5, 10 and 20 windows; focus-based insertion; closing in every order (tree collapse); output resize, panels, two outputs and unplugging; geometry cache and externally moved windows; managed-window registration; tiny geometries; stale windows; reload and hostile snapshot files; **20 fixed-seed random sequences × 300 operations**, checking after every step that each window has exactly one leaf, parent links hold, every leaf is a live window, managed set = tiled set, no negative sizes, everything inside the usable area, no overlaps except in deliberately shared sub-pixel areas |
 | `tests/focus_test.lua` | Lua (19), mock API that follows the core's rules | the six bindings and their fixed registration order; directional focus with dwindle layouts of 2, 3 and 4 windows (ties broken by recency); windows directly beside beat diagonal ones, nearer beats better aligned; spanning/enclosing windows are in no direction; hidden windows; nothing focused; two outputs side by side and stacked (same output first, only the output in that direction, `cross_output = false`); the cycle order across outputs, wrapping, closed and hidden windows; warp off by default, to the centre only on a real change and not when the pointer is already inside, never while busy; the border following focus, removed on focus 0 and on teardown, a bordered window closing; reload without duplicate registrations; **400 random two-output layouts** checking every choice is visible, in that direction, on the same output whenever possible, never on an output in another direction, and deterministic |
 | `tests/screenshot_test.lua` | Lua (145 checks), mock API + `/bin/sh` with fake grim/slurp/wl-copy/notify-send | the five bindings and no key bound twice across binds.lua, dwindle.lua, focus.lua and screenshot.lua (nor over the core's fallback or VT keys); unload leaves nothing, other plugins untouched; reload; setup and callbacks call no blocking function (`os.execute`, `io.*`, ...) and spawn exactly one command; argument layout per action; directory choice (`XDG_PICTURES_DIR` absolute/relative/empty/trailing slash, `HOME`, `options.dir`, NUL bytes); the generated commands executed by `/bin/sh` against a directory name full of shell syntax (`$(...)`, backticks, quotes, `;`, newline, leading `-`, `*`): the file lands exactly there and nothing is executed; unique names with no temporary files left; mode 0600; region geometry passed to grim; cancel saves, runs and reports nothing; clipboard gets the PNG with `--type image/png`; each missing tool gives a logged error and a notification; no notify-send; grim failure; no `WAYLAND_DISPLAY`; no directory; `notify = false` |
