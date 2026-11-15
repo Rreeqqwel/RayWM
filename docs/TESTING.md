@@ -28,9 +28,10 @@ cargo clippy --workspace --all-targets --no-default-features --locked -- -D warn
 cargo test --workspace --no-default-features --locked
 ```
 
-The default tests comprise four core tests and five real headless process/
+The default tests comprise seven core tests and five real headless process/
 protocol tests. They cover ID deletion/non-reuse/exhaustion, geometry and
-focus; registry/sync, shm and synchronized subsurface buffer lifetimes;
+focus, cascade/stack/fallback policy, all resize edges, size limits, anchored
+commit geometry and operation cancellation; registry/sync, shm and synchronized subsurface buffer lifetimes;
 initial configure/ACK, map/unmap/remap and role recreation; premature-buffer/
 invalid-ACK isolation; disconnect, SIGINT/SIGTERM, socket ownership/cleanup and
 bad runtime/CLI/nested startup paths. Protocol errors printed by negative

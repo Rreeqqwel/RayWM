@@ -8,6 +8,9 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ### Added
 
+- Rust floating-policy core: explicit z-order/focus fallback, output-aware
+  cascade placement, checked move/resize state and commit-time resize anchors.
+  Unit tests cover all resize edges, limits, overflow and cancellation.
 - Framework-independent Rust window state with non-recycled IDs, checked
   ID exhaustion, geometry, mapping/focus and output association tests.
 - XDG-toplevel lifecycle in Rust: initial bufferless configure, ACK-gated

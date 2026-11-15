@@ -409,7 +409,8 @@ From `rust/`, run `cargo fmt --all -- --check`,
 `cargo check --workspace --locked`,
 `cargo clippy --workspace --all-targets --locked -- -D warnings`,
 `cargo test --workspace --locked` and `cargo build --workspace --locked`.
-These check the core window/ID/focus model and real XDG configure/ACK/lifecycle.
+These check the core window/ID/focus/stack/interaction model and real XDG
+configure/ACK/lifecycle.
 The graphical smoke is separate: `python3 rust/tests/nested-smoke.py` checks
 pixels, frames, input, resize and cleanup inside a private headless parent.
 

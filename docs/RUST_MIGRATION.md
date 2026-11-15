@@ -209,6 +209,18 @@ Headless mode has no output, renderer or seat global. Frame callbacks remain
 pending because no surface is visible; no presentation is fabricated.
 Stage 1 at `aab3b3c` passed its original four tests before Stage 2 changes.
 
+### Stage 3 core policy foundation
+
+The core desktop is now authoritative for bottom-to-top window order,
+exclusive focus and fallback to the topmost remaining mapped window.
+Cascade placement uses live IDs and output bounds; it retains no borrowed
+first-window reference. Core interaction state models move/resize targets,
+size-hint clamping, checked coordinate arithmetic and opposite-edge anchors.
+A resize target does not change committed geometry until the compositor
+adapter applies a client commit. Unmap/removal cancels operations; resize
+intents coalesce into the latest requested size. These pure transitions are
+unit-tested before their native input adapter is added.
+
 ### Rendering, output and input
 
 Winit's event source shares the existing calloop with the listener, display
