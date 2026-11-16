@@ -1,0 +1,405 @@
+2026-11-16T10:53:14.454340Z  INFO Created new socket name=Some("nested")
+2026-11-16T10:53:14.454643Z  INFO backend_winit: Initializing a winit backend
+2026-11-16T10:53:14.487582Z  INFO backend_winit{window=94785443607312}: Successfully selected EGL platform: PLATFORM_WAYLAND_KHR
+2026-11-16T10:53:14.493125Z  INFO backend_winit{window=94785443607312}: EGL Initialized
+2026-11-16T10:53:14.493163Z  INFO backend_winit{window=94785443607312}: EGL Version: (1, 5)
+2026-11-16T10:53:14.493210Z  INFO backend_winit{window=94785443607312}: Supported EGL display extensions: ["EGL_ANDROID_blob_cache", "EGL_ANDROID_native_fence_sync", "EGL_EXT_buffer_age", "EGL_EXT_config_select_group", "EGL_EXT_create_context_robustness", "EGL_EXT_image_dma_buf_import", "EGL_EXT_image_dma_buf_import_modifiers", "EGL_EXT_present_opaque", "EGL_EXT_query_reset_notification_strategy", "EGL_EXT_surface_compression", "EGL_EXT_swap_buffers_with_damage", "EGL_KHR_cl_event2", "EGL_KHR_config_attribs", "EGL_KHR_context_flush_control", "EGL_KHR_create_context", "EGL_KHR_create_context_no_error", "EGL_KHR_fence_sync", "EGL_KHR_get_all_proc_addresses", "EGL_KHR_gl_colorspace", "EGL_KHR_gl_renderbuffer_image", "EGL_KHR_gl_texture_2D_image", "EGL_KHR_gl_texture_3D_image", "EGL_KHR_gl_texture_cubemap_image", "EGL_KHR_image_base", "EGL_KHR_no_config_context", "EGL_KHR_reusable_sync", "EGL_KHR_surfaceless_context", "EGL_KHR_swap_buffers_with_damage", "EGL_EXT_pixel_format_float", "EGL_KHR_wait_sync", "EGL_MESA_configless_context", "EGL_MESA_gl_interop", "EGL_MESA_image_dma_buf_export", "EGL_MESA_query_driver", "EGL_MESA_x11_native_visual_id", ""]
+2026-11-16T10:53:14.493911Z  INFO backend_winit{window=94785443607312}:egl{platform="PLATFORM_WAYLAND_KHR" version=(1, 5)}:egl_context: Selected color format: PixelFormat { hardware_accelerated: true, color_bits: 30, alpha_bits: 2, depth_bits: 24, stencil_bits: 8, stereoscopy: false, multisampling: None, srgb: false }
+2026-11-16T10:53:14.553312Z  INFO backend_winit{window=94785443607312}:egl{platform="PLATFORM_WAYLAND_KHR" version=(1, 5)}:egl_context{ptr=94785444248176}: EGL context created priority=None
+2026-11-16T10:53:14.556196Z  INFO backend_winit{window=94785443607312}:egl{platform="PLATFORM_WAYLAND_KHR" version=(1, 5)}:egl_context{ptr=94785444248176}:renderer_gles2: Initializing OpenGL ES Renderer
+2026-11-16T10:53:14.556235Z  INFO backend_winit{window=94785443607312}:egl{platform="PLATFORM_WAYLAND_KHR" version=(1, 5)}:egl_context{ptr=94785444248176}:renderer_gles2: GL Version: "OpenGL ES 3.2 Mesa 26.2.5-arch1.1"
+2026-11-16T10:53:14.556259Z  INFO backend_winit{window=94785443607312}:egl{platform="PLATFORM_WAYLAND_KHR" version=(1, 5)}:egl_context{ptr=94785444248176}:renderer_gles2: GL Vendor: "Mesa"
+2026-11-16T10:53:14.556276Z  INFO backend_winit{window=94785443607312}:egl{platform="PLATFORM_WAYLAND_KHR" version=(1, 5)}:egl_context{ptr=94785444248176}:renderer_gles2: GL Renderer: "llvmpipe (LLVM 23.1.3, 256 bits)"
+2026-11-16T10:53:14.556294Z  INFO backend_winit{window=94785443607312}:egl{platform="PLATFORM_WAYLAND_KHR" version=(1, 5)}:egl_context{ptr=94785444248176}:renderer_gles2: Supported GL Extensions: ["GL_EXT_blend_minmax", "GL_EXT_multi_draw_arrays", "GL_EXT_texture_filter_anisotropic", "GL_EXT_texture_compression_s3tc", "GL_EXT_texture_compression_dxt1", "GL_EXT_texture_compression_rgtc", "GL_EXT_texture_format_BGRA8888", "GL_OES_compressed_ETC1_RGB8_texture", "GL_OES_depth24", "GL_OES_element_index_uint", "GL_OES_fbo_render_mipmap", "GL_OES_mapbuffer", "GL_OES_rgb8_rgba8", "GL_OES_standard_derivatives", "GL_OES_stencil8", "GL_OES_texture_3D", "GL_OES_texture_float", "GL_OES_texture_float_linear", "GL_OES_texture_half_float", "GL_OES_texture_half_float_linear", "GL_OES_texture_npot", "GL_OES_vertex_half_float", "GL_EXT_draw_instanced", "GL_EXT_texture_sRGB_decode", "GL_OES_EGL_image", "GL_OES_depth_texture", "GL_OES_packed_depth_stencil", "GL_EXT_texture_type_2_10_10_10_REV", "GL_NV_conditional_render", "GL_OES_get_program_binary", "GL_APPLE_texture_max_level", "GL_EXT_discard_framebuffer", "GL_EXT_read_format_bgra", "GL_EXT_texture_storage", "GL_NV_pack_subimage", "GL_NV_texture_barrier", "GL_EXT_frag_depth", "GL_NV_fbo_color_attachments", "GL_OES_EGL_image_external", "GL_OES_EGL_sync", "GL_OES_vertex_array_object", "GL_OES_viewport_array", "GL_ANGLE_pack_reverse_row_order", "GL_ANGLE_texture_compression_dxt3", "GL_ANGLE_texture_compression_dxt5", "GL_EXT_occlusion_query_boolean", "GL_EXT_robustness", "GL_EXT_sRGB", "GL_EXT_texture_rg", "GL_EXT_unpack_subimage", "GL_NV_draw_buffers", "GL_NV_read_buffer", "GL_NV_read_depth", "GL_NV_read_depth_stencil", "GL_NV_read_stencil", "GL_APPLE_sync", "GL_EXT_draw_buffers", "GL_EXT_instanced_arrays", "GL_EXT_map_buffer_range", "GL_EXT_shadow_samplers", "GL_KHR_debug", "GL_KHR_robustness", "GL_KHR_texture_compression_astc_ldr", "GL_NV_generate_mipmap_sRGB", "GL_NV_pixel_buffer_object", "GL_OES_depth_texture_cube_map", "GL_OES_required_internalformat", "GL_OES_surfaceless_context", "GL_EXT_color_buffer_float", "GL_EXT_debug_label", "GL_EXT_sRGB_write_control", "GL_EXT_separate_shader_objects", "GL_EXT_shader_framebuffer_fetch", "GL_EXT_shader_group_vote", "GL_EXT_shader_implicit_conversions", "GL_EXT_shader_integer_mix", "GL_EXT_tessellation_point_size", "GL_EXT_tessellation_shader", "GL_ANDROID_extension_pack_es31a", "GL_ARM_shader_framebuffer_fetch_depth_stencil", "GL_EXT_base_instance", "GL_EXT_compressed_ETC1_RGB8_sub_texture", "GL_EXT_copy_image", "GL_EXT_draw_buffers_indexed", "GL_EXT_draw_elements_base_vertex", "GL_EXT_gpu_shader5", "GL_EXT_multi_draw_indirect", "GL_EXT_polygon_offset_clamp", "GL_EXT_primitive_bounding_box", "GL_EXT_render_snorm", "GL_EXT_shader_io_blocks", "GL_EXT_texture_border_clamp", "GL_EXT_texture_buffer", "GL_EXT_texture_cube_map_array", "GL_EXT_texture_norm16", "GL_EXT_texture_view", "GL_KHR_blend_equation_advanced", "GL_KHR_blend_equation_advanced_coherent", "GL_KHR_context_flush_control", "GL_KHR_robust_buffer_access_behavior", "GL_NV_image_formats", "GL_NV_shader_noperspective_interpolation", "GL_OES_copy_image", "GL_OES_draw_buffers_indexed", "GL_OES_draw_elements_base_vertex", "GL_OES_gpu_shader5", "GL_OES_primitive_bounding_box", "GL_OES_sample_shading", "GL_OES_sample_variables", "GL_OES_shader_io_blocks", "GL_OES_shader_multisample_interpolation", "GL_OES_tessellation_point_size", "GL_OES_tessellation_shader", "GL_OES_texture_border_clamp", "GL_OES_texture_buffer", "GL_OES_texture_cube_map_array", "GL_OES_texture_stencil8", "GL_OES_texture_storage_multisample_2d_array", "GL_OES_texture_view", "GL_EXT_blend_func_extended", "GL_EXT_buffer_storage", "GL_EXT_float_blend", "GL_EXT_geometry_point_size", "GL_EXT_geometry_shader", "GL_EXT_texture_filter_minmax", "GL_EXT_texture_sRGB_R8", "GL_EXT_texture_sRGB_RG8", "GL_KHR_no_error", "GL_KHR_texture_compression_astc_sliced_3d", "GL_NV_sample_locations", "GL_OES_EGL_image_external_essl3", "GL_OES_geometry_point_size", "GL_OES_geometry_shader", "GL_OES_shader_image_atomic", "GL_EXT_clear_texture", "GL_EXT_clip_cull_distance", "GL_EXT_conservative_depth", "GL_EXT_disjoint_timer_query", "GL_EXT_texture_compression_s3tc_srgb", "GL_MESA_shader_integer_functions", "GL_EXT_clip_control", "GL_EXT_color_buffer_half_float", "GL_EXT_memory_object", "GL_EXT_memory_object_fd", "GL_EXT_texture_compression_bptc", "GL_EXT_texture_mirror_clamp_to_edge", "GL_KHR_parallel_shader_compile", "GL_NV_alpha_to_coverage_dither_control", "GL_EXT_EGL_image_storage", "GL_EXT_shader_framebuffer_fetch_non_coherent", "GL_EXT_texture_shadow_lod", "GL_MESA_framebuffer_flip_y", "GL_OVR_multiview", "GL_OVR_multiview2", "GL_EXT_depth_clamp", "GL_EXT_texture_query_lod", "GL_MESA_sampler_objects", "GL_EXT_EGL_image_storage_compression", "GL_EXT_texture_storage_compression", "GL_MESA_bgra", "GL_EXT_mesh_shader", "GL_EXT_shader_clock", ""]
+2026-11-16T10:53:14.574077Z  INFO new{name="raywm-nested" physical=PhysicalProperties { size: Size<smithay::utils::geometry::Raw> { w: 0, h: 0 }, subpixel: Unknown, make: "RayWM", model: "Winit" }}: Creating new Output name="raywm-nested"
+2026-11-16T10:53:14.574134Z  INFO Creating new wl_output output="raywm-nested"
+2026-11-16T10:53:14.574255Z  INFO input_seat{name="raywm-nested"}:add_keyboard{xkb_config=XkbConfig { rules: "", model: "", layout: "", variant: "", options: None } repeat_delay=200 repeat_rate=25}:input_keyboard: Initializing a xkbcommon handler with keymap query
+2026-11-16T10:53:14.577651Z  INFO input_seat{name="raywm-nested"}:add_keyboard{xkb_config=XkbConfig { rules: "", model: "", layout: "", variant: "", options: None } repeat_delay=200 repeat_rate=25}:input_keyboard: Loaded Keymap name="English (US)"
+2026-11-16T10:53:14.581441Z  INFO Nested output initialized width=800 height=600
+2026-11-16T10:53:14.581517Z  INFO Nested Wayland server ready socket="/tmp/raywm-stage4b-wlp8_w3g/nested/nested"
+2026-11-16T10:53:14.581832Z  INFO Nested output resized width=800 height=600
+2026-11-16T10:53:14.698137Z  INFO Nested output resized width=800 height=600
+2026-11-16T10:53:14.698258Z  INFO Nested output resized width=800 height=600
+2026-11-16T10:53:14.701922Z  INFO Host focus changed focused=true
+2026-11-16T10:53:14.950082Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 1 }
+2026-11-16T10:53:14.952422Z  INFO Window role created (unmapped) window=1
+2026-11-16T10:53:14.952966Z  INFO Initial configure sent window=1
+2026-11-16T10:53:14.955446Z  INFO Configure acknowledged window=1 serial=7
+2026-11-16T10:53:14.955895Z  INFO Window mapped window=1
+2026-11-16T10:53:14.956282Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@10[0], 10))
+2026-11-16T10:53:14.956911Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 2 }
+2026-11-16T10:53:14.958060Z  INFO Window role created (unmapped) window=2
+2026-11-16T10:53:14.958559Z  INFO Initial configure sent window=2
+2026-11-16T10:53:14.959840Z  INFO Configure acknowledged window=2 serial=17
+2026-11-16T10:53:14.960284Z  INFO Window mapped window=2
+2026-11-16T10:53:14.960703Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@10[0], 10)) after=Some(ObjectId(wl_surface@10[1], 10))
+2026-11-16T10:53:15.128350Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@10[1], 10)) after=Some(ObjectId(wl_surface@10[0], 10))
+2026-11-16T10:53:15.181053Z  INFO Selection owner changed seat="raywm-nested" clipboard=true mime_types=Some(["text/plain;charset=utf-8"])
+2026-11-16T10:53:15.182576Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T10:53:25.279247Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=true
+2026-11-16T10:53:26.779352Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T10:53:31.270248Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=false
+2026-11-16T10:53:32.675357Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T10:53:37.666682Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=false
+2026-11-16T10:53:38.119243Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T10:53:45.113266Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=true
+2026-11-16T10:53:45.576598Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T10:53:50.566542Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=false
+2026-11-16T10:53:50.990435Z  INFO Wayland client connected client_id=InnerClientId { id: 2, serial: 3 }
+2026-11-16T10:53:50.992029Z  INFO Window role created (unmapped) window=3
+2026-11-16T10:53:50.992597Z  INFO Initial configure sent window=3
+2026-11-16T10:53:50.996241Z  INFO Configure acknowledged window=3 serial=72
+2026-11-16T10:53:50.996689Z  INFO Window mapped window=3
+2026-11-16T10:53:50.997153Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@10[0], 10)) after=Some(ObjectId(wl_surface@10[2], 10))
+2026-11-16T10:53:51.191930Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T10:53:53.695007Z  INFO Wayland client disconnected client_id=InnerClientId { id: 2, serial: 3 } reason=ConnectionClosed
+2026-11-16T10:53:53.695344Z  INFO Window destroyed window=3
+2026-11-16T10:53:53.695694Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@10[2], 10)) after=Some(ObjectId(wl_surface@10[0], 10))
+2026-11-16T10:53:57.185690Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=false
+2026-11-16T10:53:58.548254Z  INFO Wayland client connected client_id=InnerClientId { id: 2, serial: 4 }
+2026-11-16T10:53:58.549695Z  INFO Window role created (unmapped) window=4
+2026-11-16T10:53:58.550000Z  INFO Initial configure sent window=4
+2026-11-16T10:53:58.552348Z  INFO Configure acknowledged window=4 serial=89
+2026-11-16T10:53:58.552577Z  INFO Window mapped window=4
+2026-11-16T10:53:58.552855Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@10[0], 10)) after=Some(ObjectId(wl_surface@10[2], 10))
+2026-11-16T10:53:58.721432Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T10:54:06.214126Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=true
+2026-11-16T10:54:06.683987Z  INFO Wayland client disconnected client_id=InnerClientId { id: 2, serial: 4 } reason=ConnectionClosed
+2026-11-16T10:54:06.684332Z  INFO Window destroyed window=4
+2026-11-16T10:54:06.684601Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@10[2], 10)) after=Some(ObjectId(wl_surface@10[0], 10))
+2026-11-16T10:54:06.685366Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 2 } reason=ConnectionClosed
+2026-11-16T10:54:06.685444Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 1 } reason=ConnectionClosed
+2026-11-16T10:54:06.685689Z  INFO Window destroyed window=1
+2026-11-16T10:54:06.685859Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@10[0], 10)) after=Some(ObjectId(wl_surface@10[1], 10))
+2026-11-16T10:54:06.686215Z  INFO Window destroyed window=2
+2026-11-16T10:54:06.686281Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@10[1], 10)) after=None
+2026-11-16T10:54:06.694511Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 5 }
+2026-11-16T10:54:06.696682Z  INFO Window role created (unmapped) window=5
+2026-11-16T10:54:06.697257Z  INFO Initial configure sent window=5
+2026-11-16T10:54:06.700311Z  INFO Configure acknowledged window=5 serial=112
+2026-11-16T10:54:06.700838Z  INFO Window mapped window=5
+2026-11-16T10:54:06.701240Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@10[0], 10))
+2026-11-16T10:54:06.702443Z  INFO Popup role created popup=ObjectId(wl_surface@20[0], 24) root=Some(5)
+2026-11-16T10:54:06.703835Z  INFO Popup mapped popup=ObjectId(wl_surface@20[0], 24)
+2026-11-16T10:54:06.704838Z  INFO Popup role created popup=ObjectId(wl_surface@24[0], 33) root=Some(5)
+2026-11-16T10:54:06.706214Z  INFO Popup mapped popup=ObjectId(wl_surface@24[0], 33)
+2026-11-16T10:54:06.743782Z  INFO Interactive operation started window=5 resize=false
+2026-11-16T10:54:09.906275Z  INFO Nested output resized width=700 height=500
+2026-11-16T10:54:10.560162Z  INFO Interactive operation started window=5 resize=false
+2026-11-16T10:54:17.483150Z  INFO Configure acknowledged window=5 serial=117
+2026-11-16T10:54:17.489565Z  INFO Window unmapped window=5
+2026-11-16T10:54:17.489772Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@10[0], 10)) after=None
+2026-11-16T10:54:17.491019Z  INFO Initial configure sent window=5
+2026-11-16T10:54:17.491904Z  INFO Configure acknowledged window=5 serial=153
+2026-11-16T10:54:17.492282Z  INFO Window mapped window=5
+2026-11-16T10:54:17.492610Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@10[0], 10))
+2026-11-16T10:54:17.493704Z  INFO Popup role created popup=ObjectId(wl_surface@21[0], 623) root=Some(5)
+2026-11-16T10:54:17.494981Z  INFO Popup mapped popup=ObjectId(wl_surface@21[0], 623)
+2026-11-16T10:54:17.496667Z  INFO Popup role created popup=ObjectId(wl_surface@19[0], 633) root=Some(5)
+2026-11-16T10:54:17.497589Z  INFO Window destroyed window=5
+2026-11-16T10:54:17.497715Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@10[0], 10)) after=None
+2026-11-16T10:54:17.498384Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 6 }
+2026-11-16T10:54:17.499768Z  INFO Window role created (unmapped) window=6
+2026-11-16T10:54:17.500206Z  INFO Initial configure sent window=6
+2026-11-16T10:54:17.502292Z  INFO Configure acknowledged window=6 serial=168
+2026-11-16T10:54:17.502705Z  INFO Window mapped window=6
+2026-11-16T10:54:17.503025Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@10[1], 10))
+2026-11-16T10:54:17.504105Z  INFO Configure acknowledged window=6 serial=173
+2026-11-16T10:54:17.505046Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 6 } reason=ConnectionClosed
+2026-11-16T10:54:17.505229Z  INFO Window destroyed window=6
+2026-11-16T10:54:17.505309Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@10[1], 10)) after=None
+2026-11-16T10:54:17.505676Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 5 } reason=ConnectionClosed
+2026-11-16T10:54:17.561120Z  INFO Nested output resized width=800 height=600
+2026-11-16T10:54:17.575534Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 7 }
+2026-11-16T10:54:17.577875Z  INFO Window role created (unmapped) window=7
+2026-11-16T10:54:17.578365Z  INFO Initial configure sent window=7
+2026-11-16T10:54:17.579942Z  INFO Configure acknowledged window=7 serial=185
+2026-11-16T10:54:17.580451Z  INFO Window mapped window=7
+2026-11-16T10:54:17.580887Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@10[0], 10))
+2026-11-16T10:54:17.581869Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 8 }
+2026-11-16T10:54:17.583353Z  INFO Window role created (unmapped) window=8
+2026-11-16T10:54:17.583873Z  INFO Initial configure sent window=8
+2026-11-16T10:54:17.585485Z  INFO Configure acknowledged window=8 serial=195
+2026-11-16T10:54:17.585894Z  INFO Window mapped window=8
+2026-11-16T10:54:17.586300Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@10[0], 10)) after=Some(ObjectId(wl_surface@10[1], 10))
+2026-11-16T10:54:17.638310Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@10[1], 10)) after=Some(ObjectId(wl_surface@10[0], 10))
+2026-11-16T10:54:21.899158Z  INFO Popup role created popup=ObjectId(wl_surface@21[0], 48) root=Some(7)
+2026-11-16T10:54:21.899496Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@10[0], 10)) after=Some(ObjectId(wl_surface@21[0], 48))
+2026-11-16T10:54:21.901289Z  INFO Popup mapped popup=ObjectId(wl_surface@21[0], 48)
+2026-11-16T10:54:22.045375Z  INFO Popup role created popup=ObjectId(wl_surface@26[0], 61) root=Some(7)
+2026-11-16T10:54:22.048878Z  INFO Popup role created popup=ObjectId(wl_surface@25[0], 66) root=Some(7)
+2026-11-16T10:54:27.388529Z  INFO Popup role created popup=ObjectId(wl_surface@27[0], 73) root=Some(7)
+2026-11-16T10:54:27.440432Z  INFO Wayland client connected client_id=InnerClientId { id: 2, serial: 9 }
+2026-11-16T10:54:27.442153Z  INFO Window role created (unmapped) window=9
+2026-11-16T10:54:27.442690Z  INFO Initial configure sent window=9
+2026-11-16T10:54:27.444323Z  INFO Configure acknowledged window=9 serial=250
+2026-11-16T10:54:27.444788Z  INFO Window mapped window=9
+2026-11-16T10:54:27.445256Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@10[0], 10)) after=Some(ObjectId(wl_surface@10[2], 10))
+2026-11-16T10:54:27.446065Z  INFO Wayland client disconnected client_id=InnerClientId { id: 2, serial: 9 } reason=ConnectionClosed
+2026-11-16T10:54:27.446322Z  INFO Window destroyed window=9
+2026-11-16T10:54:27.446621Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@10[2], 10)) after=Some(ObjectId(wl_surface@10[0], 10))
+2026-11-16T10:54:27.448072Z  INFO Popup role created popup=ObjectId(wl_surface@22[0], 80) root=Some(7)
+2026-11-16T10:54:27.495573Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=false
+2026-11-16T10:54:28.990868Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 7 } reason=ConnectionClosed
+2026-11-16T10:54:28.991226Z  INFO Window destroyed window=7
+2026-11-16T10:54:28.991529Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@10[0], 10)) after=Some(ObjectId(wl_surface@10[1], 10))
+2026-11-16T10:54:30.985693Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=true
+2026-11-16T10:54:31.212094Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 8 } reason=ConnectionClosed
+2026-11-16T10:54:31.212356Z  INFO Window destroyed window=8
+2026-11-16T10:54:31.212473Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@10[1], 10)) after=None
+2026-11-16T10:54:36.870504Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 10 }
+2026-11-16T10:54:38.960766Z  INFO Window role created (unmapped) window=10
+2026-11-16T10:54:38.960992Z  INFO Initial configure sent window=10
+2026-11-16T10:54:38.964048Z  INFO Configure acknowledged window=10 serial=269
+2026-11-16T10:54:38.964738Z  INFO Window mapped window=10
+2026-11-16T10:54:38.965218Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@17[0], 18))
+2026-11-16T10:54:38.981013Z  INFO Configure acknowledged window=10 serial=274
+2026-11-16T10:54:39.135376Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 11 }
+2026-11-16T10:54:39.236047Z  INFO Wayland client connected client_id=InnerClientId { id: 2, serial: 12 }
+2026-11-16T10:54:39.236578Z  INFO Wayland client disconnected client_id=InnerClientId { id: 2, serial: 12 } reason=ConnectionClosed
+2026-11-16T10:54:39.236740Z  INFO Wayland client connected client_id=InnerClientId { id: 2, serial: 13 }
+2026-11-16T10:54:39.237133Z  INFO Wayland client disconnected client_id=InnerClientId { id: 2, serial: 13 } reason=ConnectionClosed
+2026-11-16T10:54:39.268263Z  INFO Wayland client connected client_id=InnerClientId { id: 2, serial: 14 }
+2026-11-16T10:54:39.268796Z  INFO Wayland client disconnected client_id=InnerClientId { id: 2, serial: 14 } reason=ConnectionClosed
+2026-11-16T10:54:39.370057Z  INFO Window role created (unmapped) window=11
+2026-11-16T10:54:39.370340Z  INFO Initial configure sent window=11
+2026-11-16T10:54:39.372533Z  INFO Configure acknowledged window=11 serial=282
+2026-11-16T10:54:39.569556Z  INFO Window mapped window=11
+2026-11-16T10:54:39.570048Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[0], 18)) after=Some(ObjectId(wl_surface@18[1], 21))
+2026-11-16T10:54:39.745381Z  INFO Configure acknowledged window=11 serial=286
+2026-11-16T10:54:39.745731Z  INFO Configure acknowledged window=10 serial=285
+2026-11-16T10:54:40.576731Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T10:54:41.975903Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=true
+2026-11-16T10:54:42.774061Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 11 } reason=ConnectionClosed
+2026-11-16T10:54:42.774553Z  INFO Window destroyed window=11
+2026-11-16T10:54:42.774844Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@18[1], 21)) after=Some(ObjectId(wl_surface@17[0], 18))
+2026-11-16T10:54:42.778813Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 10 } reason=ConnectionClosed
+2026-11-16T10:54:42.778980Z  INFO Window destroyed window=10
+2026-11-16T10:54:42.779034Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[0], 18)) after=None
+2026-11-16T10:54:42.860803Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 15 }
+2026-11-16T10:54:42.952837Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 16 }
+2026-11-16T10:54:42.953668Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 16 } reason=ConnectionClosed
+2026-11-16T10:54:42.953928Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 17 }
+2026-11-16T10:54:42.954327Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 17 } reason=ConnectionClosed
+2026-11-16T10:54:42.985723Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 18 }
+2026-11-16T10:54:42.986182Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 18 } reason=ConnectionClosed
+2026-11-16T10:54:43.048241Z  INFO Window role created (unmapped) window=12
+2026-11-16T10:54:43.048550Z  INFO Initial configure sent window=12
+2026-11-16T10:54:43.050006Z  INFO Configure acknowledged window=12 serial=305
+2026-11-16T10:54:43.142099Z  INFO Window mapped window=12
+2026-11-16T10:54:43.142384Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@18[0], 21))
+2026-11-16T10:54:43.146595Z  INFO Configure acknowledged window=12 serial=310
+2026-11-16T10:54:43.169759Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 19 }
+2026-11-16T10:54:43.175624Z  INFO Window role created (unmapped) window=13
+2026-11-16T10:54:43.175937Z  INFO Initial configure sent window=13
+2026-11-16T10:54:43.287723Z  INFO Configure acknowledged window=13 serial=316
+2026-11-16T10:54:43.288346Z  INFO Window mapped window=13
+2026-11-16T10:54:43.288819Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@18[0], 21)) after=Some(ObjectId(wl_surface@17[1], 18))
+2026-11-16T10:54:43.292320Z  INFO Configure acknowledged window=13 serial=319
+2026-11-16T10:54:43.292978Z  INFO Configure acknowledged window=12 serial=318
+2026-11-16T10:54:44.277775Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T10:54:45.676957Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=true
+2026-11-16T10:54:46.461925Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 19 } reason=ConnectionClosed
+2026-11-16T10:54:46.462214Z  INFO Window destroyed window=13
+2026-11-16T10:54:46.462474Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[1], 18)) after=Some(ObjectId(wl_surface@18[0], 21))
+2026-11-16T10:54:46.477897Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 15 } reason=ConnectionClosed
+2026-11-16T10:54:46.478104Z  INFO Window destroyed window=12
+2026-11-16T10:54:46.478157Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@18[0], 21)) after=None
+2026-11-16T10:54:46.501710Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 20 }
+2026-11-16T10:54:46.616219Z  INFO Window role created (unmapped) window=14
+2026-11-16T10:54:46.616759Z  INFO Initial configure sent window=14
+2026-11-16T10:54:46.619567Z  INFO Configure acknowledged window=14 serial=337
+2026-11-16T10:54:46.620191Z  INFO Window mapped window=14
+2026-11-16T10:54:46.620640Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@17[0], 18))
+2026-11-16T10:54:46.636049Z  INFO Configure acknowledged window=14 serial=342
+2026-11-16T10:54:46.700333Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 21 }
+2026-11-16T10:54:46.794247Z  INFO Wayland client connected client_id=InnerClientId { id: 2, serial: 22 }
+2026-11-16T10:54:46.794831Z  INFO Wayland client disconnected client_id=InnerClientId { id: 2, serial: 22 } reason=ConnectionClosed
+2026-11-16T10:54:46.795015Z  INFO Wayland client connected client_id=InnerClientId { id: 2, serial: 23 }
+2026-11-16T10:54:46.795487Z  INFO Wayland client disconnected client_id=InnerClientId { id: 2, serial: 23 } reason=ConnectionClosed
+2026-11-16T10:54:46.825819Z  INFO Wayland client connected client_id=InnerClientId { id: 2, serial: 24 }
+2026-11-16T10:54:46.826285Z  INFO Wayland client disconnected client_id=InnerClientId { id: 2, serial: 24 } reason=ConnectionClosed
+2026-11-16T10:54:46.889544Z  INFO Window role created (unmapped) window=15
+2026-11-16T10:54:46.889855Z  INFO Initial configure sent window=15
+2026-11-16T10:54:46.892468Z  INFO Configure acknowledged window=15 serial=349
+2026-11-16T10:54:46.994084Z  INFO Window mapped window=15
+2026-11-16T10:54:46.994359Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[0], 18)) after=Some(ObjectId(wl_surface@18[1], 21))
+2026-11-16T10:54:46.997063Z  INFO Configure acknowledged window=14 serial=351
+2026-11-16T10:54:46.997391Z  INFO Configure acknowledged window=15 serial=352
+2026-11-16T10:54:47.935987Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T10:54:48.734980Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=false
+2026-11-16T10:54:49.357910Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 20 } reason=ConnectionClosed
+2026-11-16T10:54:49.358298Z  INFO Window destroyed window=14
+2026-11-16T10:54:49.375274Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 21 } reason=ConnectionClosed
+2026-11-16T10:54:49.375607Z  INFO Window destroyed window=15
+2026-11-16T10:54:49.375691Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@18[1], 21)) after=None
+2026-11-16T10:54:49.400073Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 25 }
+2026-11-16T10:54:49.531493Z  INFO Window role created (unmapped) window=16
+2026-11-16T10:54:49.531928Z  INFO Initial configure sent window=16
+2026-11-16T10:54:49.535266Z  INFO Configure acknowledged window=16 serial=369
+2026-11-16T10:54:49.535792Z  INFO Window mapped window=16
+2026-11-16T10:54:49.536269Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@17[0], 18))
+2026-11-16T10:54:49.559612Z  INFO Configure acknowledged window=16 serial=374
+2026-11-16T10:54:49.626738Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 26 }
+2026-11-16T10:54:49.717302Z  INFO Wayland client connected client_id=InnerClientId { id: 2, serial: 27 }
+2026-11-16T10:54:49.718004Z  INFO Wayland client disconnected client_id=InnerClientId { id: 2, serial: 27 } reason=ConnectionClosed
+2026-11-16T10:54:49.718217Z  INFO Wayland client connected client_id=InnerClientId { id: 2, serial: 28 }
+2026-11-16T10:54:49.718753Z  INFO Wayland client disconnected client_id=InnerClientId { id: 2, serial: 28 } reason=ConnectionClosed
+2026-11-16T10:54:49.749968Z  INFO Wayland client connected client_id=InnerClientId { id: 2, serial: 29 }
+2026-11-16T10:54:49.750547Z  INFO Wayland client disconnected client_id=InnerClientId { id: 2, serial: 29 } reason=ConnectionClosed
+2026-11-16T10:54:49.811218Z  INFO Window role created (unmapped) window=17
+2026-11-16T10:54:49.811596Z  INFO Initial configure sent window=17
+2026-11-16T10:54:49.814174Z  INFO Configure acknowledged window=17 serial=381
+2026-11-16T10:54:49.926715Z  INFO Window mapped window=17
+2026-11-16T10:54:49.927224Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[0], 18)) after=Some(ObjectId(wl_surface@18[1], 21))
+2026-11-16T10:54:49.930953Z  INFO Configure acknowledged window=16 serial=383
+2026-11-16T10:54:49.931549Z  INFO Configure acknowledged window=17 serial=384
+2026-11-16T10:54:51.630608Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 25 } reason=ConnectionClosed
+2026-11-16T10:54:51.630898Z  INFO Window destroyed window=16
+2026-11-16T10:54:53.130653Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 26 } reason=ConnectionClosed
+2026-11-16T10:54:53.130995Z  INFO Window destroyed window=17
+2026-11-16T10:54:53.131144Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@18[1], 21)) after=None
+2026-11-16T10:54:53.206513Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 30 }
+2026-11-16T10:54:53.293598Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 31 }
+2026-11-16T10:54:53.294077Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 31 } reason=ConnectionClosed
+2026-11-16T10:54:53.294209Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 32 }
+2026-11-16T10:54:53.294565Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 32 } reason=ConnectionClosed
+2026-11-16T10:54:53.324052Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 33 }
+2026-11-16T10:54:53.324610Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 33 } reason=ConnectionClosed
+2026-11-16T10:54:53.384197Z  INFO Window role created (unmapped) window=18
+2026-11-16T10:54:53.384450Z  INFO Initial configure sent window=18
+2026-11-16T10:54:53.385707Z  INFO Configure acknowledged window=18 serial=403
+2026-11-16T10:54:53.477072Z  INFO Window mapped window=18
+2026-11-16T10:54:53.477395Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@18[0], 21))
+2026-11-16T10:54:53.481395Z  INFO Configure acknowledged window=18 serial=408
+2026-11-16T10:54:53.501519Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 34 }
+2026-11-16T10:54:53.507332Z  INFO Window role created (unmapped) window=19
+2026-11-16T10:54:53.507628Z  INFO Initial configure sent window=19
+2026-11-16T10:54:53.607652Z  INFO Configure acknowledged window=19 serial=414
+2026-11-16T10:54:53.608228Z  INFO Window mapped window=19
+2026-11-16T10:54:53.608738Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@18[0], 21)) after=Some(ObjectId(wl_surface@17[1], 18))
+2026-11-16T10:54:53.613012Z  INFO Configure acknowledged window=18 serial=416
+2026-11-16T10:54:53.613596Z  INFO Configure acknowledged window=19 serial=417
+2026-11-16T10:54:54.546819Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T10:54:55.328085Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 34 } reason=ConnectionClosed
+2026-11-16T10:54:55.328531Z  INFO Window destroyed window=19
+2026-11-16T10:54:55.328849Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[1], 18)) after=Some(ObjectId(wl_surface@18[0], 21))
+2026-11-16T10:54:55.332492Z  INFO Configure acknowledged window=18 serial=426
+2026-11-16T10:54:57.795534Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=true
+2026-11-16T10:54:58.925594Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 30 } reason=ConnectionClosed
+2026-11-16T10:54:58.925955Z  INFO Window destroyed window=18
+2026-11-16T10:54:58.926023Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@18[0], 21)) after=None
+2026-11-16T10:54:59.009753Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 35 }
+2026-11-16T10:54:59.103392Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 36 }
+2026-11-16T10:54:59.104342Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 36 } reason=ConnectionClosed
+2026-11-16T10:54:59.104637Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 37 }
+2026-11-16T10:54:59.105321Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 37 } reason=ConnectionClosed
+2026-11-16T10:54:59.137007Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 38 }
+2026-11-16T10:54:59.137729Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 38 } reason=ConnectionClosed
+2026-11-16T10:54:59.198160Z  INFO Window role created (unmapped) window=20
+2026-11-16T10:54:59.198465Z  INFO Initial configure sent window=20
+2026-11-16T10:54:59.200177Z  INFO Configure acknowledged window=20 serial=435
+2026-11-16T10:54:59.310362Z  INFO Window mapped window=20
+2026-11-16T10:54:59.310698Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@18[0], 21))
+2026-11-16T10:54:59.315496Z  INFO Configure acknowledged window=20 serial=440
+2026-11-16T10:54:59.885956Z  INFO Popup role created popup=ObjectId(wl_surface@30[0], 45) root=Some(20)
+2026-11-16T10:54:59.886349Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@18[0], 21)) after=Some(ObjectId(wl_surface@30[0], 45))
+2026-11-16T10:55:00.712173Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 35 } reason=ConnectionClosed
+2026-11-16T10:55:00.712602Z  INFO Window destroyed window=20
+2026-11-16T10:55:00.712680Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@30[0], 45)) after=None
+2026-11-16T10:55:00.739998Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 39 }
+2026-11-16T10:55:00.849574Z  INFO Window role created (unmapped) window=21
+2026-11-16T10:55:00.849996Z  INFO Initial configure sent window=21
+2026-11-16T10:55:00.852742Z  INFO Configure acknowledged window=21 serial=468
+2026-11-16T10:55:00.853219Z  INFO Window mapped window=21
+2026-11-16T10:55:00.853609Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@17[0], 18))
+2026-11-16T10:55:00.869107Z  INFO Configure acknowledged window=21 serial=473
+2026-11-16T10:55:02.375874Z  INFO Popup role created popup=ObjectId(wl_surface@23[0], 36) root=Some(21)
+2026-11-16T10:55:02.376175Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[0], 18)) after=Some(ObjectId(wl_surface@23[0], 36))
+2026-11-16T10:55:02.378799Z  INFO Popup mapped popup=ObjectId(wl_surface@23[0], 36)
+2026-11-16T10:55:03.150844Z  INFO Popup role created popup=ObjectId(wl_surface@32[0], 49) root=Some(21)
+2026-11-16T10:55:03.151160Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@23[0], 36)) after=Some(ObjectId(wl_surface@32[0], 49))
+2026-11-16T10:55:03.151950Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[0], 18)) after=Some(ObjectId(wl_surface@32[0], 49))
+2026-11-16T10:55:03.155569Z  INFO Popup mapped popup=ObjectId(wl_surface@32[0], 49)
+2026-11-16T10:55:03.449205Z  INFO Popup role created popup=ObjectId(wl_surface@43[0], 61) root=Some(21)
+2026-11-16T10:55:03.449468Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@32[0], 49)) after=Some(ObjectId(wl_surface@43[0], 61))
+2026-11-16T10:55:03.450045Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[0], 18)) after=Some(ObjectId(wl_surface@43[0], 61))
+2026-11-16T10:55:03.454223Z  INFO Popup mapped popup=ObjectId(wl_surface@43[0], 61)
+2026-11-16T10:55:04.678164Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@43[0], 61)) after=Some(ObjectId(wl_surface@32[0], 49))
+2026-11-16T10:55:04.678901Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@32[0], 49)) after=Some(ObjectId(wl_surface@23[0], 36))
+2026-11-16T10:55:04.679663Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@23[0], 36)) after=Some(ObjectId(wl_surface@17[0], 18))
+2026-11-16T10:55:05.042797Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 39 } reason=ConnectionClosed
+2026-11-16T10:55:05.043125Z  INFO Window destroyed window=21
+2026-11-16T10:55:05.043210Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[0], 18)) after=None
+2026-11-16T10:55:05.125685Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 40 }
+2026-11-16T10:55:05.219481Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 41 }
+2026-11-16T10:55:05.220372Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 41 } reason=ConnectionClosed
+2026-11-16T10:55:05.220645Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 42 }
+2026-11-16T10:55:05.221276Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 42 } reason=ConnectionClosed
+2026-11-16T10:55:05.251008Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 43 }
+2026-11-16T10:55:05.251727Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 43 } reason=ConnectionClosed
+2026-11-16T10:55:05.323996Z  INFO Window role created (unmapped) window=22
+2026-11-16T10:55:05.324339Z  INFO Initial configure sent window=22
+2026-11-16T10:55:05.326089Z  INFO Configure acknowledged window=22 serial=566
+2026-11-16T10:55:05.515302Z  INFO Window mapped window=22
+2026-11-16T10:55:05.515736Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@18[0], 21))
+2026-11-16T10:55:05.520080Z  INFO Configure acknowledged window=22 serial=571
+2026-11-16T10:55:05.670890Z  INFO Selection owner changed seat="raywm-nested" clipboard=false mime_types=Some(["text/plain;charset=utf-8", "text/plain", "text/plain;charset=ANSI_X3.4-1968"])
+2026-11-16T10:55:05.688589Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 44 }
+2026-11-16T10:55:05.690326Z  INFO Window role created (unmapped) window=23
+2026-11-16T10:55:05.690710Z  INFO Initial configure sent window=23
+2026-11-16T10:55:05.691299Z  INFO Configure acknowledged window=23 serial=585
+2026-11-16T10:55:05.691682Z  INFO Window mapped window=23
+2026-11-16T10:55:05.692102Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@18[0], 21)) after=Some(ObjectId(wl_surface@11[1], 12))
+2026-11-16T10:55:05.692621Z  INFO Configure acknowledged window=23 serial=588
+2026-11-16T10:55:05.692883Z  INFO Window destroyed window=23
+2026-11-16T10:55:05.693132Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@11[1], 12)) after=Some(ObjectId(wl_surface@18[0], 21))
+2026-11-16T10:55:05.693609Z  INFO Configure acknowledged window=22 serial=587
+2026-11-16T10:55:05.694530Z  INFO Configure acknowledged window=22 serial=590
+2026-11-16T10:55:05.696043Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 44 } reason=ConnectionClosed
+2026-11-16T10:55:05.710986Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 40 } reason=ConnectionClosed
+2026-11-16T10:55:05.711305Z  INFO Window destroyed window=22
+2026-11-16T10:55:05.711384Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@18[0], 21)) after=None
+2026-11-16T10:55:05.717394Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 45 }
+2026-11-16T10:55:05.718514Z  INFO Window role created (unmapped) window=24
+2026-11-16T10:55:05.718740Z  INFO Initial configure sent window=24
+2026-11-16T10:55:05.719020Z  INFO Configure acknowledged window=24 serial=596
+2026-11-16T10:55:05.719258Z  INFO Window mapped window=24
+2026-11-16T10:55:05.719479Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@11[0], 12))
+2026-11-16T10:55:05.719809Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 45 } reason=ConnectionClosed
+2026-11-16T10:55:05.719924Z  INFO Window destroyed window=24
+2026-11-16T10:55:05.719966Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@11[0], 12)) after=None
+2026-11-16T10:55:05.740840Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 46 }
+2026-11-16T10:55:05.847921Z  INFO Window role created (unmapped) window=25
+2026-11-16T10:55:05.848338Z  INFO Initial configure sent window=25
+2026-11-16T10:55:05.851076Z  INFO Configure acknowledged window=25 serial=610
+2026-11-16T10:55:05.851647Z  INFO Window mapped window=25
+2026-11-16T10:55:05.852070Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@17[0], 18))
+2026-11-16T10:55:05.868026Z  INFO Configure acknowledged window=25 serial=615
+2026-11-16T10:55:05.990690Z  INFO Selection owner changed seat="raywm-nested" clipboard=false mime_types=Some(["text/plain", "text/plain;charset=utf-8"])
+2026-11-16T10:55:06.006140Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 47 }
+2026-11-16T10:55:06.007967Z  INFO Window role created (unmapped) window=26
+2026-11-16T10:55:06.008296Z  INFO Initial configure sent window=26
+2026-11-16T10:55:06.008910Z  INFO Configure acknowledged window=26 serial=630
+2026-11-16T10:55:06.009286Z  INFO Window mapped window=26
+2026-11-16T10:55:06.009743Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[0], 18)) after=Some(ObjectId(wl_surface@11[1], 12))
+2026-11-16T10:55:06.010254Z  INFO Configure acknowledged window=26 serial=633
+2026-11-16T10:55:06.010542Z  INFO Window destroyed window=26
+2026-11-16T10:55:06.010870Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@11[1], 12)) after=Some(ObjectId(wl_surface@17[0], 18))
+2026-11-16T10:55:06.011487Z  INFO Configure acknowledged window=25 serial=632
+2026-11-16T10:55:06.015790Z  INFO Configure acknowledged window=25 serial=635
+2026-11-16T10:55:06.016282Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 47 } reason=ConnectionClosed
+2026-11-16T10:55:06.017600Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 46 } reason=ConnectionClosed
+2026-11-16T10:55:06.017836Z  INFO Window destroyed window=25
+2026-11-16T10:55:06.017926Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[0], 18)) after=None
+2026-11-16T10:55:06.021846Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 48 }
+2026-11-16T10:55:06.023513Z  INFO Window role created (unmapped) window=27
+2026-11-16T10:55:06.023808Z  INFO Initial configure sent window=27
+2026-11-16T10:55:06.024341Z  INFO Configure acknowledged window=27 serial=643
+2026-11-16T10:55:06.024743Z  INFO Window mapped window=27
+2026-11-16T10:55:06.025078Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@11[0], 12))
+2026-11-16T10:55:06.025589Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 48 } reason=ConnectionClosed
+2026-11-16T10:55:06.025786Z  INFO Window destroyed window=27
+2026-11-16T10:55:06.025860Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@11[0], 12)) after=None
+2026-11-16T10:55:06.026337Z  INFO Shutdown requested signal=SIGTERM
+2026-11-16T10:55:06.034599Z  INFO Nested Wayland server stopped

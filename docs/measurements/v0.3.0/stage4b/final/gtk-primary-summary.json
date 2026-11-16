@@ -1,0 +1,17 @@
+{
+  "backend": "wayland",
+  "selection_serial": 579,
+  "delivered_pointer_buttons": [
+    {
+      "serial": 579,
+      "pressed": true
+    },
+    {
+      "serial": 582,
+      "pressed": false
+    }
+  ],
+  "mime": "text/plain;charset=utf-8",
+  "payload_bytes": 11,
+  "payload": "primary-gtk"
+}

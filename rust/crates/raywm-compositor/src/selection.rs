@@ -201,6 +201,8 @@ impl State {
         keyboard.set_focus(self, target, serial);
         let after = keyboard.current_focus();
         if before != after {
+            self.pointer_grant = None;
+            self.key_grant = None;
             tracing::info!(
                 before = ?before.as_ref().map(|surface| surface.id()),
                 after = ?after.as_ref().map(|surface| surface.id()),
@@ -419,6 +421,31 @@ impl Dispatch<WlDataDevice, DataDeviceUserData> for State {
         dh: &DisplayHandle,
         init: &mut DataInit<'_, Self>,
     ) {
+        if let wl_data_device::Request::StartDrag { origin, serial, .. } = &request {
+            // Smithay 0.7 checks has_grab(serial), but does not establish that
+            // this client owns that grab or that origin is its focused surface.
+            // A serial is not a capability transferable between clients.
+            let allowed = !state.dnd_active
+                && state.popup_root.is_none()
+                && state.desktop.interaction_window().is_none()
+                && state
+                    .seat
+                    .as_ref()
+                    .and_then(|seat| seat.get_pointer())
+                    .is_some_and(|pointer| {
+                        pointer.has_grab(Serial::from(*serial))
+                            && pointer.grab_start_data().is_some_and(|start| {
+                                state.pressed_buttons.contains(&start.button)
+                                    && start.focus.as_ref().is_some_and(|(surface, _)| {
+                                        surface == origin
+                                            && surface.id().same_client_as(&resource.id())
+                                    })
+                            })
+                    });
+            if !allowed {
+                return;
+            }
+        }
         if let wl_data_device::Request::SetSelection { serial, .. } = &request {
             let serial = Serial::from(*serial);
             if !state.selection.permits(serial, &client.id()) {

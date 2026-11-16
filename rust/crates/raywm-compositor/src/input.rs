@@ -131,6 +131,7 @@ impl State {
         self.cancel_operation();
         self.end_popup_grab();
         self.key_grant = None;
+        self.pointer_grant = None;
         let time = smithay::utils::Clock::<smithay::utils::Monotonic>::new()
             .now()
             .as_millis();
@@ -321,6 +322,14 @@ impl State {
                     },
                 );
                 let focus = pointer.current_focus();
+                if event.state() == ButtonState::Pressed {
+                    // Toolkits may dispatch the popup request after the physical
+                    // release. Keep only the latest press actually delivered to
+                    // a surface; focus transitions invalidate this one-shot grant.
+                    self.pointer_grant = focus
+                        .as_ref()
+                        .map(|surface| (serial, surface.clone(), std::time::Instant::now()));
+                }
                 self.note_selection_serial(serial, focus.as_ref());
                 if self.pressed_buttons.is_empty() && !pointer.is_grabbed() {
                     let location = pointer.current_location();

@@ -1,0 +1,44 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running unittests src/main.rs (target/debug/deps/raywm_smithay-43239414c155fa59)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running ../../tests/headless.rs (target/debug/deps/headless-aede0f4d25d43349)
+
+running 12 tests
+test nested_graphics_pixels_input_resize_and_unmap ... ignored, requires rust/tests/nested-smoke.py private graphical parent
+test malformed_client_is_isolated_and_sigint_cleans_auto_socket ... ok
+test selection::selection_managers_and_source_teardown_are_isolated ... ok
+test xdg_initial_ack_map_unmap_remap_and_role_destruction ... ok
+test floating::popup_null_buffer_dismisses_live_descendants ... ok
+test floating::popup_unacked_buffer_is_client_local_error ... ok
+test floating::popup_configure_nested_reposition_and_parent_cleanup ... ok
+test xdg_unconfigured_buffer_invalid_ack_and_disconnect_are_isolated ... ok
+test globals_buffers_subsurfaces_disconnect_and_sigterm ... ok
+test floating::invalid_popup_parents_and_unmapped_ancestor_are_isolated ... ok
+test floating::three_clients_remap_middle_destroy_and_disconnect ... ok
+test bad_startup_and_socket_collision_fail_without_removing_live_socket ... ok
+
+test result: ok. 11 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running unittests src/lib.rs (target/debug/deps/raywm_core-b68ec32f2c5f1933)
+
+running 7 tests
+test tests::socket_names_cannot_escape_the_runtime_directory ... ok
+test windows::tests::move_focus_guard_extremes_and_lifetime_cancellation ... ok
+test windows::tests::mapping_geometry_focus_and_unmap_are_consistent ... ok
+test windows::tests::id_exhaustion_does_not_wrap_or_recycle ... ok
+test windows::tests::stacking_cascade_and_fallback_survive_middle_removal ... ok
+test windows::tests::removed_ids_are_stale_and_never_reused ... ok
+test windows::tests::resize_edges_limits_anchor_and_coalescing ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests raywm_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

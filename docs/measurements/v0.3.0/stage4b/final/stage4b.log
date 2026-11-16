@@ -1,0 +1,16 @@
+artifacts: /tmp/raywm-stage4b-wlp8_w3g
+dnd::dnd_icon_targets_actions_and_teardown: PASS
+dnd::reactive_popup_constraints_and_lifecycle: PASS
+dnd::final_admission_and_accepted_source_disconnect: PASS
+source-disconnect: CONFIRMED Smithay 0.7 upstream limitation (drop + FD EOF, zero bytes)
+gtk-to-qt: pointer-driven toolkit DnD PASS (gtk-to-qt)
+qt-to-gtk: pointer-driven toolkit DnD PASS (qt-to-gtk)
+cancel: toolkit drag cancellation PASS
+target-close: drag survives target disconnect PASS
+source-close: drag teardown without data PASS
+gtk-menu: context-menu popup PASS
+qt-menu: two hover-driven nested popups/render/grab/outside-click PASS
+qt-menu: context-menu popup PASS
+gtk-primary: real toolkit primary selection/FD payload/cleanup PASS
+qt-primary: real toolkit primary selection/FD payload/cleanup PASS
+stage4b: PASS

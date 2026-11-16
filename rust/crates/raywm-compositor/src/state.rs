@@ -44,6 +44,7 @@ pub struct State {
     pub popup_entries: Vec<crate::popups::PopupEntry>,
     pub popup_grab: Option<PopupGrab<Self>>,
     pub popup_root: Option<raywm_core::windows::WindowId>,
+    pub pointer_grant: Option<(smithay::utils::Serial, WlSurface, std::time::Instant)>,
     pub key_grant: Option<(smithay::utils::Serial, WlSurface, std::time::Instant)>,
 }
 
@@ -71,6 +72,7 @@ impl State {
             popup_entries: Vec::new(),
             popup_grab: None,
             popup_root: None,
+            pointer_grant: None,
             key_grant: None,
         }
     }

@@ -1,0 +1,3 @@
+Base: 7e9c67e66ecda9adc85284a0ab0f02207c371af2
+git diff --exit-code 7e9c67e -- src build.zig build.zig.zon protocol config packaging scripts rust/Cargo.toml rust/Cargo.lock
+Exit: 0 (byte-identical tracked content)

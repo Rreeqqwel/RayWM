@@ -1,0 +1,1 @@
+Smithay 0.7.0: negotiated Copy + accepted UTF-8 MIME; source disconnect; drop=1 leave=1; receive FD EOF, bytes=0. UPSTREAM LIMITATION, not successful DnD.

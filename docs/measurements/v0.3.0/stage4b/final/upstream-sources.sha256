@@ -1,0 +1,4 @@
+0eb9d00ae41959598a10ef18a52bd4ad67850393b604b269b920e3f1112d951d  https://github.com/GNOME/gtk/blob/4.24.1/gdk/wayland/gdkprimary-wayland.c
+3128b74995aec4ad3f5acc72192107bb90457e9aa1c8922b2944eb166fadbe49  https://github.com/GNOME/gtk/blob/4.24.1/gdk/wayland/gdkdisplay-wayland.c
+abb7cef0dd307624ca9299e9c5ad70d448b7b23d6da3936f1a5ac92320c1198a  https://github.com/Smithay/smithay/blob/v0.7.0/src/wayland/selection/data_device/dnd_grab.rs
+98652cb691d360d175590786f89ab54225c676f66d88aa5f6143aa335de419dd  https://github.com/Smithay/smithay/blob/v0.7.0/src/input/pointer/mod.rs

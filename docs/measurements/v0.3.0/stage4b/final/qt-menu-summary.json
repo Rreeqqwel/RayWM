@@ -1,0 +1,65 @@
+{
+  "root": {
+    "geometry": {
+      "x": 251,
+      "y": 150,
+      "w": 124,
+      "h": 54
+    },
+    "hovered": [
+      "MORE-QT",
+      "DEEPER-QT",
+      "LEAF-QT",
+      "DEEPER-QT",
+      "LEAF-QT"
+    ],
+    "motions": 1,
+    "hide": 1
+  },
+  "child": {
+    "geometry": {
+      "x": 373,
+      "y": 177,
+      "w": 130,
+      "h": 54
+    },
+    "hovered": [
+      "DEEPER-QT",
+      "LEAF-QT",
+      "DEEPER-QT",
+      "LEAF-QT"
+    ],
+    "motions": 2,
+    "hide": 1
+  },
+  "grand": {
+    "geometry": {
+      "x": 501,
+      "y": 204,
+      "w": 124,
+      "h": 29
+    },
+    "hovered": [
+      "LEAF-QT",
+      "LEAF-QT"
+    ],
+    "motions": 4,
+    "hide": 1
+  },
+  "wire_popup_configures": [
+    [
+      "33",
+      "251, 150, 124, 54"
+    ],
+    [
+      "40",
+      "122, 27, 130, 54"
+    ],
+    [
+      "47",
+      "128, 27, 124, 29"
+    ]
+  ],
+  "wire_popup_destroy_count": 3,
+  "wire_popup_done_count": 0
+}

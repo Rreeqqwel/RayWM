@@ -421,7 +421,11 @@ grabs/reposition/dismissal and mid-grab destruction/disconnect.
 clients, primary selection, focus/serial policy, foot and wl-clipboard.
 `python3 rust/tests/stage4b-smoke.py` additionally checks negotiated DnD with a
 rendered drag icon, reactive popup constraints, GTK4↔Qt6 pointer-driven DnD,
-cancellation and mid-drag process teardown.
+cancellation and mid-drag process teardown, GTK primary selection with exact
+FD payloads and two real hover-driven Qt submenu levels. It also checks popup
+press/release admission and DnD grab ownership. The pinned Smithay 0.7
+accepted-source-disconnect defect (drop with empty FD) remains documented in
+[Stage 4B-Final qualification](docs/measurements/v0.3.0/stage4b/final-qualification.md).
 
 `raywm-smithay --backend winit` opens one nested EGL/GLES window/output with
 floating windows, keyboard/pointer focus, client move/resize, XDG popups,

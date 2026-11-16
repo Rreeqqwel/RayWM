@@ -8,8 +8,8 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ### Added
 
-- Rust client drag-and-drop through Smithay's `DnDGrab`: real pointer/touch
-  serial admission, source action negotiation (copy/move/ask), target
+- Rust client drag-and-drop through Smithay's `DnDGrab`: held pointer serial
+  admission with matching client and origin, source action negotiation (copy/move/ask), target
   enter/motion/leave/drop switching, MIME `receive` fd forwarding, finish and
   cancellation, and teardown on source/target/client disconnect. A frontmost
   drag icon is rendered from the client surface with buffer scale/transform,
@@ -24,9 +24,19 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
   requires.
 - Stage 4B qualification: independent-client DnD/icon/popup pixel scenarios and
   pointer-driven GTK 4 ↔ Qt 6 DnD with payload verification, cancellation,
-  mid-drag source/target close and context-menu popups. Qt primary selection
-  from a text selection passes; GTK primary selection is BLOCKED without a fake
-  compatibility global. The Qt nested submenu attempt is recorded as BLOCKED.
+  mid-drag source/target close and context-menu popups. Final qualification
+  verifies GTK/Qt primary selection through the standard protocol with exact
+  independent FD payloads, and two real hover-driven Qt submenu levels with
+  render, motion, grab and teardown checks. The original GTK probe selected a
+  non-selectable label without the expected text; no compatibility global is
+  needed. Accepted-offer source disconnect is a confirmed Smithay 0.7 protocol
+  defect: drop/leave with zero-byte FD EOF, not successful transfer.
+- Popup admission accepts the latest delivered pointer press after release
+  within five seconds, once, for the same surface and focus epoch. This fixes
+  ordinary Qt context-menu grabs racing with release; focus changes invalidate
+  pointer/keyboard grants. DnD admission now verifies client and exact origin
+  ownership of the held grab and rejects replacement of active explicit grabs.
+  Negative regressions cover foreign/forged/stale requests and grant replay.
 
 - Rust standard clipboard and primary selection through
   `wl_data_device_manager` v3 and `zwp_primary_selection_device_manager_v1`.

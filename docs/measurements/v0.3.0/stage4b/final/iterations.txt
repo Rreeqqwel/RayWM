@@ -1,0 +1,5 @@
+Initial Qt trace on 7e9c67e: real press 46/release 47; grab(46); immediate popup_done; no painted root. Archived in qt-before-fix.log.
+After popup admission fix: entering an item alone did not deliver motion; harness now moves within the item and requires fresh QMenu motion.
+First combined final-admission test: outside-click 700,550 was outside the 700x500 output left by the preceding reactive test. Assertion retained; harness restores 800x600 and waits for resize.
+Intermediate strengthened trace assertion required Qt primary to use press; trace proved Qt uses delivered release (637), GTK uses press (588). Corrected to the existing Stage 4A input-serial contract, retaining the stricter GTK press check. No production serial-policy relaxation.
+Final full-run logs and assertions are archived separately; the above failures are not counted as passes.

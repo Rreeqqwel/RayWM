@@ -1,0 +1,715 @@
+[
+  {
+    "action": "",
+    "event": "aboutToShow",
+    "h": 30,
+    "items": [
+      {
+        "text": "CTX-QT",
+        "x": 61,
+        "y": 14
+      },
+      {
+        "text": "MORE-QT",
+        "x": 61,
+        "y": 39
+      }
+    ],
+    "menu": "root",
+    "surface": false,
+    "visible": false,
+    "w": 100,
+    "x": 0,
+    "y": 0
+  },
+  {
+    "action": "",
+    "event": "paint",
+    "h": 54,
+    "items": [
+      {
+        "text": "CTX-QT",
+        "x": 312,
+        "y": 164
+      },
+      {
+        "text": "MORE-QT",
+        "x": 312,
+        "y": 189
+      }
+    ],
+    "menu": "root",
+    "surface": true,
+    "visible": true,
+    "w": 124,
+    "x": 251,
+    "y": 150
+  },
+  {
+    "action": "MORE-QT",
+    "event": "hovered",
+    "h": 54,
+    "items": [
+      {
+        "text": "CTX-QT",
+        "x": 312,
+        "y": 164
+      },
+      {
+        "text": "MORE-QT",
+        "x": 312,
+        "y": 189
+      }
+    ],
+    "menu": "root",
+    "surface": true,
+    "visible": true,
+    "w": 124,
+    "x": 251,
+    "y": 150
+  },
+  {
+    "action": "",
+    "event": "motion",
+    "h": 54,
+    "items": [
+      {
+        "text": "CTX-QT",
+        "x": 312,
+        "y": 164
+      },
+      {
+        "text": "MORE-QT",
+        "x": 312,
+        "y": 189
+      }
+    ],
+    "local_x": 61,
+    "local_y": 39,
+    "menu": "root",
+    "surface": true,
+    "visible": true,
+    "w": 124,
+    "x": 251,
+    "y": 150
+  },
+  {
+    "action": "",
+    "event": "paint",
+    "h": 54,
+    "items": [
+      {
+        "text": "CTX-QT",
+        "x": 312,
+        "y": 164
+      },
+      {
+        "text": "MORE-QT",
+        "x": 312,
+        "y": 189
+      }
+    ],
+    "menu": "root",
+    "surface": true,
+    "visible": true,
+    "w": 124,
+    "x": 251,
+    "y": 150
+  },
+  {
+    "action": "",
+    "event": "aboutToShow",
+    "h": 30,
+    "items": [
+      {
+        "text": "NESTED-QT",
+        "x": 64,
+        "y": 14
+      },
+      {
+        "text": "DEEPER-QT",
+        "x": 64,
+        "y": 39
+      }
+    ],
+    "menu": "child",
+    "surface": false,
+    "visible": false,
+    "w": 100,
+    "x": 0,
+    "y": 0
+  },
+  {
+    "action": "",
+    "event": "paint",
+    "h": 54,
+    "items": [
+      {
+        "text": "NESTED-QT",
+        "x": 437,
+        "y": 191
+      },
+      {
+        "text": "DEEPER-QT",
+        "x": 437,
+        "y": 216
+      }
+    ],
+    "menu": "child",
+    "surface": true,
+    "visible": true,
+    "w": 130,
+    "x": 373,
+    "y": 177
+  },
+  {
+    "action": "DEEPER-QT",
+    "event": "hovered",
+    "h": 54,
+    "items": [
+      {
+        "text": "NESTED-QT",
+        "x": 437,
+        "y": 191
+      },
+      {
+        "text": "DEEPER-QT",
+        "x": 437,
+        "y": 216
+      }
+    ],
+    "menu": "child",
+    "surface": true,
+    "visible": true,
+    "w": 130,
+    "x": 373,
+    "y": 177
+  },
+  {
+    "action": "DEEPER-QT",
+    "event": "hovered",
+    "h": 54,
+    "items": [
+      {
+        "text": "CTX-QT",
+        "x": 312,
+        "y": 164
+      },
+      {
+        "text": "MORE-QT",
+        "x": 312,
+        "y": 189
+      }
+    ],
+    "menu": "root",
+    "surface": true,
+    "visible": true,
+    "w": 124,
+    "x": 251,
+    "y": 150
+  },
+  {
+    "action": "",
+    "event": "motion",
+    "h": 54,
+    "items": [
+      {
+        "text": "NESTED-QT",
+        "x": 437,
+        "y": 191
+      },
+      {
+        "text": "DEEPER-QT",
+        "x": 437,
+        "y": 216
+      }
+    ],
+    "local_x": 64,
+    "local_y": 39,
+    "menu": "child",
+    "surface": true,
+    "visible": true,
+    "w": 130,
+    "x": 373,
+    "y": 177
+  },
+  {
+    "action": "",
+    "event": "paint",
+    "h": 54,
+    "items": [
+      {
+        "text": "NESTED-QT",
+        "x": 437,
+        "y": 191
+      },
+      {
+        "text": "DEEPER-QT",
+        "x": 437,
+        "y": 216
+      }
+    ],
+    "menu": "child",
+    "surface": true,
+    "visible": true,
+    "w": 130,
+    "x": 373,
+    "y": 177
+  },
+  {
+    "action": "",
+    "event": "aboutToShow",
+    "h": 30,
+    "items": [
+      {
+        "text": "LEAF-QT",
+        "x": 61,
+        "y": 14
+      }
+    ],
+    "menu": "grand",
+    "surface": false,
+    "visible": false,
+    "w": 100,
+    "x": 0,
+    "y": 0
+  },
+  {
+    "action": "",
+    "event": "paint",
+    "h": 29,
+    "items": [
+      {
+        "text": "LEAF-QT",
+        "x": 562,
+        "y": 218
+      }
+    ],
+    "menu": "grand",
+    "surface": true,
+    "visible": true,
+    "w": 124,
+    "x": 501,
+    "y": 204
+  },
+  {
+    "action": "LEAF-QT",
+    "event": "hovered",
+    "h": 29,
+    "items": [
+      {
+        "text": "LEAF-QT",
+        "x": 562,
+        "y": 218
+      }
+    ],
+    "menu": "grand",
+    "surface": true,
+    "visible": true,
+    "w": 124,
+    "x": 501,
+    "y": 204
+  },
+  {
+    "action": "LEAF-QT",
+    "event": "hovered",
+    "h": 54,
+    "items": [
+      {
+        "text": "NESTED-QT",
+        "x": 437,
+        "y": 191
+      },
+      {
+        "text": "DEEPER-QT",
+        "x": 437,
+        "y": 216
+      }
+    ],
+    "menu": "child",
+    "surface": true,
+    "visible": true,
+    "w": 130,
+    "x": 373,
+    "y": 177
+  },
+  {
+    "action": "LEAF-QT",
+    "event": "hovered",
+    "h": 54,
+    "items": [
+      {
+        "text": "CTX-QT",
+        "x": 312,
+        "y": 164
+      },
+      {
+        "text": "MORE-QT",
+        "x": 312,
+        "y": 189
+      }
+    ],
+    "menu": "root",
+    "surface": true,
+    "visible": true,
+    "w": 124,
+    "x": 251,
+    "y": 150
+  },
+  {
+    "action": "",
+    "event": "motion",
+    "h": 29,
+    "items": [
+      {
+        "text": "LEAF-QT",
+        "x": 562,
+        "y": 218
+      }
+    ],
+    "local_x": 61,
+    "local_y": 14,
+    "menu": "grand",
+    "surface": true,
+    "visible": true,
+    "w": 124,
+    "x": 501,
+    "y": 204
+  },
+  {
+    "action": "",
+    "event": "paint",
+    "h": 29,
+    "items": [
+      {
+        "text": "LEAF-QT",
+        "x": 562,
+        "y": 218
+      }
+    ],
+    "menu": "grand",
+    "surface": true,
+    "visible": true,
+    "w": 124,
+    "x": 501,
+    "y": 204
+  },
+  {
+    "action": "",
+    "event": "paint",
+    "h": 29,
+    "items": [
+      {
+        "text": "LEAF-QT",
+        "x": 562,
+        "y": 218
+      }
+    ],
+    "menu": "grand",
+    "surface": true,
+    "visible": true,
+    "w": 124,
+    "x": 501,
+    "y": 204
+  },
+  {
+    "action": "DEEPER-QT",
+    "event": "hovered",
+    "h": 54,
+    "items": [
+      {
+        "text": "NESTED-QT",
+        "x": 437,
+        "y": 191
+      },
+      {
+        "text": "DEEPER-QT",
+        "x": 437,
+        "y": 216
+      }
+    ],
+    "menu": "child",
+    "surface": true,
+    "visible": true,
+    "w": 130,
+    "x": 373,
+    "y": 177
+  },
+  {
+    "action": "DEEPER-QT",
+    "event": "hovered",
+    "h": 54,
+    "items": [
+      {
+        "text": "CTX-QT",
+        "x": 312,
+        "y": 164
+      },
+      {
+        "text": "MORE-QT",
+        "x": 312,
+        "y": 189
+      }
+    ],
+    "menu": "root",
+    "surface": true,
+    "visible": true,
+    "w": 124,
+    "x": 251,
+    "y": 150
+  },
+  {
+    "action": "",
+    "event": "motion",
+    "h": 54,
+    "items": [
+      {
+        "text": "NESTED-QT",
+        "x": 437,
+        "y": 191
+      },
+      {
+        "text": "DEEPER-QT",
+        "x": 437,
+        "y": 216
+      }
+    ],
+    "local_x": 64,
+    "local_y": 39,
+    "menu": "child",
+    "surface": true,
+    "visible": true,
+    "w": 130,
+    "x": 373,
+    "y": 177
+  },
+  {
+    "action": "",
+    "event": "motion",
+    "h": 29,
+    "items": [
+      {
+        "text": "LEAF-QT",
+        "x": 562,
+        "y": 218
+      }
+    ],
+    "local_x": -64,
+    "local_y": 12,
+    "menu": "grand",
+    "surface": true,
+    "visible": true,
+    "w": 124,
+    "x": 501,
+    "y": 204
+  },
+  {
+    "action": "",
+    "event": "paint",
+    "h": 54,
+    "items": [
+      {
+        "text": "NESTED-QT",
+        "x": 437,
+        "y": 191
+      },
+      {
+        "text": "DEEPER-QT",
+        "x": 437,
+        "y": 216
+      }
+    ],
+    "menu": "child",
+    "surface": true,
+    "visible": true,
+    "w": 130,
+    "x": 373,
+    "y": 177
+  },
+  {
+    "action": "LEAF-QT",
+    "event": "hovered",
+    "h": 29,
+    "items": [
+      {
+        "text": "LEAF-QT",
+        "x": 562,
+        "y": 218
+      }
+    ],
+    "menu": "grand",
+    "surface": true,
+    "visible": true,
+    "w": 124,
+    "x": 501,
+    "y": 204
+  },
+  {
+    "action": "LEAF-QT",
+    "event": "hovered",
+    "h": 54,
+    "items": [
+      {
+        "text": "NESTED-QT",
+        "x": 437,
+        "y": 191
+      },
+      {
+        "text": "DEEPER-QT",
+        "x": 437,
+        "y": 216
+      }
+    ],
+    "menu": "child",
+    "surface": true,
+    "visible": true,
+    "w": 130,
+    "x": 373,
+    "y": 177
+  },
+  {
+    "action": "LEAF-QT",
+    "event": "hovered",
+    "h": 54,
+    "items": [
+      {
+        "text": "CTX-QT",
+        "x": 312,
+        "y": 164
+      },
+      {
+        "text": "MORE-QT",
+        "x": 312,
+        "y": 189
+      }
+    ],
+    "menu": "root",
+    "surface": true,
+    "visible": true,
+    "w": 124,
+    "x": 251,
+    "y": 150
+  },
+  {
+    "action": "",
+    "event": "motion",
+    "h": 29,
+    "items": [
+      {
+        "text": "LEAF-QT",
+        "x": 562,
+        "y": 218
+      }
+    ],
+    "local_x": 61,
+    "local_y": 14,
+    "menu": "grand",
+    "surface": true,
+    "visible": true,
+    "w": 124,
+    "x": 501,
+    "y": 204
+  },
+  {
+    "action": "",
+    "event": "paint",
+    "h": 29,
+    "items": [
+      {
+        "text": "LEAF-QT",
+        "x": 562,
+        "y": 218
+      }
+    ],
+    "menu": "grand",
+    "surface": true,
+    "visible": true,
+    "w": 124,
+    "x": 501,
+    "y": 204
+  },
+  {
+    "action": "",
+    "event": "motion",
+    "h": 29,
+    "items": [
+      {
+        "text": "LEAF-QT",
+        "x": 562,
+        "y": 218
+      }
+    ],
+    "local_x": 199,
+    "local_y": 346,
+    "menu": "grand",
+    "surface": true,
+    "visible": true,
+    "w": 124,
+    "x": 501,
+    "y": 204
+  },
+  {
+    "action": "",
+    "event": "aboutToHide",
+    "h": 29,
+    "items": [
+      {
+        "text": "LEAF-QT",
+        "x": 562,
+        "y": 218
+      }
+    ],
+    "menu": "grand",
+    "surface": false,
+    "visible": false,
+    "w": 124,
+    "x": 501,
+    "y": 204
+  },
+  {
+    "action": "",
+    "event": "aboutToHide",
+    "h": 54,
+    "items": [
+      {
+        "text": "NESTED-QT",
+        "x": 437,
+        "y": 191
+      },
+      {
+        "text": "DEEPER-QT",
+        "x": 437,
+        "y": 216
+      }
+    ],
+    "menu": "child",
+    "surface": false,
+    "visible": false,
+    "w": 130,
+    "x": 373,
+    "y": 177
+  },
+  {
+    "action": "",
+    "event": "aboutToHide",
+    "h": 54,
+    "items": [
+      {
+        "text": "CTX-QT",
+        "x": 312,
+        "y": 164
+      },
+      {
+        "text": "MORE-QT",
+        "x": 312,
+        "y": 189
+      }
+    ],
+    "menu": "root",
+    "surface": false,
+    "visible": false,
+    "w": 124,
+    "x": 251,
+    "y": 150
+  }
+]

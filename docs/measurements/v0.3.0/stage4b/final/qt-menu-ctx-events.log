@@ -1,0 +1,101 @@
+[10:55:00.740487] {Default Queue} wl_registry#2.global(2, "zwp_primary_selection_device_manager_v1", 1)
+[10:55:00.740491] {Default Queue}  -> wl_registry#2.bind(2, "zwp_primary_selection_device_manager_v1", 1, new id [unknown]#5)
+[10:55:00.740584] {Default Queue}  -> zwp_primary_selection_device_manager_v1#5.get_device(new id zwp_primary_selection_device_v1#14, wl_seat#12)
+[10:55:00.850421] {Default Queue}  -> xdg_surface#19.ack_configure(468)
+[10:55:00.854081] {Default Queue} wl_keyboard#15.enter(474, wl_surface#17, array[0])
+[10:55:00.854109] {Default Queue} zwp_primary_selection_device_v1#14.selection(nil)
+[10:55:00.854114] {Default Queue} wl_pointer#16.enter(477, wl_surface#17, 250.00000000, 150.00000000)
+[10:55:00.868047] {Default Queue}  -> xdg_surface#19.ack_configure(473)
+[10:55:02.373018] {Default Queue} wl_pointer#16.button(483, 573758498, 273, 1)
+[10:55:02.373085] {Default Queue} wl_pointer#16.button(484, 573758498, 273, 0)
+[10:55:02.373097] {Default Queue} wl_pointer#16.motion(573758498, 250.00000000, 150.00000000)
+MENU {"action":"","event":"aboutToShow","h":30,"items":[{"text":"CTX-QT","x":61,"y":14},{"text":"MORE-QT","x":61,"y":39}],"menu":"root","surface":false,"visible":false,"w":100,"x":0,"y":0}
+[10:55:02.375277] {Default Queue}  -> xdg_surface#31.get_popup(new id xdg_popup#33, xdg_surface#19, xdg_positioner#32)
+[10:55:02.375309] {Default Queue}  -> xdg_popup#33.grab(wl_seat#12, 483)
+[10:55:02.377293] {Default Queue} wl_keyboard#15.leave(483, wl_surface#17)
+[10:55:02.377335] {Default Queue} wl_keyboard#15.enter(483, wl_surface#23, array[0])
+[10:55:02.377361] {Default Queue} xdg_popup#33.configure(251, 150, 124, 54)
+[10:55:02.377382] {Default Queue}  -> xdg_surface#31.ack_configure(486)
+MENU {"action":"","event":"paint","h":54,"items":[{"text":"CTX-QT","x":312,"y":164},{"text":"MORE-QT","x":312,"y":189}],"menu":"root","surface":true,"visible":true,"w":124,"x":251,"y":150}
+[10:55:02.918152] {Default Queue} wl_pointer#16.leave(494, wl_surface#17)
+[10:55:02.918203] {Default Queue} wl_pointer#16.enter(494, wl_surface#23, 59.00000000, 39.00000000)
+[10:55:02.918256] {Default Queue} wl_pointer#16.motion(573759043, 61.00000000, 39.00000000)
+MENU {"action":"MORE-QT","event":"hovered","h":54,"items":[{"text":"CTX-QT","x":312,"y":164},{"text":"MORE-QT","x":312,"y":189}],"menu":"root","surface":true,"visible":true,"w":124,"x":251,"y":150}
+MENU {"action":"","event":"motion","h":54,"items":[{"text":"CTX-QT","x":312,"y":164},{"text":"MORE-QT","x":312,"y":189}],"local_x":61,"local_y":39,"menu":"root","surface":true,"visible":true,"w":124,"x":251,"y":150}
+MENU {"action":"","event":"paint","h":54,"items":[{"text":"CTX-QT","x":312,"y":164},{"text":"MORE-QT","x":312,"y":189}],"menu":"root","surface":true,"visible":true,"w":124,"x":251,"y":150}
+MENU {"action":"","event":"aboutToShow","h":30,"items":[{"text":"NESTED-QT","x":64,"y":14},{"text":"DEEPER-QT","x":64,"y":39}],"menu":"child","surface":false,"visible":false,"w":100,"x":0,"y":0}
+[10:55:03.150288] {Default Queue}  -> xdg_surface#38.get_popup(new id xdg_popup#40, xdg_surface#31, xdg_positioner#39)
+[10:55:03.150308] {Default Queue}  -> xdg_popup#40.grab(wl_seat#12, 483)
+[10:55:03.152159] {Default Queue} wl_keyboard#15.leave(483, wl_surface#23)
+[10:55:03.152208] {Default Queue} wl_keyboard#15.enter(483, wl_surface#32, array[0])
+[10:55:03.152234] {Default Queue} wl_keyboard#15.leave(501, wl_surface#32)
+[10:55:03.152245] {Default Queue} wl_keyboard#15.enter(501, wl_surface#17, array[0])
+[10:55:03.152268] {Default Queue} xdg_popup#40.configure(122, 27, 130, 54)
+[10:55:03.152288] {Default Queue}  -> xdg_surface#38.ack_configure(502)
+MENU {"action":"","event":"paint","h":54,"items":[{"text":"NESTED-QT","x":437,"y":191},{"text":"DEEPER-QT","x":437,"y":216}],"menu":"child","surface":true,"visible":true,"w":130,"x":373,"y":177}
+[10:55:03.153517] {Default Queue} wl_keyboard#15.leave(503, wl_surface#17)
+[10:55:03.153541] {Default Queue} wl_keyboard#15.enter(503, wl_surface#32, array[0])
+[10:55:03.211591] {Default Queue} wl_pointer#16.leave(509, wl_surface#23)
+[10:55:03.211656] {Default Queue} wl_pointer#16.enter(509, wl_surface#32, 61.99609375, 39.00000000)
+[10:55:03.211743] {Default Queue} wl_pointer#16.motion(573759334, 64.00000000, 39.00000000)
+MENU {"action":"DEEPER-QT","event":"hovered","h":54,"items":[{"text":"NESTED-QT","x":437,"y":191},{"text":"DEEPER-QT","x":437,"y":216}],"menu":"child","surface":true,"visible":true,"w":130,"x":373,"y":177}
+MENU {"action":"DEEPER-QT","event":"hovered","h":54,"items":[{"text":"CTX-QT","x":312,"y":164},{"text":"MORE-QT","x":312,"y":189}],"menu":"root","surface":true,"visible":true,"w":124,"x":251,"y":150}
+MENU {"action":"","event":"motion","h":54,"items":[{"text":"NESTED-QT","x":437,"y":191},{"text":"DEEPER-QT","x":437,"y":216}],"local_x":64,"local_y":39,"menu":"child","surface":true,"visible":true,"w":130,"x":373,"y":177}
+MENU {"action":"","event":"paint","h":54,"items":[{"text":"NESTED-QT","x":437,"y":191},{"text":"DEEPER-QT","x":437,"y":216}],"menu":"child","surface":true,"visible":true,"w":130,"x":373,"y":177}
+MENU {"action":"","event":"aboutToShow","h":30,"items":[{"text":"LEAF-QT","x":61,"y":14}],"menu":"grand","surface":false,"visible":false,"w":100,"x":0,"y":0}
+[10:55:03.448799] {Default Queue}  -> xdg_surface#45.get_popup(new id xdg_popup#47, xdg_surface#38, xdg_positioner#46)
+[10:55:03.448837] {Default Queue}  -> xdg_popup#47.grab(wl_seat#12, 483)
+[10:55:03.450299] {Default Queue} wl_keyboard#15.leave(483, wl_surface#32)
+[10:55:03.450346] {Default Queue} wl_keyboard#15.enter(483, wl_surface#43, array[0])
+[10:55:03.450373] {Default Queue} wl_keyboard#15.leave(516, wl_surface#43)
+[10:55:03.450384] {Default Queue} wl_keyboard#15.enter(516, wl_surface#17, array[0])
+[10:55:03.450430] {Default Queue} xdg_popup#47.configure(128, 27, 124, 29)
+[10:55:03.450452] {Default Queue}  -> xdg_surface#45.ack_configure(517)
+MENU {"action":"","event":"paint","h":29,"items":[{"text":"LEAF-QT","x":562,"y":218}],"menu":"grand","surface":true,"visible":true,"w":124,"x":501,"y":204}
+[10:55:03.451352] {Default Queue} wl_keyboard#15.leave(518, wl_surface#17)
+[10:55:03.451377] {Default Queue} wl_keyboard#15.enter(518, wl_surface#43, array[0])
+[10:55:03.519727] {Default Queue} wl_pointer#16.leave(524, wl_surface#32)
+[10:55:03.519795] {Default Queue} wl_pointer#16.enter(524, wl_surface#43, 59.00000000, 14.00000000)
+[10:55:03.519931] {Default Queue} wl_pointer#16.motion(573759642, 61.00000000, 14.00000000)
+MENU {"action":"LEAF-QT","event":"hovered","h":29,"items":[{"text":"LEAF-QT","x":562,"y":218}],"menu":"grand","surface":true,"visible":true,"w":124,"x":501,"y":204}
+MENU {"action":"LEAF-QT","event":"hovered","h":54,"items":[{"text":"NESTED-QT","x":437,"y":191},{"text":"DEEPER-QT","x":437,"y":216}],"menu":"child","surface":true,"visible":true,"w":130,"x":373,"y":177}
+MENU {"action":"LEAF-QT","event":"hovered","h":54,"items":[{"text":"CTX-QT","x":312,"y":164},{"text":"MORE-QT","x":312,"y":189}],"menu":"root","surface":true,"visible":true,"w":124,"x":251,"y":150}
+MENU {"action":"","event":"motion","h":29,"items":[{"text":"LEAF-QT","x":562,"y":218}],"local_x":61,"local_y":14,"menu":"grand","surface":true,"visible":true,"w":124,"x":501,"y":204}
+MENU {"action":"","event":"paint","h":29,"items":[{"text":"LEAF-QT","x":562,"y":218}],"menu":"grand","surface":true,"visible":true,"w":124,"x":501,"y":204}
+[10:55:04.546833] {Default Queue} wl_pointer#16.leave(532, wl_surface#43)
+[10:55:04.546896] {Default Queue} wl_pointer#16.enter(532, wl_surface#32, 61.99609375, 39.00000000)
+[10:55:04.546983] {Default Queue} wl_pointer#16.motion(573760672, 64.00000000, 39.00000000)
+MENU {"action":"","event":"paint","h":29,"items":[{"text":"LEAF-QT","x":562,"y":218}],"menu":"grand","surface":true,"visible":true,"w":124,"x":501,"y":204}
+MENU {"action":"DEEPER-QT","event":"hovered","h":54,"items":[{"text":"NESTED-QT","x":437,"y":191},{"text":"DEEPER-QT","x":437,"y":216}],"menu":"child","surface":true,"visible":true,"w":130,"x":373,"y":177}
+MENU {"action":"DEEPER-QT","event":"hovered","h":54,"items":[{"text":"CTX-QT","x":312,"y":164},{"text":"MORE-QT","x":312,"y":189}],"menu":"root","surface":true,"visible":true,"w":124,"x":251,"y":150}
+MENU {"action":"","event":"motion","h":54,"items":[{"text":"NESTED-QT","x":437,"y":191},{"text":"DEEPER-QT","x":437,"y":216}],"local_x":64,"local_y":39,"menu":"child","surface":true,"visible":true,"w":130,"x":373,"y":177}
+MENU {"action":"","event":"motion","h":29,"items":[{"text":"LEAF-QT","x":562,"y":218}],"local_x":-64,"local_y":12,"menu":"grand","surface":true,"visible":true,"w":124,"x":501,"y":204}
+MENU {"action":"","event":"paint","h":54,"items":[{"text":"NESTED-QT","x":437,"y":191},{"text":"DEEPER-QT","x":437,"y":216}],"menu":"child","surface":true,"visible":true,"w":130,"x":373,"y":177}
+[10:55:04.621573] {Default Queue} wl_pointer#16.leave(540, wl_surface#32)
+[10:55:04.621641] {Default Queue} wl_pointer#16.enter(540, wl_surface#43, 59.00000000, 14.00000000)
+[10:55:04.625746] {Default Queue} wl_pointer#16.motion(573760751, 61.00000000, 14.00000000)
+MENU {"action":"LEAF-QT","event":"hovered","h":29,"items":[{"text":"LEAF-QT","x":562,"y":218}],"menu":"grand","surface":true,"visible":true,"w":124,"x":501,"y":204}
+MENU {"action":"LEAF-QT","event":"hovered","h":54,"items":[{"text":"NESTED-QT","x":437,"y":191},{"text":"DEEPER-QT","x":437,"y":216}],"menu":"child","surface":true,"visible":true,"w":130,"x":373,"y":177}
+MENU {"action":"LEAF-QT","event":"hovered","h":54,"items":[{"text":"CTX-QT","x":312,"y":164},{"text":"MORE-QT","x":312,"y":189}],"menu":"root","surface":true,"visible":true,"w":124,"x":251,"y":150}
+MENU {"action":"","event":"motion","h":29,"items":[{"text":"LEAF-QT","x":562,"y":218}],"local_x":61,"local_y":14,"menu":"grand","surface":true,"visible":true,"w":124,"x":501,"y":204}
+MENU {"action":"","event":"paint","h":29,"items":[{"text":"LEAF-QT","x":562,"y":218}],"menu":"grand","surface":true,"visible":true,"w":124,"x":501,"y":204}
+[10:55:04.676780] {Default Queue} wl_pointer#16.leave(548, wl_surface#43)
+[10:55:04.676846] {Default Queue} wl_pointer#16.enter(548, wl_surface#17, 700.00000000, 550.00000000)
+[10:55:04.676936] {Default Queue} wl_pointer#16.button(549, 573760802, 272, 1)
+[10:55:04.676970] {Default Queue} wl_pointer#16.button(550, 573760802, 272, 0)
+MENU {"action":"","event":"motion","h":29,"items":[{"text":"LEAF-QT","x":562,"y":218}],"local_x":199,"local_y":346,"menu":"grand","surface":true,"visible":true,"w":124,"x":501,"y":204}
+[10:55:04.677210] {Default Queue}  -> xdg_popup#47.destroy()
+MENU {"action":"","event":"aboutToHide","h":29,"items":[{"text":"LEAF-QT","x":562,"y":218}],"menu":"grand","surface":false,"visible":false,"w":124,"x":501,"y":204}
+[10:55:04.677419] {Default Queue}  -> xdg_popup#40.destroy()
+MENU {"action":"","event":"aboutToHide","h":54,"items":[{"text":"NESTED-QT","x":437,"y":191},{"text":"DEEPER-QT","x":437,"y":216}],"menu":"child","surface":false,"visible":false,"w":130,"x":373,"y":177}
+[10:55:04.677655] {Default Queue}  -> xdg_popup#33.destroy()
+MENU {"action":"","event":"aboutToHide","h":54,"items":[{"text":"CTX-QT","x":312,"y":164},{"text":"MORE-QT","x":312,"y":189}],"menu":"root","surface":false,"visible":false,"w":124,"x":251,"y":150}
+[10:55:04.681189] {Default Queue} wl_keyboard#15.leave(553, nil)
+[10:55:04.681212] {Default Queue} wl_keyboard#15.enter(553, nil, array[0])
+[10:55:04.681247] {Default Queue} wl_keyboard#15.leave(554, nil)
+[10:55:04.681256] {Default Queue} wl_keyboard#15.enter(554, nil, array[0])
+[10:55:04.681277] {Default Queue} wl_pointer#16.motion(573760805, 700.00000000, 550.00000000)
+[10:55:04.681291] {Default Queue} wl_keyboard#15.leave(557, nil)
+[10:55:04.681301] {Default Queue} wl_keyboard#15.enter(557, wl_surface#17, array[0])
+[10:55:04.734904] {Default Queue} wl_keyboard#15.key(559, 573760860, 1, 1)
+[10:55:04.740494] {Default Queue} wl_keyboard#15.key(560, 573760860, 1, 0)

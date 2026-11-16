@@ -12,6 +12,7 @@ applications. Logs and PNGs stay in a new /tmp/raywm-stage4b-* directory.
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import signal
@@ -34,7 +35,7 @@ def main():
     for executable in [zig_bin / "raywm", zig_bin / "raywm-test-input"]:
         if not executable.is_file():
             parser.error(f"missing {executable}; build Zig with -Dtest-input first")
-    for executable in ["cargo", "grim", "gcc", "g++", "pkg-config"]:
+    for executable in ["cargo", "grim", "gcc", "g++", "pkg-config", "wl-paste"]:
         if not shutil.which(executable):
             parser.error(f"missing {executable}")
 
@@ -193,7 +194,8 @@ end }
         def run_test(name, marker):
             process = start([probe, name, "--exact", "--ignored", "--nocapture"],
                             client_env() | {"RAYWM_SMOKE_SOCKET": str(nested_socket),
-                                            "RAYWM_SMOKE_CONTROL": str(directory)},
+                                            "RAYWM_SMOKE_CONTROL": str(directory)}
+                            | ({"WAYLAND_DEBUG": "client"} if "final_admission" in name else {}),
                             name.split("::")[-1])
             deadline = time.monotonic() + 150
             while not (directory / marker).exists():
@@ -212,6 +214,13 @@ end }
         if not args.toolkits_only:
             run_test("dnd::dnd_icon_targets_actions_and_teardown", "dnd-done")
             run_test("dnd::reactive_popup_constraints_and_lifecycle", "popup-done")
+            # The reactive scenario leaves a 700x500 output. Restore the host
+            # size before the next scenario's 800x600 pointer coordinates.
+            drive("key", "super", "down", "key", "f10", "down", "key", "f10", "up", "key", "super", "up")
+            wait_for(lambda: "Nested output resized width=800 height=600" in
+                     (directory / "nested.log").read_text(errors="replace"), "restore 800x600 output")
+            run_test("dnd::final_admission_and_accepted_source_disconnect", "final-admission-done")
+            print("source-disconnect: CONFIRMED Smithay 0.7 upstream limitation (drop + FD EOF, zero bytes)", flush=True)
 
         # ---- GTK4 <-> Qt6 pointer-driven drag and drop ----
         gtk_source = r"""
@@ -228,9 +237,11 @@ static void write_text(const char *path, const char *text) {
     fclose(file);
 }
 
-static void on_drop(GtkDropTarget *target, const GValue *value, double x, double y, gpointer data) {
+static gboolean on_drop(GtkDropTarget *target, const GValue *value, double x, double y, gpointer data) {
     (void) target; (void) x; (void) y;
+    (void) data;
     write_text(getenv("DROP_FILE"), g_value_get_string(value));
+    return TRUE;
 }
 
 static void on_right_click(GtkGestureClick *gesture, int n_press, double x, double y, gpointer data) {
@@ -264,7 +275,14 @@ static void activate(GtkApplication *app, gpointer data) {
     gtk_window_set_title(GTK_WINDOW(window), "RayWM GTK DnD probe");
     gtk_window_set_default_size(GTK_WINDOW(window), 320, 200);
     gtk_window_set_decorated(GTK_WINDOW(window), FALSE);
-    if (role && strcmp(role, "source") == 0) {
+    fprintf(stderr, "gtk backend=%s version=%u.%u.%u\n",
+            G_OBJECT_TYPE_NAME(gtk_widget_get_display(window)),
+            gtk_get_major_version(), gtk_get_minor_version(), gtk_get_micro_version());
+    if (role && strcmp(role, "primary") == 0) {
+        GtkWidget *text = gtk_text_view_new();
+        gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(text)), "primary-gtk", -1);
+        gtk_window_set_child(GTK_WINDOW(window), text);
+    } else if (role && strcmp(role, "source") == 0) {
         GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
         GtkWidget *label = gtk_label_new("DRAG-GTK");
         gtk_widget_set_hexpand(label, FALSE);
@@ -309,6 +327,11 @@ int main(int argc, char **argv) {
 """
         qt_source = r"""
 #include <QApplication>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QTimer>
+#include <QWindow>
 #include <QContextMenuEvent>
 #include <QDrag>
 #include <QDropEvent>
@@ -329,6 +352,46 @@ static void write_text(const char *path, const QString &text) {
     fputs(text.toUtf8().constData(), file);
     fclose(file);
 }
+
+class Menu : public QMenu {
+public:
+    Menu(const QString &name, QWidget *parent) : QMenu(name, parent), name_(name) {
+        setMouseTracking(true);
+        connect(this, &QMenu::hovered, this, [this](QAction *a) { report("hovered", a); });
+        connect(this, &QMenu::aboutToShow, this, [this]() { report("aboutToShow"); });
+        connect(this, &QMenu::aboutToHide, this, [this]() { report("aboutToHide"); });
+        setStyleSheet(QString("QMenu { background: %1; color: black; border: 2px solid black; }")
+                      .arg(name == "root" ? "#e04040" : name == "child" ? "#40e040" : "#4040e0"));
+    }
+    void report(const char *event, QAction *action = nullptr) {
+        QJsonArray items;
+        for (auto *a : actions()) {
+            QRect r = actionGeometry(a);
+            QPoint p = mapToGlobal(r.center());
+            items.append(QJsonObject{{"text", a->text()}, {"x", p.x()}, {"y", p.y()}});
+        }
+        auto *w = windowHandle();
+        QJsonObject obj{{"menu", name_}, {"event", event}, {"visible", isVisible()},
+                        {"surface", w && w->isVisible()},
+                        {"x", x()}, {"y", y()}, {"w", width()}, {"h", height()},
+                        {"items", items}, {"action", action ? action->text() : ""}};
+        if (event == QString("motion")) {
+            QPoint p = mapFromGlobal(QCursor::pos());
+            obj.insert("local_x", p.x()); obj.insert("local_y", p.y());
+        }
+        auto line = QJsonDocument(obj).toJson(QJsonDocument::Compact);
+        fprintf(stderr, "MENU %s\n", line.constData()); fflush(stderr);
+    }
+protected:
+    bool event(QEvent *event) override {
+        bool result = QMenu::event(event);
+        if (event->type() == QEvent::Paint) report("paint");
+        if (event->type() == QEvent::MouseMove) report("motion");
+        return result;
+    }
+private:
+    QString name_;
+};
 
 class Probe : public QWidget {
 public:
@@ -386,10 +449,16 @@ protected:
     }
     void contextMenuEvent(QContextMenuEvent *event) override {
         fprintf(stderr, "qt context menu\n"); fflush(stderr);
-        QMenu menu(this);
+        Menu menu("root", this);
         menu.addAction("CTX-QT");
-        QMenu *nested = menu.addMenu("MORE-QT");
-        nested->addAction("NESTED-QT");
+        Menu child("child", &menu);
+        child.setTitle("MORE-QT");
+        menu.addMenu(&child);
+        child.addAction("NESTED-QT");
+        Menu grand("grand", &child);
+        grand.setTitle("DEEPER-QT");
+        child.addMenu(&grand);
+        grand.addAction("LEAF-QT");
         menu.exec(event->globalPos());
     }
 private:
@@ -411,7 +480,7 @@ int main(int argc, char **argv) {
 """
         if not (subprocess.run(["pkg-config", "--exists", "gtk4"]).returncode == 0
                 and subprocess.run(["pkg-config", "--exists", "Qt6Widgets"]).returncode == 0):
-            print("toolkit DnD: BLOCKED (GTK4/Qt6 development files missing)", flush=True)
+            raise RuntimeError("toolkit qualification BLOCKED: GTK4/Qt6 development files missing")
         else:
             gtk = directory / "gtk-dnd"
             qt = directory / "qt-dnd"
@@ -426,7 +495,7 @@ int main(int argc, char **argv) {
 
             def toolkit_env(role):
                 return client_env() | {"PROBE_ROLE": role, "GDK_BACKEND": "wayland",
-                                       "QT_QPA_PLATFORM": "wayland"}
+                                       "QT_QPA_PLATFORM": "wayland", "WAYLAND_DEBUG": "client"}
 
             def wait_window_map(before):
                 deadline = time.monotonic() + 25
@@ -591,58 +660,128 @@ int main(int argc, char **argv) {
                 if process.poll() is not None or nested.poll() is not None:
                     raise RuntimeError(f"{label}: process died opening a context menu")
                 if label.startswith("qt"):
-                    popups = (directory / "nested.log").read_text(errors="replace").count(
-                        "Popup role created")
-                    drive("move", "270", "195", "sleep", "800",
-                          "move", "330", "195", "sleep", "800")
-                    after = (directory / "nested.log").read_text(errors="replace").count(
-                        "Popup role created")
-                    if after > popups:
-                        print(f"{label}: nested submenu popup PASS", flush=True)
-                    else:
-                        print(f"{label}: nested submenu popup BLOCKED "
-                              "(QMenu did not open a submenu)", flush=True)
+                    qualify_menu(process, f"{label}-ctx")
                 drive("key", "escape", "down", "key", "escape", "up", "sleep", "300")
                 process.terminate()
                 process.wait(timeout=5)
                 processes.remove((f"{label}-ctx", process))
                 print(f"{label}: context-menu popup PASS", flush=True)
 
+            def qualify_menu(process, name):
+                log = directory / f"{name}.log"
+
+                def events():
+                    return [json.loads(line[5:]) for line in log.read_text(errors="replace").splitlines()
+                            if line.startswith("MENU ")]
+
+                def observed(menu, event, action=None):
+                    return [e for e in events() if e["menu"] == menu and e["event"] == event
+                            and (action is None or e["action"] == action)]
+
+                def hover(menu, text):
+                    wait_for(lambda: observed(menu, "paint"), f"{menu} painted")
+                    state = observed(menu, "paint")[-1]
+                    item = next(item for item in state["items"] if item["text"] == text)
+                    motions = len(observed(menu, "motion"))
+                    drive("move", str(item["x"]-2), str(item["y"]),
+                          "move", str(item["x"]), str(item["y"]))
+                    wait_for(lambda: observed(menu, "hovered", text), f"{menu} hovered {text}", timeout=5)
+                    wait_for(lambda: len(observed(menu, "motion")) > motions,
+                             f"{menu} fresh pointer motion", timeout=5)
+                    return state
+
+                hover("root", "MORE-QT")
+                wait_for(lambda: observed("child", "paint"), "Qt hover submenu timer", timeout=5)
+                hover("child", "DEEPER-QT")
+                wait_for(lambda: observed("grand", "paint"), "Qt second submenu timer", timeout=5)
+                grand = hover("grand", "LEAF-QT")
+                # Capture actual submitted menu pixels, with bounded observation
+                # retries while the toolkit frame callback completes.
+                specs = []
+                for menu, color in [("root", "e04040"), ("child", "40e040"), ("grand", "4040e0")]:
+                    state = observed(menu, "paint")[-1]
+                    if not state["visible"] or not state["surface"]:
+                        raise RuntimeError(f"{menu}: no visible platform surface")
+                    if not (0 <= state["x"] < 800 and 0 <= state["y"] < 600
+                            and state["x"] + state["w"] <= 800
+                            and state["y"] + state["h"] <= 600):
+                        raise RuntimeError(f"{menu}: out-of-output geometry {state}")
+                    specs += ["--pixel", f"{state['x']+4},{state['y']+4},{color}"]
+                shot = directory / "qt-nested-menus.png"
+                def rendered():
+                    subprocess.run(["grim", str(shot)], env=driver_env, timeout=10,
+                                   check=True, capture_output=True)
+                    return subprocess.run([sys.executable, str(ROOT / "tests/support/png_check.py"),
+                                           str(shot), "--size", "1280x720", *specs],
+                                          timeout=10, capture_output=True).returncode == 0
+                wait_for(rendered, "Qt nested rendered pixels", timeout=5)
+                # Return across the same submenu action and re-enter the child.
+                hover("child", "DEEPER-QT")
+                hover("grand", "LEAF-QT")
+                drive("move", "700", "550", "down", "left", "up", "left")
+                for menu in ["grand", "child", "root"]:
+                    wait_for(lambda menu=menu: observed(menu, "aboutToHide"), f"{menu} outside-click hide", timeout=5)
+                wait_for(lambda: len(re.findall(r"xdg_popup[#@]\d+\.destroy\(\)", log.read_text(errors="replace"))) >= 3,
+                         "popup teardown", timeout=5)
+                trace = log.read_text(errors="replace")
+                if trace.count(".get_popup(") < 3 or trace.count(".ack_configure(") < 3:
+                    raise RuntimeError("missing Qt popup configure/ACK sequence")
+                print("qt-menu: two hover-driven nested popups/render/grab/outside-click PASS", flush=True)
+
             run_context_menu(gtk, "gtk-menu")
             run_context_menu(qt, "qt-menu")
 
             def run_primary(app, label, expected):
                 mapped = (directory / "nested.log").read_text(errors="replace").count("Window mapped")
-                process = start([str(app)], toolkit_env("target"), f"{label}-primary")
+                process = start([str(app)], toolkit_env("primary"), f"{label}-primary")
                 wait_window_map(mapped)
-                time.sleep(0.5)
-                result = ""
-                for y in ("55", "103"):
-                    drive("move", "10", y, "down", "left", "sleep", "120",
-                          "move", "300", y, "sleep", "250", "up", "left", "sleep", "300")
-                    paste = subprocess.run([shutil.which("wl-paste"), "-p", "-n"],
-                                           env=client_env(), capture_output=True,
-                                           text=True, timeout=15)
-                    result = paste.stdout
-                    if expected in result:
-                        break
-                    drive("move", "100", y, "down", "left", "up", "left", "sleep", "100",
-                          "key", "ctrl", "down", "key", "a", "down", "key", "a", "up",
-                          "key", "ctrl", "up", "sleep", "300")
-                    paste = subprocess.run([shutil.which("wl-paste"), "-p", "-n"],
-                                           env=client_env(), capture_output=True,
-                                           text=True, timeout=15)
-                    result = paste.stdout
-                    if expected in result:
-                        break
+                trace = directory / f"{label}-primary.log"
+                wait_for(lambda: "wl_keyboard" in trace.read_text(errors="replace")
+                         and ".enter(" in trace.read_text(errors="replace"), f"{label} keyboard enter")
+                # GtkTextView and QLineEdit are ordinary text widgets. Select by
+                # a real held-pointer gesture, never by setting clipboard content.
+                y = "8" if label.startswith("gtk") else "55"
+                drive("move", "2", y, "down", "left", "sleep", "80",
+                      "move", "160", y, "up", "left")
+                wait_for(lambda: re.search(r"zwp_primary_selection_device_v1[#@]\d+\.set_selection",
+                                           trace.read_text(errors="replace")), f"{label} set_selection")
+                paste = subprocess.run(["wl-paste", "-p", "-n", "--type", "text/plain;charset=utf-8"],
+                                       env=client_env() | {"WAYLAND_DEBUG": "client"},
+                                       capture_output=True, timeout=15, check=True)
+                (directory / f"{label}-receiver.log").write_bytes(paste.stderr)
+                (directory / f"{label}-payload").write_bytes(paste.stdout)
+                source_trace = trace.read_text(errors="replace")
+                selection = re.findall(r"zwp_primary_selection_device_v1[#@]\d+\.set_selection\([^,]+, (\d+)\)", source_trace)
+                buttons = re.findall(r"wl_pointer[#@]\d+\.button\((\d+), \d+, 272, ([01])\)", source_trace)
+                receiver_trace = paste.stderr.decode(errors="replace")
+                # GTK uses the selection-start press; Qt uses the release.
+                # Both are actual delivered user events allowed by Stage 4A.
+                if not selection or selection[-1] not in [serial for serial, _ in buttons]:
+                    raise RuntimeError(f"{label}: set_selection did not use a delivered button serial")
+                if label.startswith("gtk") and (selection[-1], "1") not in buttons:
+                    raise RuntimeError(f"{label}: GTK did not use the traced press serial")
+                for required in ["zwp_primary_selection_device_manager_v1", ".get_device(", ".create_source(",
+                                 '.offer("text/plain;charset=utf-8")', '.send("text/plain;charset=utf-8", fd ']:
+                    if required not in source_trace:
+                        raise RuntimeError(f"{label}: missing source protocol observation {required}")
+                if '.receive("text/plain;charset=utf-8", fd ' not in receiver_trace:
+                    raise RuntimeError(f"{label}: missing receiver FD request")
+                (directory / f"{label}-summary.json").write_text(json.dumps({
+                    "backend": "wayland", "selection_serial": int(selection[-1]),
+                    "delivered_pointer_buttons": [{"serial": int(serial), "pressed": state == "1"}
+                                                  for serial, state in buttons],
+                    "mime": "text/plain;charset=utf-8", "payload_bytes": len(paste.stdout),
+                    "payload": paste.stdout.decode()}, indent=2) + "\n")
+                if paste.stdout != expected.encode():
+                    raise RuntimeError(f"{label}: payload {paste.stdout!r} != {expected!r}")
                 process.terminate()
                 process.wait(timeout=5)
                 processes.remove((f"{label}-primary", process))
-                if expected in result:
-                    print(f"{label}: primary selection PASS", flush=True)
-                else:
-                    print(f"{label}: primary selection BLOCKED "
-                          f"(wl-paste -p returned {result!r})", flush=True)
+                empty = subprocess.run(["wl-paste", "-p", "-n"], env=client_env(),
+                                       capture_output=True, timeout=10)
+                if empty.returncode == 0 or empty.stdout:
+                    raise RuntimeError(f"{label}: stale selection after source disconnect")
+                print(f"{label}: real toolkit primary selection/FD payload/cleanup PASS", flush=True)
 
             run_primary(gtk, "gtk-primary", "primary-gtk")
             run_primary(qt, "qt-primary", "primary-qt")

@@ -327,6 +327,20 @@ fn dnd_icon_targets_actions_and_teardown() -> Result<()> {
         Some(DndAction::Ask)
     );
 
+    // Reusing the held serial during an explicit DnD grab must not replace
+    // the state machine (Smithay's has_grab alone also matches explicit grabs).
+    let duplicate = clipboard_source(
+        &a,
+        SourceData::new(&[("text/plain;charset=utf-8", b"duplicate")]),
+    )?;
+    duplicate.set_actions(DndAction::Copy);
+    device_a.start_drag(Some(&duplicate), &a.window.surface, None, serial);
+    a.sync()?;
+    b.sync()?;
+    assert_eq!(a.probe.source_drop_performed, 0);
+    assert_eq!(b.probe.dnd_drops, 0);
+    duplicate.destroy();
+
     // Closed receiver pipe is contained by the source client.
     let (read, write) = UnixStream::pair()?;
     drop(read);
@@ -798,5 +812,186 @@ fn reactive_popup_constraints_and_lifecycle() -> Result<()> {
     survivor.sync()?;
 
     fs::write(control.join("popup-done"), "ok")?;
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "winit")]
+#[ignore = "requires stage4b-smoke.py private graphical parent and input driver"]
+fn final_admission_and_accepted_source_disconnect() -> Result<()> {
+    let socket = PathBuf::from(std::env::var_os("RAYWM_SMOKE_SOCKET").ok_or("run harness")?);
+    let control = PathBuf::from(std::env::var_os("RAYWM_SMOKE_CONTROL").ok_or("run harness")?);
+    let mut a = Peer::new(&socket, 0xffff0000)?;
+    let mut b = Peer::new(&socket, 0xff00ff00)?;
+    let device_a = clipboard_device(&a)?;
+    let device_b = clipboard_device(&b)?;
+    a.sync()?;
+    b.sync()?;
+    focus(&mut a, &control, "final-focus-a", at(0))?;
+
+    // The exact live serial is deliberately shared with the attacking peer.
+    // Knowing it must not grant ownership of another client's implicit grab.
+    for foreign in [true, false] {
+        let name = if foreign {
+            "final-foreign-dnd"
+        } else {
+            "final-wrong-origin"
+        };
+        let since = a.probe.input_serials.len();
+        start_gate(
+            &control,
+            name,
+            "move 20 20 down left sleep 1500 move 340 68 sleep 400 up left sleep 100",
+        )?;
+        let serial = wait_press(&mut a, since)?;
+        let wrong = a.compositor.create_surface(&a.queue.handle(), ());
+        if foreign {
+            device_b.start_drag(None, &b.window.surface, None, serial);
+            b.sync()?;
+        } else {
+            device_a.start_drag(None, &wrong, None, serial);
+            a.sync()?;
+        }
+        wait_gate(&control, name)?;
+        a.sync()?;
+        b.sync()?;
+        assert!(a.probe.dnd_enters.is_empty() && b.probe.dnd_enters.is_empty());
+        assert!(a.probe.input_serials[since..]
+            .iter()
+            .any(|(_, state)| *state == WEnum::Value(wl_pointer::ButtonState::Released)));
+        wrong.destroy();
+    }
+
+    // A popup request can arrive after release, as in real Qt context menus.
+    let since = a.probe.input_serials.len();
+    gate(
+        &control,
+        "final-released-press",
+        "move 20 20 down right up right",
+    )?;
+    a.sync()?;
+    let serial = wait_press(&mut a, since)?;
+    let popup = a.popup(&a.window.xdg, (100, 70), (30, 30));
+    popup
+        .popup
+        .grab(a.seat.as_ref().ok_or("missing seat")?, serial);
+    a.map_popup(&popup, 0xffffff00)?;
+    poll_until(
+        &mut a,
+        "released-press popup focus",
+        Duration::from_secs(5),
+        |p| p.keyboard_focus.as_ref() == Some(&popup.surface),
+    )?;
+    gate(
+        &control,
+        "final-popup-outside",
+        "move 700 550 down left up left",
+    )?;
+    poll_until(&mut a, "outside dismiss", Duration::from_secs(5), |p| {
+        p.popup_done.contains(&popup.popup)
+    })?;
+    popup.destroy();
+    a.sync()?;
+
+    gate(&control, "final-popup-return", "move 20 20")?;
+    a.sync()?;
+    // A consumed grant and a fabricated serial cannot be replayed even with
+    // pointer and keyboard focus back on the original surface.
+    for serial in [serial, 0xdead_beef] {
+        let popup = a.popup(&a.window.xdg, (100, 70), (30, 30));
+        popup
+            .popup
+            .grab(a.seat.as_ref().ok_or("missing seat")?, serial);
+        a.sync()?;
+        assert!(a.probe.popup_done.contains(&popup.popup));
+        popup.destroy();
+    }
+    focus(&mut a, &control, "final-expiry-focus", at(0))?;
+    let since = a.probe.input_serials.len();
+    gate(
+        &control,
+        "final-expiring-press",
+        "move 20 20 down right up right",
+    )?;
+    let serial = wait_press(&mut a, since)?;
+    // This delay measures the documented five-second security lifetime.
+    gate(&control, "final-grant-expiry", "sleep 5100")?;
+    let popup = a.popup(&a.window.xdg, (100, 70), (30, 30));
+    popup
+        .popup
+        .grab(a.seat.as_ref().ok_or("missing seat")?, serial);
+    a.sync()?;
+    assert!(a.probe.popup_done.contains(&popup.popup));
+    popup.destroy();
+
+    let since = a.probe.input_serials.len();
+    gate(
+        &control,
+        "final-focus-epoch-press",
+        "move 20 20 down right up right",
+    )?;
+    let old = wait_press(&mut a, since)?;
+    // Mapping/closing a third client changes focus away and back without
+    // delivering a newer pointer press to overwrite the original grant.
+    let mut transient = Peer::new(&socket, 0xff0000ff)?;
+    let transient_surface = transient.window.surface.clone();
+    wait_focus(&mut transient, &transient_surface)?;
+    drop(transient);
+    let a_surface = a.window.surface.clone();
+    wait_focus(&mut a, &a_surface)?;
+    let popup = a.popup(&a.window.xdg, (100, 70), (30, 30));
+    popup
+        .popup
+        .grab(a.seat.as_ref().ok_or("missing seat")?, old);
+    a.sync()?;
+    assert!(a.probe.popup_done.contains(&popup.popup));
+    popup.destroy();
+
+    // Qualify the previously untested ACCEPTED-offer disconnect path. Smithay
+    // 0.7's PointerInternal::with_grab -> DnDGrab::unset -> drop validates only
+    // accepted/action, not source liveness. Record this upstream defect rather
+    // than treating the resulting empty stream as a successful transfer.
+    let source = clipboard_source(
+        &a,
+        SourceData::new(&[("text/plain;charset=utf-8", b"gone")]),
+    )?;
+    source.set_actions(DndAction::Copy);
+    let since = a.probe.input_serials.len();
+    start_gate(
+        &control,
+        "final-accepted-disconnect",
+        "move 20 20 down left sleep 1500 move 340 68 sleep 2000 move 342 70 sleep 200 up left",
+    )?;
+    let serial = wait_press(&mut a, since)?;
+    device_a.start_drag(Some(&source), &a.window.surface, None, serial);
+    a.connection.flush()?;
+    poll_until(
+        &mut b,
+        "accepted disconnect enter",
+        Duration::from_secs(5),
+        |p| !p.dnd_enters.is_empty(),
+    )?;
+    let (serial, _, offer, _, _) = last_dnd_offer(&b).ok_or("no disconnect offer")?;
+    offer.accept(serial, Some("text/plain;charset=utf-8".into()));
+    offer.set_actions(DndAction::Copy, DndAction::Copy);
+    b.sync()?;
+    poll_until(&mut a, "copy negotiated", Duration::from_secs(5), |p| {
+        p.source_actions
+            .iter()
+            .any(|action_| action(*action_) == Some(DndAction::Copy))
+    })?;
+    drop(a);
+    wait_gate(&control, "final-accepted-disconnect")?;
+    b.sync()?;
+    assert_eq!(
+        b.probe.dnd_drops, 1,
+        "pinned Smithay 0.7 upstream defect changed; re-audit it"
+    );
+    assert_eq!(b.probe.dnd_leaves, 1);
+    let payload = read_local(&mut b, &offer, "text/plain;charset=utf-8")?;
+    assert!(payload.is_empty());
+    fs::write(control.join("accepted-disconnect.txt"),
+        "Smithay 0.7.0: negotiated Copy + accepted UTF-8 MIME; source disconnect; drop=1 leave=1; receive FD EOF, bytes=0. UPSTREAM LIMITATION, not successful DnD.\n")?;
+    fs::write(control.join("final-admission-done"), "ok")?;
     Ok(())
 }

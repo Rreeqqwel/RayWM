@@ -24,12 +24,15 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 cargo build --workspace --locked
 # Additional renderer-free regression checks:
+cargo check --workspace --no-default-features --locked
+cargo build --workspace --no-default-features --locked
 cargo clippy --workspace --all-targets --no-default-features --locked -- -D warnings
 cargo test --workspace --no-default-features --locked
 ```
 
 The default tests comprise seven core tests and eleven real headless process/
-protocol tests; Stage 4B's DnD/icon and reactive-popup tests are graphical and
+protocol tests; Stage 4B's DnD/icon, reactive-popup and admission/edge-case tests
+are graphical and
 therefore ignored in that run. They cover ID deletion/non-reuse/exhaustion, geometry and
 focus, cascade/stack/fallback policy, all resize edges, size limits, anchored
 commit geometry and operation cancellation; registry/sync, shm and synchronized subsurface buffer lifetimes;
@@ -48,8 +51,9 @@ cases are expected; the connection is rejected and a fresh client still works.
 Each process has a scrubbed environment, private mode-0700 runtime directory,
 bounded waits and a kill/reap guard. Headless mode sends no fabricated frames.
 
-The Stage 2/3 graphical tests, the Stage 4A selection test and the two Stage 4B
-DnD/popup tests are explicitly ignored by default because they need a parent.
+The Stage 2/3 graphical tests, the Stage 4A selection test and the three Stage 4B
+DnD/popup/admission tests are explicitly ignored by default because they need
+a parent.
 Run them through the separate harnesses from the repository root:
 
 ```sh
@@ -104,9 +108,21 @@ configure churn, a reposition token, unmap/remap and destruction with an
 unACKed configure, using real popup events and submitted pixels. The same
 harness runs GTK4 → Qt6 and Qt6 → GTK4 pointer-driven DnD with payload files,
 cancellation, source/target close mid-drag and context-menu popups. The Qt
-nested submenu and GTK primary-selection attempts are recorded as BLOCKED, not
-passed; Qt primary selection passes. Evidence is in
-[the Stage 4B qualification record](measurements/v0.3.0/stage4b/qualification.md).
+probe opens two submenu levels by fresh pointer motion, waits for Qt's own
+hover/timer/paint observations with bounded deadlines, checks their actual
+pixels and geometry, then dismisses the chain with outside-click. GTK primary
+selection uses a real GtkTextView gesture; GTK and Qt must send a standard
+primary `set_selection` with a delivered input serial (GTK press, Qt release)
+and transfer the exact
+UTF-8 payload via FD to independent wl-paste. Toolkit WAYLAND_DEBUG traces,
+receiver payloads and source-disconnect cleanup are checked. Missing toolkit
+development files fail with a BLOCKED reason. Output size is restored to
+800x600 after the reactive scenario, before the next pointer-driven scenario.
+The third Rust scenario rejects foreign/wrong-origin DnD and replayed/expired
+popup grants, and explicitly reproduces accepted-offer source disconnect:
+Smithay 0.7 emits drop/leave with FD EOF. This is a confirmed upstream limitation,
+not successful data delivery. Evidence and the audit are in
+[the Stage 4B-Final qualification record](measurements/v0.3.0/stage4b/final-qualification.md).
 
 The Stage 4A harness runs two independent Wayland clients with real focus
 gates. It verifies clipboard and primary-selection ownership, distinct payloads

@@ -1,11 +1,14 @@
 # Stage 4B drag-and-drop, drag icon and reactive popup qualification
 
-Status: **PASS for the Stage 4B nested/software scope**, with the Qt nested
-submenu and GTK primary selection **BLOCKED** by the probe environment/protocol
-support. Qt primary selection passes; primary selection itself is also
-qualified in Stage 4A with protocol clients and foot. This is
-migration work on `feature/rust-smithay`, not a release. Zig sources, build,
-protocol, config, packaging and scripts are unchanged. Nothing was pushed.
+Historical record for the initial Stage 4B commit `7e9c67e`. The initial run
+passed its DnD/icon/reactive-popup scope and left GTK primary selection and Qt
+submenus BLOCKED by inconclusive probes. The toolkit/environment explanation
+was not established. Both scenarios are now resolved by
+[Stage 4B-Final qualification](final-qualification.md), which also identifies
+the accepted-source-disconnect upstream defect precisely. The tables below
+retain the original observations; they do not describe current qualification.
+This is migration work on `feature/rust-smithay`, not a release. Zig sources,
+build, protocol, config, packaging and scripts are unchanged. Nothing was pushed.
 Base commit: `ecd2a28` (Stage 4A). Evidence run:
 `/tmp/raywm-stage4b-2_zajh7q`.
 

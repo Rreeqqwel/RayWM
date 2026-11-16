@@ -300,9 +300,15 @@ uses the normal configure/ACK/commit transaction. Popup helpers are called
 outside the pending-role mutex to avoid recursive locking.
 
 An explicit grab must occur before mapping and match a current held pointer
-serial from the root client, a recently delivered keyboard-press serial for
-that focused root (one grant, at most five seconds), or an existing nested
-popup grab serial. Smithay additionally validates topmost-parent/grab ordering.
+serial from the root client, the latest delivered pointer press after release
+(one grant, at most five seconds, with the same pointer surface and keyboard
+focus epoch), a recently delivered keyboard-press serial for that focused root
+(one grant, at most five seconds), or an existing nested popup grab serial.
+Pointer and keyboard grants are invalidated on keyboard focus transitions and
+host focus loss. A successful popup grab consumes the pointer grant. This lets
+ordinary GTK/Qt context menus survive a press/release delivered before the
+client dispatches its grab request, without accepting forged, expired or
+replayed input. Smithay additionally validates topmost-parent/grab ordering.
 A rejected grab dismisses its popup without installing partial seat grabs.
 Outside-click, client destruction and host focus loss dismiss/ungrab through
 Smithay. Native grabs are explicitly cleared when the popup chain ends, even
@@ -382,8 +388,9 @@ data-device `enter`/`motion`/`leave`/`drop` events, `accept`/`set_actions`
 negotiation, `receive` fd forwarding and `finish`/`cancelled`/
 `dnd_drop_performed`/`dnd_finished` delivery. RayWM adds only:
 
-* admission (Smithay requires the serial of the current held implicit pointer
-  or touch grab; forged and stale serials are refused before a grab exists),
+* admission (the serial must match the current held implicit pointer grab,
+  its focused surface must equal the origin and belong to the requesting
+  client; an active DnD, popup or interactive move/resize cannot be replaced),
 * an active-drag flag used to keep orphaned pointer-focus repair from cancelling
   a DnD grab, and
 * the drag-icon render state.
@@ -391,8 +398,10 @@ negotiation, `receive` fd forwarding and `finish`/`cancelled`/
 Action negotiation uses Smithay's default chooser: a valid preferred
 `copy`/`move`/`ask` is kept when offered, otherwise `ask`, `copy`, `move` in
 that order. This negotiates the action; it does not move or delete application
-data, which remains the clients' responsibility. A drop is emitted only when the
-target accepted an offered MIME type and a non-empty action was chosen. A
+data, which remains the clients' responsibility. On a normal release, a drop
+is emitted only when the target accepted an
+offered MIME type and a non-empty action was chosen. Source-disconnect is a
+known exception in the pinned upstream state machine (see Limits below). A
 target that accepts an unoffered MIME produces a cancellation, not a drop.
 
 **Drag icon.** `ClientDndGrabHandler::started` stores the optional icon surface
@@ -412,11 +421,17 @@ A commit of the icon or a subsurface updates the overlay.
 advertises and implements only client-initiated DnD. Drag icons larger than the
 verified paths rely on the ordinary renderer; there is no separate icon cache.
 If a source client disconnects while the pointer is over an accepting target,
-Smithay tears the grab down when the drag-origin surface dies and can still emit
-a final drop indication; the source is gone, so no data is transferred. The
-icon and grab are nevertheless cleared and the compositor stays healthy. This is
-a Smithay grab-teardown behavior, reported as a known protocol edge rather than a
-successful transfer.
+Smithay 0.7.0's dead-origin pointer-grab cleanup calls `DnDGrab::unset`, which
+unconditionally calls its drop path. That path tests accepted MIME/action but
+not source liveness: the target gets a drop and leave, and a subsequent receive
+gets FD EOF with zero bytes. This violates the protocol's source-destroy
+cancellation requirement and can look successful to a target that trusts drop
+without validating its payload. An unaccepted offer produces no drop. Icons,
+grabs and resources are cleaned and the target/compositor survive. The
+[Final qualification](measurements/v0.3.0/stage4b/final-qualification.md)
+records the reproducer, event trace and minimal upstream fix direction. No
+parallel DnD manager or dependency patch is installed; this remains an upstream
+protocol limitation, not a successful transfer.
 
 ### Reactive popup constraints
 
@@ -528,7 +543,7 @@ cargo build --workspace --locked
 ```
 
 Stage 4B passes all five commands above. The default test command runs 18
-automatic tests (seven core, eleven protocol/process); five graphical tests
+automatic tests (seven core, eleven protocol/process); six graphical tests
 are explicitly ignored there and run by the separate smoke scenarios below.
 Headless-only clippy/tests and `tests/docs-sync.sh` also pass. The three
 original Stage 1 process tests remain in place; only the expected registry
@@ -614,7 +629,8 @@ shuts down cleanly. Evidence is retained
 under `docs/measurements/v0.3.0/stage4a/`. These are nested/software
 qualifications, not physical hardware or toolkit-matrix coverage.
 
-Stage 4B adds two ignored Rust scenarios driven by `stage4b-smoke.py`. The DnD
+Stage 4B adds three opt-in graphical Rust scenarios driven by
+`stage4b-smoke.py`. The DnD
 scenario uses a real held pointer from one persistent virtual-input process and
 two independent Wayland clients. It verifies: a forged serial cannot start a
 drag; the source action set (copy/move/ask) and an Ask preference reach the
@@ -632,7 +648,7 @@ destroyed parent with an unACKed configure. Pixels come from `grim` after a real
 frame callback; no test-only compositor state is read.
 
 The same harness compiles small GTK 4.24 and Qt 6.12 probes against the
-installed development files (skipping with a stated reason if absent) and runs
+installed development files (failing with a BLOCKED reason if absent) and runs
 pointer-driven toolkit DnD:
 
 | Scenario | Result |
@@ -644,13 +660,20 @@ pointer-driven toolkit DnD:
 | Source process closed mid-drag | PASS, target/compositor survive, no data |
 | GTK context-menu popup | PASS |
 | Qt context-menu popup | PASS |
-| Qt nested submenu popup | BLOCKED: `QMenu` did not open the submenu under synthetic hover |
+| Qt nested submenu popup | PASS: two hover-opened submenu levels, wire configure/ACK, submitted pixels, child motion and outside-click teardown |
 | Qt primary selection from a text selection | PASS |
-| GTK primary selection from a text selection | BLOCKED: the GTK 4 probe published no primary selection through the advertised `zwp` protocol; no fake global was added |
+| GTK primary selection from a text selection | PASS: real GtkTextView pointer selection, standard `zwp` source/serial, independent receiver and exact UTF-8 FD payload |
 
 The toolkit results are nested/software observations with frameless probe
-windows, not a full application or theme matrix. Evidence, payloads and images
-are retained under `docs/measurements/v0.3.0/stage4b/`.
+windows, not a full application or theme matrix. The original GTK attempt
+selected a non-selectable label containing no test payload; the original Qt
+root grab was denied after release, before any submenu could open. Final
+qualification fixes the GTK widget and RayWM popup admission, checks fresh
+motion after enter and restores output size between scenarios. It also tests
+foreign DnD serials, wrong origins, active-drag replacement, popup grant replay,
+expiry/focus changes and an accepted-offer source disconnect. Evidence,
+payloads, traces and images are in the
+[Stage 4B-Final report](measurements/v0.3.0/stage4b/final-qualification.md).
 
 ### Prototype limits
 
@@ -666,8 +689,8 @@ pointer is over the nested output; cursor surfaces remain Winit's.
 
 Physical DRM/KMS/input/hotplug, hardware GL, full GTK/Qt applications, IME,
 server-side DnD, device rules, fractional client scaling, presentation-time,
-sanitizers and production resource/admission budgets remain unqualified. The
-toolkit nested-submenu case is BLOCKED by the probe environment. If a DnD source
+sanitizers and production resource/admission budgets remain unqualified. If a
+DnD source
 disconnects with the pointer over an accepting target, Smithay may still emit a
 drop indication with no data (documented above). Output resize updates the mode
 and clamps oversized windows; it does not implement multi-output relocation or
@@ -720,8 +743,9 @@ prototype, not an installed desktop.
    negotiation, a frontmost drag icon with scale/transform/commit handling,
    source/target/cancel/teardown tests, compositor-driven reactive popup
    constraints with nested-popup coalescing, and pointer-driven GTK 4 ↔ Qt 6
-   qualification. Server-side DnD, toolkit nested submenus and a full toolkit
-   matrix remain open.
+   qualification, GTK primary selection and two hover-driven Qt submenu levels.
+   Server-side DnD, a full toolkit matrix and the pinned Smithay source-disconnect
+   protocol defect remain open; see the Final qualification.
 5. **Next: Stage 5 — workspace/configuration ownership and Lua host:** compatibility boundary and unchanged API v1,
    parser/layered reload, adversarial budget/ownership tests and plugin traces.
    Parallel Zig/Rust executables use independent private sockets/config roots.

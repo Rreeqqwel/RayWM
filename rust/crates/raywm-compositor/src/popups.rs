@@ -443,6 +443,17 @@ impl State {
                         && surface.id().same_client_as(&popup.wl_surface().id())
                 }) && self.pressed_buttons.contains(&start.button)
             });
+        let released_press = !pointer.is_grabbed()
+            && self
+                .pointer_grant
+                .as_ref()
+                .is_some_and(|(grant, target, when)| {
+                    *grant == serial
+                        && when.elapsed() < std::time::Duration::from_secs(5)
+                        && pointer.current_focus().as_ref() == Some(target)
+                        && self.surface_window(target) == Some(root_id)
+                        && target.id().same_client_as(&popup.wl_surface().id())
+                });
         let keyed = self
             .key_grant
             .as_ref()
@@ -452,7 +463,9 @@ impl State {
                     && self.surface_window(target) == Some(root_id)
                     && target.id().same_client_as(&popup.wl_surface().id())
             });
-        if self.desktop.focused() != Some(root_id) || (!nested && !pressed && !keyed) {
+        if self.desktop.focused() != Some(root_id)
+            || (!nested && !pressed && !released_press && !keyed)
+        {
             self.reject_popup(&popup);
             return;
         }
@@ -465,6 +478,7 @@ impl State {
             .grab_popup(root, PopupKind::Xdg(popup.clone()), &seat, serial)
         {
             Ok(grab) => {
+                self.pointer_grant = None;
                 self.set_keyboard_focus(grab.current_grab(), serial);
                 keyboard.set_grab(self, PopupKeyboardGrab::new(&grab), serial);
                 pointer.set_grab(
