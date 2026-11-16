@@ -4,10 +4,7 @@
 use crate::state::State;
 use raywm_core::windows::WindowId;
 use smithay::{
-    desktop::{
-        get_popup_toplevel_coords, PopupKeyboardGrab, PopupKind, PopupManager, PopupPointerGrab,
-        PopupUngrabStrategy,
-    },
+    desktop::{PopupKeyboardGrab, PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy},
     input::Seat,
     reexports::{
         wayland_protocols::xdg::shell::server::{xdg_surface, xdg_wm_base},
@@ -16,7 +13,7 @@ use smithay::{
             Resource,
         },
     },
-    utils::{IsAlive, Serial, SERIAL_COUNTER},
+    utils::{IsAlive, Logical, Rectangle, Serial, SERIAL_COUNTER},
     wayland::{
         compositor::{get_parent, with_states, BufferAssignment, SurfaceAttributes},
         shell::xdg::{PopupSurface, PositionerState},
@@ -31,6 +28,11 @@ pub struct PopupEntry {
     configured: bool,
     dismissed: bool,
     mapped: bool,
+    /// Last geometry sent (or already pending) for this popup. Reactive
+    /// updates are coalesced: a configure is sent only when this changes.
+    last_geometry: Option<Rectangle<i32, Logical>>,
+    /// The client did not opt into compositor-driven reconfiguration.
+    reactive_blocked: bool,
 }
 
 fn invalid_parent(surface: &WlSurface, message: &str) {
@@ -91,31 +93,66 @@ impl State {
             configured: false,
             dismissed: root.is_none(),
             mapped: false,
+            last_geometry: None,
+            reactive_blocked: false,
         };
-        if root.is_none()
-            || self
+        let mut tracked = false;
+        if root.is_some()
+            && self
                 .popups
                 .track_popup(PopupKind::Xdg(surface.clone()))
-                .is_err()
+                .is_ok()
         {
-            if root.is_none() {
-                invalid_parent(
-                    surface.wl_surface(),
-                    "popup parent must be a live toplevel or popup (maximum ancestry 64)",
-                );
-            } else {
-                surface.send_popup_done();
-            }
-            entry.dismissed = true;
+            tracked = true;
+        } else if root.is_none() {
+            invalid_parent(
+                surface.wl_surface(),
+                "popup parent must be a live toplevel or popup (maximum ancestry 64)",
+            );
         } else {
-            self.position_popup(&surface, None);
+            surface.send_popup_done();
+        }
+        if !tracked {
+            entry.dismissed = true;
         }
         self.popup_entries.push(entry);
+        if tracked {
+            self.position_popup(&surface, None);
+        }
+        tracing::info!(
+            popup = ?surface.wl_surface().id(),
+            root = ?root.map(|id| id.get()),
+            "Popup role created"
+        );
         self.redraw = true;
     }
 
-    pub fn position_popup(
+    /// Offset of this popup's parent chain relative to the root toplevel,
+    /// using each parent popup's latest pending geometry. `get_popup_toplevel_coords`
+    /// reads only acknowledged geometry, which would emit an extra transient
+    /// configure to a nested child whenever its parent is reconfigured.
+    fn popup_offset_to_root(
         &self,
+        popup: &PopupSurface,
+    ) -> Option<smithay::utils::Point<i32, Logical>> {
+        let mut offset = smithay::utils::Point::default();
+        let mut current = popup.get_parent_surface()?;
+        for _ in 0..64 {
+            if self.window_id(&current).is_some() {
+                return Some(offset);
+            }
+            let entry = self
+                .popup_entries
+                .iter()
+                .find(|entry| entry.surface.wl_surface() == &current && !entry.dismissed)?;
+            offset += entry.surface.with_pending_state(|state| state.geometry.loc);
+            current = entry.surface.get_parent_surface()?;
+        }
+        None
+    }
+
+    pub fn position_popup(
+        &mut self,
         popup: &PopupSurface,
         positioner: Option<PositionerState>,
     ) -> bool {
@@ -130,7 +167,9 @@ impl State {
             return false;
         }
         // parent() locks the role too; never call it inside with_pending_state.
-        let parent_offset = get_popup_toplevel_coords(&PopupKind::Xdg(popup.clone()));
+        let Some(parent_offset) = self.popup_offset_to_root(popup) else {
+            return false;
+        };
         let geometry = root
             .and_then(|id| self.views.iter().find(|view| view.id == id))
             .and_then(|view| self.space.element_geometry(&view.window));
@@ -138,7 +177,7 @@ impl State {
             .output
             .as_ref()
             .and_then(|output| self.space.output_geometry(output));
-        popup.with_pending_state(|state| {
+        let geometry = popup.with_pending_state(|state| {
             if let Some(positioner) = positioner {
                 state.positioner = positioner;
             }
@@ -148,8 +187,84 @@ impl State {
                 bounds.loc -= parent_offset;
                 state.geometry = state.positioner.get_unconstrained_geometry(bounds);
             }
+            state.geometry
         });
+        if let Some(entry) = self
+            .popup_entries
+            .iter_mut()
+            .find(|entry| entry.surface == *popup)
+        {
+            entry.last_geometry = Some(geometry);
+            entry.reactive_blocked = false;
+        }
         true
+    }
+
+    /// Recompute constrained popup geometry after a parent move/resize,
+    /// output change or nested popup transition. Only actual geometry changes
+    /// produce a configure; clients without a reactive positioner are skipped.
+    pub fn reposition_popups(&mut self) {
+        let Some(output_bounds) = self
+            .output
+            .as_ref()
+            .and_then(|output| self.space.output_geometry(output))
+        else {
+            return;
+        };
+        for index in 0..self.popup_entries.len() {
+            if self.popup_entries[index].dismissed
+                || !self.popup_entries[index].mapped
+                || !self.popup_entries[index].configured
+                || self.popup_entries[index].reactive_blocked
+            {
+                continue;
+            }
+            let surface = self.popup_entries[index].surface.clone();
+            if !surface.alive() || self.popups.find_popup(surface.wl_surface()).is_none() {
+                continue;
+            }
+            let Some(root) = self.checked_popup_root(&surface) else {
+                continue;
+            };
+            let Some(window_geometry) = self
+                .views
+                .iter()
+                .find(|view| view.id == root)
+                .and_then(|view| self.space.element_geometry(&view.window))
+            else {
+                continue;
+            };
+            let Some(parent_offset) = self.popup_offset_to_root(&surface) else {
+                continue;
+            };
+            let positioner = surface.with_pending_state(|state| state.positioner);
+            let mut bounds = output_bounds;
+            bounds.loc -= window_geometry.loc;
+            bounds.loc -= parent_offset;
+            let geometry = positioner.get_unconstrained_geometry(bounds);
+            if self.popup_entries[index].last_geometry == Some(geometry) {
+                continue;
+            }
+            surface.with_pending_state(|state| state.geometry = geometry);
+            match surface.send_pending_configure() {
+                Ok(serial) => {
+                    self.popup_entries[index].last_geometry = Some(geometry);
+                    if serial.is_some() {
+                        self.redraw = true;
+                        tracing::debug!(
+                            popup = ?surface.wl_surface().id(),
+                            "Popup reconfigured for parent/output change"
+                        );
+                    }
+                }
+                Err(error) => {
+                    // AlreadyConfigured/NotReactive are protocol answers, not
+                    // transient failures: never retry the same client.
+                    self.popup_entries[index].reactive_blocked = true;
+                    tracing::debug!(%error, "Popup does not accept compositor reconfiguration");
+                }
+            }
+        }
     }
 
     pub fn validate_popup_commit(&mut self, surface: &WlSurface) {
@@ -230,13 +345,18 @@ impl State {
             if entry.mapped && !buffered {
                 dismiss = Some(entry.surface.clone());
             }
+            let was_mapped = entry.mapped;
             entry.mapped = buffered && entry.configured && !entry.dismissed;
+            if entry.mapped && !was_mapped {
+                tracing::info!(popup = ?surface.id(), "Popup mapped");
+            }
             self.redraw = true;
             self.space.refresh();
         }
         if let Some(popup) = dismiss {
             self.reject_popup(&popup);
         }
+        self.reposition_popups();
     }
 
     pub fn dismiss_window_popups(&mut self, surface: &WlSurface) {

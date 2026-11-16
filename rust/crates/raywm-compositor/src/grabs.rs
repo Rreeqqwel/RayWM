@@ -112,6 +112,7 @@ impl State {
     pub fn cancel_operation(&mut self) {
         if let Some(id) = self.desktop.interaction_window() {
             self.desktop.cancel_operation(id);
+            self.reposition_popups();
             if let Some(view) = self.views.iter_mut().find(|view| view.id == id) {
                 view.resize_flight = None;
                 if let Some(top) = view.window.toplevel() {
@@ -177,6 +178,10 @@ impl PointerGrab<State> for FloatingGrab {
             && !handle.current_pressed().contains(&self.start.button)
         {
             data.desktop.finish_interaction();
+            // The interaction is already cleared, so unset() skips its own
+            // pass; update popup constraints once the final parent geometry
+            // is visible to the scene.
+            data.reposition_popups();
             handle.unset_grab(self, data, event.serial, event.time, true);
         }
     }
@@ -214,6 +219,9 @@ impl PointerGrab<State> for FloatingGrab {
     fn unset(&mut self, data: &mut State) {
         if data.desktop.interaction_window() == Some(self.id) {
             data.desktop.finish_interaction();
+            // Popup constraint updates are intentionally deferred to the end
+            // of an interactive move/resize instead of one per pointer motion.
+            data.reposition_popups();
         }
     }
 }

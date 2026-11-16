@@ -260,6 +260,7 @@ impl State {
         self.sync_scene();
         self.sync_focus();
         self.repair_pointer_focus();
+        self.reposition_popups();
     }
 
     pub fn remove_window(&mut self, surface: &WlSurface) {

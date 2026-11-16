@@ -8,6 +8,26 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ### Added
 
+- Rust client drag-and-drop through Smithay's `DnDGrab`: real pointer/touch
+  serial admission, source action negotiation (copy/move/ask), target
+  enter/motion/leave/drop switching, MIME `receive` fd forwarding, finish and
+  cancellation, and teardown on source/target/client disconnect. A frontmost
+  drag icon is rendered from the client surface with buffer scale/transform,
+  commit and legacy buffer-offset handling, and is cleared on drop, cancel,
+  focus loss or surface destruction. No server-side DnD or data move/delete is
+  implied.
+- Reactive popup constraints: on parent move/resize commits, output changes and
+  the end of interactive operations, mapped reactive popups are recomputed
+  against the current output/root geometry. Configures are coalesced to actual
+  geometry changes; nested popups use pending parent geometry to avoid
+  transient churn; non-reactive positioners are skipped as the protocol
+  requires.
+- Stage 4B qualification: independent-client DnD/icon/popup pixel scenarios and
+  pointer-driven GTK 4 ↔ Qt 6 DnD with payload verification, cancellation,
+  mid-drag source/target close and context-menu popups. Qt primary selection
+  from a text selection passes; GTK primary selection is BLOCKED without a fake
+  compatibility global. The Qt nested submenu attempt is recorded as BLOCKED.
+
 - Rust standard clipboard and primary selection through
   `wl_data_device_manager` v3 and `zwp_primary_selection_device_manager_v1`.
   Data-device focus follows the existing seat keyboard focus; `set_selection`

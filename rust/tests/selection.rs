@@ -33,12 +33,12 @@ use wayland_protocols::wp::primary_selection::zv1::client::{
 /// Payloads are keyed by mime type so a test can prove that the requested
 /// type, not a cached buffer, determines the bytes transferred.
 #[derive(Clone, Default)]
-struct SourceData {
+pub(crate) struct SourceData {
     payloads: Vec<(String, Vec<u8>)>,
 }
 
 impl SourceData {
-    fn new(payloads: &[(&str, &[u8])]) -> Self {
+    pub(crate) fn new(payloads: &[(&str, &[u8])]) -> Self {
         Self {
             payloads: payloads
                 .iter()
@@ -47,7 +47,7 @@ impl SourceData {
         }
     }
 
-    fn payload(&self, mime: &str) -> &[u8] {
+    pub(crate) fn payload(&self, mime: &str) -> &[u8] {
         self.payloads
             .iter()
             .find(|(known, _)| known == mime)
@@ -86,8 +86,19 @@ impl Dispatch<wl_data_device::WlDataDevice, ()> for Probe {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let wl_data_device::Event::Selection { id } = event {
-            state.clipboard_selection.push(id);
+        match event {
+            wl_data_device::Event::Selection { id } => state.clipboard_selection.push(id),
+            wl_data_device::Event::Enter {
+                serial,
+                surface,
+                x,
+                y,
+                id,
+            } => state.dnd_enters.push((serial, surface, id, x, y)),
+            wl_data_device::Event::Leave => state.dnd_leaves += 1,
+            wl_data_device::Event::Motion { x, y, .. } => state.dnd_motions.push((x, y)),
+            wl_data_device::Event::Drop => state.dnd_drops += 1,
+            _ => {}
         }
     }
 
@@ -105,8 +116,19 @@ impl Dispatch<wl_data_offer::WlDataOffer, ()> for Probe {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let wl_data_offer::Event::Offer { mime_type } = event {
-            state.offer_mime_types.push((offer.clone(), mime_type));
+        match event {
+            wl_data_offer::Event::Offer { mime_type } => {
+                state.offer_mime_types.push((offer.clone(), mime_type));
+            }
+            wl_data_offer::Event::SourceActions { source_actions } => {
+                state
+                    .offer_source_actions
+                    .push((offer.clone(), source_actions));
+            }
+            wl_data_offer::Event::Action { dnd_action } => {
+                state.offer_actions.push((offer.clone(), dnd_action));
+            }
+            _ => {}
         }
     }
 }
@@ -121,10 +143,16 @@ impl Dispatch<WlDataSource, SourceData> for Probe {
         _: &QueueHandle<Self>,
     ) {
         match event {
+            wl_data_source::Event::Target { mime_type } => state.source_targets.push(mime_type),
             wl_data_source::Event::Send { mime_type, fd } => {
                 deliver(state, mime_type, fd, data, false);
             }
             wl_data_source::Event::Cancelled => state.source_cancelled += 1,
+            wl_data_source::Event::DndDropPerformed => state.source_drop_performed += 1,
+            wl_data_source::Event::DndFinished => state.source_finished += 1,
+            wl_data_source::Event::Action { dnd_action } => {
+                state.source_actions.push(dnd_action);
+            }
             _ => {}
         }
     }
@@ -242,7 +270,7 @@ fn selection_managers_and_source_teardown_are_isolated() -> Result<()> {
 // Graphical qualification
 
 #[cfg(feature = "winit")]
-fn click(control: &Path, name: &str, at: (i32, i32)) -> Result<()> {
+pub(crate) fn click(control: &Path, name: &str, at: (i32, i32)) -> Result<()> {
     fs::write(
         control.join(format!("want-{name}")),
         format!("move {} {} down left up left sleep 80", at.0, at.1),
@@ -295,7 +323,7 @@ fn wait_key(peer: &mut Peer) -> Result<u32> {
 }
 
 #[cfg(feature = "winit")]
-fn wait_focus(peer: &mut Peer, surface: &wl_surface::WlSurface) -> Result<()> {
+pub(crate) fn wait_focus(peer: &mut Peer, surface: &wl_surface::WlSurface) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
         peer.sync()?;
@@ -310,14 +338,16 @@ fn wait_focus(peer: &mut Peer, surface: &wl_surface::WlSurface) -> Result<()> {
 }
 
 #[cfg(feature = "winit")]
-fn focus(peer: &mut Peer, control: &Path, name: &str, at: (i32, i32)) -> Result<()> {
+pub(crate) fn focus(peer: &mut Peer, control: &Path, name: &str, at: (i32, i32)) -> Result<()> {
     let surface = peer.window.surface.clone();
     click(control, name, at)?;
     wait_focus(peer, &surface)
 }
 
 #[cfg(feature = "winit")]
-fn clipboard_manager(peer: &Peer) -> Result<wl_data_device_manager::WlDataDeviceManager> {
+pub(crate) fn clipboard_manager(
+    peer: &Peer,
+) -> Result<wl_data_device_manager::WlDataDeviceManager> {
     let registry = peer
         .connection
         .display()
@@ -327,14 +357,14 @@ fn clipboard_manager(peer: &Peer) -> Result<wl_data_device_manager::WlDataDevice
 }
 
 #[cfg(feature = "winit")]
-fn clipboard_device(peer: &Peer) -> Result<WlDataDevice> {
+pub(crate) fn clipboard_device(peer: &Peer) -> Result<WlDataDevice> {
     let manager = clipboard_manager(peer)?;
     let seat = peer.seat.as_ref().ok_or("graphical client has no seat")?;
     Ok(manager.get_data_device(seat, &peer.queue.handle(), ()))
 }
 
 #[cfg(feature = "winit")]
-fn primary_manager(peer: &Peer) -> Result<ZwpPrimarySelectionDeviceManagerV1> {
+pub(crate) fn primary_manager(peer: &Peer) -> Result<ZwpPrimarySelectionDeviceManagerV1> {
     let registry = peer
         .connection
         .display()
@@ -346,14 +376,14 @@ fn primary_manager(peer: &Peer) -> Result<ZwpPrimarySelectionDeviceManagerV1> {
 }
 
 #[cfg(feature = "winit")]
-fn primary_device(peer: &Peer) -> Result<ZwpPrimarySelectionDeviceV1> {
+pub(crate) fn primary_device(peer: &Peer) -> Result<ZwpPrimarySelectionDeviceV1> {
     let manager = primary_manager(peer)?;
     let seat = peer.seat.as_ref().ok_or("graphical client has no seat")?;
     Ok(manager.get_device(seat, &peer.queue.handle(), ()))
 }
 
 #[cfg(feature = "winit")]
-fn clipboard_source(peer: &Peer, data: SourceData) -> Result<WlDataSource> {
+pub(crate) fn clipboard_source(peer: &Peer, data: SourceData) -> Result<WlDataSource> {
     let manager = clipboard_manager(peer)?;
     let mimes = data
         .payloads
@@ -368,7 +398,7 @@ fn clipboard_source(peer: &Peer, data: SourceData) -> Result<WlDataSource> {
 }
 
 #[cfg(feature = "winit")]
-fn primary_source(peer: &Peer, data: SourceData) -> Result<ZwpPrimarySelectionSourceV1> {
+pub(crate) fn primary_source(peer: &Peer, data: SourceData) -> Result<ZwpPrimarySelectionSourceV1> {
     let manager = primary_manager(peer)?;
     let mimes = data
         .payloads
@@ -383,12 +413,14 @@ fn primary_source(peer: &Peer, data: SourceData) -> Result<ZwpPrimarySelectionSo
 }
 
 #[cfg(feature = "winit")]
-fn last_offer(events: &[Option<wl_data_offer::WlDataOffer>]) -> Option<wl_data_offer::WlDataOffer> {
+pub(crate) fn last_offer(
+    events: &[Option<wl_data_offer::WlDataOffer>],
+) -> Option<wl_data_offer::WlDataOffer> {
     events.last().cloned().flatten()
 }
 
 #[cfg(feature = "winit")]
-fn mimes(probe: &Probe, offer: &wl_data_offer::WlDataOffer) -> Vec<String> {
+pub(crate) fn mimes(probe: &Probe, offer: &wl_data_offer::WlDataOffer) -> Vec<String> {
     let mut list = probe
         .offer_mime_types
         .iter()
@@ -400,7 +432,7 @@ fn mimes(probe: &Probe, offer: &wl_data_offer::WlDataOffer) -> Vec<String> {
 }
 
 #[cfg(feature = "winit")]
-fn read_clipboard(
+pub(crate) fn read_clipboard(
     source: &mut Peer,
     receiver: &mut Peer,
     offer: &wl_data_offer::WlDataOffer,
@@ -420,7 +452,11 @@ fn read_clipboard(
 }
 
 #[cfg(feature = "winit")]
-fn read_local(peer: &mut Peer, offer: &wl_data_offer::WlDataOffer, mime: &str) -> Result<Vec<u8>> {
+pub(crate) fn read_local(
+    peer: &mut Peer,
+    offer: &wl_data_offer::WlDataOffer,
+    mime: &str,
+) -> Result<Vec<u8>> {
     let (read, write) = UnixStream::pair()?;
     read.set_read_timeout(Some(WAIT))?;
     offer.receive(mime.to_string(), write.as_fd());
@@ -435,7 +471,7 @@ fn read_local(peer: &mut Peer, offer: &wl_data_offer::WlDataOffer, mime: &str) -
 }
 
 #[cfg(feature = "winit")]
-fn read_primary(
+pub(crate) fn read_primary(
     source: &mut Peer,
     receiver: &mut Peer,
     offer: &ZwpPrimarySelectionOfferV1,
@@ -457,7 +493,7 @@ fn read_primary(
 /// Click geometry follows the compositor's deterministic cascade: the first
 /// live window is at 0,0, the next at 48,48 and so on. Each Peer draws 320x240.
 #[cfg(feature = "winit")]
-fn at(rank: i32) -> (i32, i32) {
+pub(crate) fn at(rank: i32) -> (i32, i32) {
     // Windows are 320x240 at a 48px cascade. The first window is clickable in
     // its left strip; later windows are clickable in the 48px strip to the
     // right of all earlier windows, so a raised window cannot hide the target.

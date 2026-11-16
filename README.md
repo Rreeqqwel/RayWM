@@ -419,15 +419,19 @@ serial-validated move/resize, delayed ACK/min/max, nested popup
 grabs/reposition/dismissal and mid-grab destruction/disconnect.
 `python3 rust/tests/selection-smoke.py` qualifies copy/paste between independent
 clients, primary selection, focus/serial policy, foot and wl-clipboard.
+`python3 rust/tests/stage4b-smoke.py` additionally checks negotiated DnD with a
+rendered drag icon, reactive popup constraints, GTK4↔Qt6 pointer-driven DnD,
+cancellation and mid-drag process teardown.
 
 `raywm-smithay --backend winit` opens one nested EGL/GLES window/output with
-floating windows, keyboard/pointer focus, client move/resize, XDG popups and
-`wl_data_device_manager` + primary selection; `--backend headless` is the
+floating windows, keyboard/pointer focus, client move/resize, XDG popups,
+`wl_data_device_manager` clipboard/primary selection and client drag-and-drop
+with a frontmost drag icon; `--backend headless` is the
 default protocol-only mode. Other options are `--socket NAME` and
 `--help` / `-h`. It requires a
 private XDG_RUNTIME_DIR and keeps incoming WAYLAND_DISPLAY for the parent;
 logs report socket/window/output lifecycle and accepted interactive operations.
-Drag icons, qualified DnD, Lua and full desktop policy are not ported; this is
+Server-side DnD, Lua and full desktop policy are not ported; this is
 an experimental prototype. See
 [build and nested launch](docs/INSTALL.md#experimental-rust-foundation) and
 [the migration map, qualification and limits](docs/RUST_MIGRATION.md).
@@ -450,7 +454,7 @@ docs/           INSTALL, CONFIGURATION, API, ARCHITECTURE, TESTING, screenshots/
 tests/          unit, integration, input, pointer, navigation, screenshot and stress tests
 rust/           experimental core/compositor Cargo workspace and isolated protocol tests
   crates/         core window/stack/geometry policy; Smithay shell/input/grabs/popups
-  tests/          headless.rs, floating.rs, selection.rs and their smoke harnesses
+  tests/          headless.rs, floating.rs, selection.rs, dnd.rs and smoke harnesses
 scripts/        source-archive.sh, arch-package.sh, release-meta.py, raywmctl, install.sh
 ```
 

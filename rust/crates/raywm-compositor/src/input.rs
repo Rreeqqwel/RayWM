@@ -13,7 +13,6 @@ use smithay::{
 };
 
 use crate::state::State;
-#[cfg(feature = "winit")]
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
 impl State {
@@ -61,7 +60,11 @@ impl State {
     }
 
     pub fn repair_pointer_focus(&mut self) {
-        if self.desktop.interaction_window().is_some() || self.popup_root.is_some() {
+        // A DnD grab intentionally has no pointer focus; never unset it here.
+        if self.dnd_active
+            || self.desktop.interaction_window().is_some()
+            || self.popup_root.is_some()
+        {
             return;
         }
         let time = smithay::utils::Clock::<smithay::utils::Monotonic>::new()
@@ -77,11 +80,12 @@ impl State {
         });
         if !valid {
             pointer.unset_grab(self, SERIAL_COUNTER.next_serial(), time);
+            let location = pointer.current_location();
             pointer.motion(
                 self,
                 None,
                 &MotionEvent {
-                    location: pointer.current_location(),
+                    location,
                     serial: SERIAL_COUNTER.next_serial(),
                     time,
                 },
@@ -102,6 +106,23 @@ impl State {
                 }
                 self.pointer_blocked = !self.pressed_buttons.is_empty();
             }
+            // A destroyed focus surface may reveal another window under the
+            // stationary pointer. Re-establish pointer focus so the next click
+            // targets the visible window instead of a null focus.
+            let under = if self.pointer_blocked {
+                None
+            } else {
+                self.surface_under(location)
+            };
+            pointer.motion(
+                self,
+                under,
+                &MotionEvent {
+                    location,
+                    serial: SERIAL_COUNTER.next_serial(),
+                    time,
+                },
+            );
             pointer.frame(self);
         }
     }
@@ -166,7 +187,6 @@ impl State {
         self.redraw = true;
     }
 
-    #[cfg(feature = "winit")]
     fn surface_under(
         &self,
         position: smithay::utils::Point<f64, smithay::utils::Logical>,
@@ -243,6 +263,11 @@ impl State {
                         self.note_selection_serial(serial, focus.as_ref());
                     }
                     pointer.frame(self);
+                    if self.selection.drag_icon.is_some() {
+                        // The compositor draws the icon; Winit only draws its
+                        // own cursor. No idle redraw is added without a drag.
+                        self.redraw = true;
+                    }
                 }
             }
             InputEvent::PointerButton { event } => {

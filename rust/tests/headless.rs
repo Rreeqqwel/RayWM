@@ -20,6 +20,7 @@ use rustix::{
     process::{kill_process, Pid, Signal},
 };
 use tempfile::TempDir;
+use wayland_client::protocol::wl_data_device_manager::DndAction;
 use wayland_client::{
     delegate_noop,
     protocol::{
@@ -37,6 +38,8 @@ use wayland_protocols::{
     xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base},
 };
 
+#[cfg(feature = "winit")]
+mod dnd;
 mod floating;
 mod selection;
 
@@ -176,6 +179,22 @@ struct Probe {
     primary_sends: Vec<(String, usize)>,
     primary_send_errors: usize,
     primary_cancelled: usize,
+    dnd_enters: Vec<(
+        u32,
+        wl_surface::WlSurface,
+        Option<wl_data_offer::WlDataOffer>,
+        f64,
+        f64,
+    )>,
+    dnd_motions: Vec<(f64, f64)>,
+    dnd_leaves: usize,
+    dnd_drops: usize,
+    offer_source_actions: Vec<(wl_data_offer::WlDataOffer, WEnum<DndAction>)>,
+    offer_actions: Vec<(wl_data_offer::WlDataOffer, WEnum<DndAction>)>,
+    source_targets: Vec<Option<String>>,
+    source_actions: Vec<WEnum<DndAction>>,
+    source_drop_performed: usize,
+    source_finished: usize,
 }
 
 impl Probe {

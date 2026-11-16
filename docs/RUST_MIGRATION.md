@@ -1,14 +1,16 @@
-# Rust / Smithay migration — Stages 1–4A
+# Rust / Smithay migration — Stages 1–4B
 
 This is the foundation for a future v0.3 migration, **not a v0.3 release**.
 The working desktop remains Zig 0.16.0 + wlroots 0.20 + Lua 5.4.
 `rust/` is an experimental Rust compositor with a headless protocol mode
 and a nested Winit/EGL/GLES mode. Stage 3 added floating multi-window policy,
 validated interactive move/resize and XDG popup/grab lifecycle on the Stage 2
-virtual output and renderer. Stage 4A adds the standard
+virtual output and renderer. Stage 4A added the standard
 `wl_data_device_manager` clipboard, independent primary selection, data-device
-focus following and a serial policy; it does not add drag-icon rendering or a
-clipboard manager. No Lua host exists;
+focus following and a serial policy. Stage 4B adds negotiated client
+drag-and-drop with a rendered drag icon, compositor-driven reactive popup
+constraints and GTK 4 / Qt 6 pointer-driven DnD qualification. It does not add
+a clipboard manager or server-side DnD. No Lua host exists;
 this is not a daily-use replacement for the Zig desktop.
 No Zig module, package payload, release branch or project version is replaced.
 
@@ -60,7 +62,7 @@ Smithay desktop windows and the nested output.
 | `taskbar.zig` | ID-keyed foreign-toplevel/workspace handles, idle-coalesced publication after native/Lua transitions | supported foreign-toplevel/workspace protocol helpers; verify exact coverage before porting | compositor publication adapter; preserve unsupported protocol contracts explicitly rather than assuming helper parity |
 | `lock.zig` | unlocked/locking/locked/abandoned states, presentation barrier, input exclusion and fail-closed locker crash; uses server/outputs/input | session-lock protocol, output presentation and seat primitives | compositor security state machine, independent of Lua policy |
 | `xwayland.zig` | lazy Xwayland/XWM lifetime, associations to common views, override-redirect menus, retry timers and clipboard bridge | optional Xwayland server/XWM and selection integration | later compositor X11 adapter; no wlroots FFI in Rust |
-| `data.zig`, `textinput.zig`, `protocols.zig` | DnD/icon/serial validation, IME relay, selection/activation/global filtering | corresponding Wayland protocol state and dispatch helpers | explicit compositor protocol adapters; reimplement RayWM eligibility/filtering rules. Stage 4A implements standard clipboard/primary selection and data-device focus; DnD icon, IME, activation and filtering stay deferred |
+| `data.zig`, `textinput.zig`, `protocols.zig` | DnD/icon/serial validation, IME relay, selection/activation/global filtering | corresponding Wayland protocol state and dispatch helpers | explicit compositor protocol adapters; reimplement RayWM eligibility/filtering rules. Stage 4A implements clipboard/primary selection and data-device focus; Stage 4B implements client DnD negotiation and drag-icon rendering. IME, activation and filtering stay deferred |
 | `conf.zig`, `settings.zig` | bounded parser, system/user layers, reload validity, restart-only settings | none | independent core configuration parser/model; Stage 1 does not read ray.conf |
 | `update.zig` | download/verification/channel/package policy in a short-lived tool | none | independent tool migration after compositor parity; existing tool stays operational |
 
@@ -155,7 +157,7 @@ signalfd; rustix supplies safe UID validation and test polling/signals.
 Tracing formats diagnostics. `wayland-client`, client `wayland-protocols` and
 `tempfile` support real-client tests. No Lua binding is selected prematurely.
 
-## Rust implementation (Stages 1–4A)
+## Rust implementation (Stages 1–4B)
 
 ```text
 rust/
@@ -171,13 +173,15 @@ rust/
     src/input.rs               seat focus, keyboard/pointer forwarding and cleanup
     src/grabs.rs               input validation and ID-based move/resize pointer grab
     src/popups.rs              PopupManager adapter, positioning, handshake and grabs
-    src/selection.rs           data-device/primary focus, serial policy and delegation
+    src/selection.rs           data-device/primary focus, DnD icon, serial policy
   tests/headless.rs            protocol tests and opt-in graphical probe
   tests/floating.rs            Stage 3 real-client lifecycle and graphical probe
   tests/selection.rs           Stage 4A clipboard/primary/focus regressions
+  tests/dnd.rs                 Stage 4B DnD/icon and reactive-popup regressions
   tests/nested-smoke.py        private graphical parent and Stage 2/3 dispatcher
   tests/floating-smoke.py      Stage 3 input driver and submitted-pixel assertions
   tests/selection-smoke.py     Stage 4A input driver, foot and wl-clipboard harness
+  tests/stage4b-smoke.py       Stage 4B input driver, icon/popup and toolkit harness
 ```
 
 Core has no dependencies on Smithay, Lua or native backends. Its desktop
@@ -362,17 +366,81 @@ is client-local and the compositor remains responsive. Both clipboard and
 primary selection use the same fd path but independent `SeatData` slots, so
 they cannot overwrite each other.
 
-**Limits.** Drag-and-drop handlers exist because Smithay requires them:
-client-initiated negotiation uses Smithay's `DnDGrab`, and invalid drag serials
-are rejected. The compositor does not render the drag icon, does not start
-server-side drags and does not claim qualified DnD; only clipboard and primary
-selection are qualified. There is no clipboard history, manager, persistence
-or copy-on-source-disconnect. foot 1.28.0, wl-clipboard 2.3.0 and minimal
-GTK 4.24 / Qt 6.12 probes were exercised as independent clients. The toolkit
-probes are small programs compiled against installed development files; they
-are not a full application matrix. Foot's non-fatal diagnostics about missing
-XDG activation, fractional scaling, server-side cursors, toplevel icons and
-text-input remain accurate limitations.
+There is no clipboard history, manager, persistence or
+copy-on-source-disconnect. foot 1.28.0, wl-clipboard 2.3.0 and minimal
+GTK 4.24 / Qt 6.12 probes were exercised as independent clients. Foot's
+non-fatal diagnostics about missing XDG activation, fractional scaling,
+server-side cursors, toplevel icons and text-input remain accurate limitations.
+Stage 4B's DnD, drag-icon and toolkit qualification is described below.
+
+### Drag and drop and drag icons
+
+Stage 4B implements the client-initiated `wl_data_device_manager` DnD state
+machine through Smithay's `DnDGrab`. The compositor does not duplicate offers,
+targets or action state: Smithay owns `start_drag`, source metadata, the
+data-device `enter`/`motion`/`leave`/`drop` events, `accept`/`set_actions`
+negotiation, `receive` fd forwarding and `finish`/`cancelled`/
+`dnd_drop_performed`/`dnd_finished` delivery. RayWM adds only:
+
+* admission (Smithay requires the serial of the current held implicit pointer
+  or touch grab; forged and stale serials are refused before a grab exists),
+* an active-drag flag used to keep orphaned pointer-focus repair from cancelling
+  a DnD grab, and
+* the drag-icon render state.
+
+Action negotiation uses Smithay's default chooser: a valid preferred
+`copy`/`move`/`ask` is kept when offered, otherwise `ask`, `copy`, `move` in
+that order. This negotiates the action; it does not move or delete application
+data, which remains the clients' responsibility. A drop is emitted only when the
+target accepted an offered MIME type and a non-empty action was chosen. A
+target that accepts an unoffered MIME produces a cancellation, not a drop.
+
+**Drag icon.** `ClientDndGrabHandler::started` stores the optional icon surface
+and resets its offset; `dropped` clears it on drop, cancellation, grab unset and
+host focus loss, and surface/client destruction also clears it. The icon is not
+a `Space` element: it cannot become an input target and is drawn as a
+front-to-back custom render element above every window and popup. Its position
+is the pointer location translated into the output, plus the icon offset;
+Smithay's surface render elements apply the client buffer scale and transform,
+and legacy `buffer_delta` from `wl_surface.attach` is accumulated on commit.
+The icon is composited only while the pointer is inside the output. A successful
+submission sends frame callbacks to buffered surfaces in the icon tree; no idle
+redraw is added, and pointer motion requests a frame only while an icon exists.
+A commit of the icon or a subsurface updates the overlay.
+
+**Limits.** Smithay does not start compositor-owned (server-side) DnD; RayWM
+advertises and implements only client-initiated DnD. Drag icons larger than the
+verified paths rely on the ordinary renderer; there is no separate icon cache.
+If a source client disconnects while the pointer is over an accepting target,
+Smithay tears the grab down when the drag-origin surface dies and can still emit
+a final drop indication; the source is gone, so no data is transferred. The
+icon and grab are nevertheless cleared and the compositor stays healthy. This is
+a Smithay grab-teardown behavior, reported as a known protocol edge rather than a
+successful transfer.
+
+### Reactive popup constraints
+
+Popup geometry remains Smithay's `PopupManager`/`PopupState`; the adapter adds
+no second positioner store. After a parent toplevel commit (move, resize,
+window-geometry change), an output mode change, or the end of an interactive
+move/resize, `reposition_popups` recomputes every mapped, initially ACKed
+popup's constrained rectangle from its current positioner, the root window
+position and the current output bounds. A configure is sent only when the
+computed rectangle differs from the last one sent or already pending, so pointer
+motion, render frames and repeated commits cannot flood the client.
+
+Interactive move/resize deliberately defers the pass until the grab ends,
+rather than one configure per motion. Nested popups accumulate their parent
+popup's latest pending geometry instead of the last acknowledged geometry, which
+avoids a transient `-160,-160` configure followed by the true `-60,-60` value.
+A child receives its own configure only when its constrained result changes;
+otherwise it follows the parent popup during rendering. Positioners without
+`xdg_positioner.set_reactive` are blocked after the first failed attempt and
+retain the client's chosen geometry, as required by the protocol. The adapter
+also records the last geometry on a client `reposition` request, so the
+`repositioned` token and its configure are not duplicated by the next pass.
+Parent unmap dismisses the tree, unmap/remap starts a fresh handshake, and
+destroying a parent with an unACKed configure leaves no retained popup entry.
 
 ### Rendering, output and input
 
@@ -459,8 +527,8 @@ cargo test --workspace --locked
 cargo build --workspace --locked
 ```
 
-Stage 4A passes all five commands above. The default test command runs 18
-automatic tests (seven core, eleven protocol/process); three graphical tests
+Stage 4B passes all five commands above. The default test command runs 18
+automatic tests (seven core, eleven protocol/process); five graphical tests
 are explicitly ignored there and run by the separate smoke scenarios below.
 Headless-only clippy/tests and `tests/docs-sync.sh` also pass. The three
 original Stage 1 process tests remain in place; only the expected registry
@@ -489,6 +557,7 @@ The graphics qualification commands are:
 python3 rust/tests/nested-smoke.py
 python3 rust/tests/nested-smoke.py --stage3
 python3 rust/tests/selection-smoke.py
+python3 rust/tests/stage4b-smoke.py
 ```
 
 It uses the unchanged Zig `-Dtest-input` binary as a private headless pixman
@@ -545,22 +614,66 @@ shuts down cleanly. Evidence is retained
 under `docs/measurements/v0.3.0/stage4a/`. These are nested/software
 qualifications, not physical hardware or toolkit-matrix coverage.
 
+Stage 4B adds two ignored Rust scenarios driven by `stage4b-smoke.py`. The DnD
+scenario uses a real held pointer from one persistent virtual-input process and
+two independent Wayland clients. It verifies: a forged serial cannot start a
+drag; the source action set (copy/move/ask) and an Ask preference reach the
+target; target switching produces leave/enter without motion on the wrong
+device; a live clipboard transfer during DnD; a yellow 32x32 icon at the pointer
+above the target and its disappearance after drop/cancel/destroy; per-MIME
+payload; EPIPE containment; finish exactly once; source and target disconnect
+without fake data; a fresh drag after teardown; and a stale serial rejection.
+The popup scenario opens a parent popup and a large nested popup, moves the
+toplevel with a real pointer grab, checks the constrained configure and screen
+position, shrinks the output 800x600 → 700x500, moves back, verifies nested
+following and ACK/commit, exercises a bottom-right parent resize without
+configure churn, a valid reposition token, parent unmap/remap dismissal and a
+destroyed parent with an unACKed configure. Pixels come from `grim` after a real
+frame callback; no test-only compositor state is read.
+
+The same harness compiles small GTK 4.24 and Qt 6.12 probes against the
+installed development files (skipping with a stated reason if absent) and runs
+pointer-driven toolkit DnD:
+
+| Scenario | Result |
+|---|---|
+| GTK source → Qt target, payload checked | PASS |
+| Qt source → GTK target, payload checked | PASS |
+| Cancelled toolkit drag (return to source) | PASS, no drop |
+| Target process closed mid-drag | PASS, source/compositor survive |
+| Source process closed mid-drag | PASS, target/compositor survive, no data |
+| GTK context-menu popup | PASS |
+| Qt context-menu popup | PASS |
+| Qt nested submenu popup | BLOCKED: `QMenu` did not open the submenu under synthetic hover |
+| Qt primary selection from a text selection | PASS |
+| GTK primary selection from a text selection | BLOCKED: the GTK 4 probe published no primary selection through the advertised `zwp` protocol; no fake global was added |
+
+The toolkit results are nested/software observations with frameless probe
+windows, not a full application or theme matrix. Evidence, payloads and images
+are retained under `docs/measurements/v0.3.0/stage4b/`.
+
 ### Prototype limits
 
 One nested output, scale 1, fixed floating placement/focus policy and full
-redraw are supported. Standard clipboard and primary selection are implemented;
-drag-icon rendering, DnD qualification, client cursor rendering, server-side
-decorations, maximize/minimize/fullscreen/window menu policy, layer-shell,
-Xwayland, Lua, IPC, ray.conf and effects are not. Foot, wl-clipboard and minimal
-GTK 4 / Qt 6 probes qualify as independent clients; no general toolkit
-application matrix is claimed.
+redraw are supported. Standard clipboard/primary selection and client-initiated
+DnD with a rendered drag icon are implemented; server-initiated DnD, client
+cursor rendering, server-side decorations,
+maximize/minimize/fullscreen/window menu policy, layer-shell,
+Xwayland, Lua, IPC, ray.conf and effects are not. Foot, wl-clipboard, minimal
+GTK 4 / Qt 6 probes and the DnD pair qualify as independent clients; no general
+toolkit application matrix is claimed. A drag icon is rendered only while the
+pointer is over the nested output; cursor surfaces remain Winit's.
 
-Physical DRM/KMS/input/hotplug, hardware GL, full GTK/Qt applications, IME, qualified DnD, device
-rules, fractional client scaling, presentation-time, sanitizers and production
-resource/admission budgets remain unqualified. Output resize updates the mode
-and clamps oversized windows; it does not implement multi-output relocation,
-reactive popup repositioning after output changes or configurable focus navigation.
-The unchanged Zig suites are not rerun wholesale in Stages 2/3/4A; the Stage 1
+Physical DRM/KMS/input/hotplug, hardware GL, full GTK/Qt applications, IME,
+server-side DnD, device rules, fractional client scaling, presentation-time,
+sanitizers and production resource/admission budgets remain unqualified. The
+toolkit nested-submenu case is BLOCKED by the probe environment. If a DnD source
+disconnects with the pointer over an accepting target, Smithay may still emit a
+drop indication with no data (documented above). Output resize updates the mode
+and clamps oversized windows; it does not implement multi-output relocation or
+configurable focus navigation. Popup constraints react to parent/output changes
+for reactive positioners; non-reactive clients keep their chosen geometry.
+The unchanged Zig suites are not rerun wholesale in Stages 2/3/4A/4B; the Stage 1
 baseline remains historical and source equality is checked. Context-loss
 recovery and optimized damage tracking are deferred. This is a controlled
 prototype, not an installed desktop.
@@ -602,12 +715,14 @@ prototype, not an installed desktop.
    `wl_data_device_manager` clipboard and independent primary selection,
    data-device focus following the existing keyboard focus, input-serial
    policy, immediate source-death rebroadcast, real fd transfer tests and
-   foot/wl-clipboard qualification. Drag icons and qualified DnD remain open.
-4. **Next: Stage 4B:** drag-icon rendering and negotiated DnD, GTK/Qt client
-   matrix in the private nested session, reactive popup positioning and
-   output-resize edge cases. Then review workspace/configuration ownership
-   before authorizing Lua or tiling work.
-5. **Lua host and settings:** compatibility boundary and unchanged API v1,
+   foot/wl-clipboard qualification.
+4. **Stage 4B — implemented:** client-initiated negotiated DnD with action
+   negotiation, a frontmost drag icon with scale/transform/commit handling,
+   source/target/cancel/teardown tests, compositor-driven reactive popup
+   constraints with nested-popup coalescing, and pointer-driven GTK 4 ↔ Qt 6
+   qualification. Server-side DnD, toolkit nested submenus and a full toolkit
+   matrix remain open.
+5. **Next: Stage 5 — workspace/configuration ownership and Lua host:** compatibility boundary and unchanged API v1,
    parser/layered reload, adversarial budget/ownership tests and plugin traces.
    Parallel Zig/Rust executables use independent private sockets/config roots.
 6. **Shell and services:** layer-shell, lock/presentation barriers, capture,

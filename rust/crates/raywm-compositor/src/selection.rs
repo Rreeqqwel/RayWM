@@ -39,17 +39,20 @@ use smithay::{
             Client, DataInit, Dispatch, DisplayHandle, Resource,
         },
     },
-    utils::Serial,
-    wayland::selection::{
-        data_device::{
-            self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, DataDeviceUserData,
-            DataSourceUserData, ServerDndGrabHandler,
+    utils::{Logical, Point, Serial},
+    wayland::{
+        compositor::{get_parent, with_states, SurfaceAttributes},
+        selection::{
+            data_device::{
+                self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, DataDeviceUserData,
+                DataSourceUserData, ServerDndGrabHandler,
+            },
+            primary_selection::{
+                self, PrimaryDeviceUserData, PrimarySelectionHandler, PrimarySelectionState,
+                PrimarySourceUserData,
+            },
+            SelectionHandler, SelectionSource, SelectionTarget,
         },
-        primary_selection::{
-            self, PrimaryDeviceUserData, PrimarySelectionHandler, PrimarySelectionState,
-            PrimarySourceUserData,
-        },
-        SelectionHandler, SelectionSource, SelectionTarget,
     },
 };
 
@@ -124,9 +127,17 @@ impl SerialLog {
     }
 }
 
+/// The client-provided `wl_surface` shown under the pointer during a DnD.
+/// Smithay owns the grab and negotiation; this is only the render position.
+pub struct DragIcon {
+    pub surface: WlSurface,
+    pub offset: Point<i32, Logical>,
+}
+
 pub struct SelectionState {
     pub data_device: DataDeviceState,
     pub primary: PrimarySelectionState,
+    pub drag_icon: Option<DragIcon>,
     focus_client: Option<Client>,
     serials: SerialLog,
 }
@@ -136,6 +147,7 @@ impl SelectionState {
         Self {
             data_device: DataDeviceState::new::<State>(display),
             primary: PrimarySelectionState::new::<State>(display),
+            drag_icon: None,
             focus_client: None,
             serials: SerialLog::new(),
         }
@@ -236,6 +248,68 @@ impl State {
         primary_selection::set_primary_focus(&self.display, &seat, None);
         primary_selection::set_primary_focus(&self.display, &seat, client);
     }
+
+    /// A commit of the drag-icon surface (or one of its subsurfaces) can change
+    /// the displayed buffer. `buffer_delta` is the client-requested icon shift.
+    pub fn commit_drag_icon(&mut self, surface: &WlSurface) -> bool {
+        let Some(root) = self
+            .selection
+            .drag_icon
+            .as_ref()
+            .map(|icon| icon.surface.clone())
+        else {
+            return false;
+        };
+        if !surface_belongs_to(surface, &root) {
+            return false;
+        }
+        if *surface == root {
+            let delta = with_states(surface, |states| {
+                states
+                    .cached_state
+                    .get::<SurfaceAttributes>()
+                    .current()
+                    .buffer_delta
+                    .take()
+            });
+            if let Some(delta) = delta {
+                if let Some(icon) = self.selection.drag_icon.as_mut() {
+                    icon.offset += delta;
+                }
+            }
+        }
+        self.redraw = true;
+        true
+    }
+
+    /// Drop the icon reference when its surface or client goes away. Smithay
+    /// still owns cancellation/finish for the outstanding grab.
+    pub fn remove_drag_icon(&mut self, surface: &WlSurface) {
+        if self
+            .selection
+            .drag_icon
+            .as_ref()
+            .is_some_and(|icon| icon.surface == *surface)
+        {
+            self.selection.drag_icon = None;
+            self.redraw = true;
+        }
+    }
+}
+
+/// Bounded parent walk; popup/icon surface trees cannot outlive 64 ancestors.
+fn surface_belongs_to(surface: &WlSurface, root: &WlSurface) -> bool {
+    let mut current = surface.clone();
+    for _ in 0..64 {
+        if current == *root {
+            return true;
+        }
+        match get_parent(&current) {
+            Some(parent) => current = parent,
+            None => return false,
+        }
+    }
+    false
 }
 
 impl SelectionHandler for State {
@@ -272,18 +346,27 @@ impl PrimarySelectionHandler for State {
 
 impl ClientDndGrabHandler for State {
     fn started(&mut self, source: Option<WlDataSource>, icon: Option<WlSurface>, seat: Seat<Self>) {
-        // Smithay's DnDGrab performs the full offer/enter/drop negotiation.
-        // The compositor does not render the drag icon; this is recorded as a
-        // stated Stage 4A limitation rather than a fake implementation.
+        // Smithay's DnDGrab owns negotiation, offers and target switching. The
+        // compositor only keeps the icon surface and its display offset.
+        self.dnd_active = true;
+        self.selection.drag_icon = icon.map(|surface| DragIcon {
+            surface,
+            offset: Point::default(),
+        });
+        self.redraw = true;
         tracing::info!(
             seat = seat.name(),
             has_source = source.is_some(),
-            has_icon = icon.is_some(),
-            "Client drag-and-drop started (drag icon not rendered)"
+            has_icon = self.selection.drag_icon.is_some(),
+            "Client drag-and-drop started"
         );
     }
 
     fn dropped(&mut self, target: Option<WlSurface>, validated: bool, seat: Seat<Self>) {
+        // Called for a real drop and for grab cancellation/unset.
+        self.dnd_active = false;
+        self.selection.drag_icon = None;
+        self.redraw = true;
         tracing::info!(
             seat = seat.name(),
             has_target = target.is_some(),

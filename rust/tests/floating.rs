@@ -157,6 +157,7 @@ impl Peer {
             xdg_positioner::ConstraintAdjustment::SlideX
                 | xdg_positioner::ConstraintAdjustment::SlideY,
         );
+        positioner.set_reactive();
         positioner
     }
 

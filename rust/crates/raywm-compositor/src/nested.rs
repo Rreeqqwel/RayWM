@@ -7,19 +7,28 @@ use smithay::{
     backend::{
         renderer::{
             damage::OutputDamageTracker, element::surface::WaylandSurfaceRenderElement,
-            gles::GlesRenderer,
+            element::AsRenderElements, gles::GlesRenderer,
         },
         winit::{self, WinitEventLoop, WinitGraphicsBackend},
     },
     delegate_output,
-    desktop::utils::{surface_primary_scanout_output, update_surface_primary_scanout_output},
+    desktop::{
+        space::SurfaceTree,
+        utils::{
+            send_frames_surface_tree, surface_primary_scanout_output,
+            update_surface_primary_scanout_output,
+        },
+    },
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
         wayland_server::DisplayHandle,
         winit::{dpi::LogicalSize, window::Window},
     },
-    utils::{Physical, Rectangle, Size, Transform},
-    wayland::output::{OutputHandler, OutputManagerState},
+    utils::{IsAlive, Physical, Point, Rectangle, Scale, Size, Transform},
+    wayland::{
+        compositor::SurfaceAttributes,
+        output::{OutputHandler, OutputManagerState},
+    },
 };
 
 use crate::{state::State, Result};
@@ -112,6 +121,7 @@ impl Graphics {
             state.space.map_output(output, (0, 0));
             state.request_window_size(size.to_logical(1));
             state.space.refresh();
+            state.reposition_popups();
             state.redraw = true;
             self.pending = false;
             tracing::info!(width = size.w, height = size.h, "Nested output resized");
@@ -128,12 +138,15 @@ impl Graphics {
         let Some(output) = state.output.clone() else {
             return Ok(());
         };
-        let rendered = {
+        let (rendered, icon_elements) = {
             let (renderer, mut framebuffer) = self.backend.bind()?;
+            let icon_elements = drag_icon_elements(state, renderer, &output);
             // Buffer age zero intentionally gives a safe full redraw. The
             // tracker still caches render elements/textures; no GPU objects
-            // are created by RayWM on idle iterations.
-            smithay::desktop::space::render_output::<
+            // are created by RayWM on idle iterations. Custom elements are
+            // front-to-back, so the drag icon and its subsurfaces stay above
+            // every space window and popup.
+            let rendered = smithay::desktop::space::render_output::<
                 _,
                 WaylandSurfaceRenderElement<GlesRenderer>,
                 _,
@@ -145,11 +158,12 @@ impl Graphics {
                 1.0,
                 0,
                 [&state.space],
-                &[],
+                &icon_elements,
                 &mut self.damage,
                 [0.08, 0.10, 0.14, 1.0],
             )?
-            .states
+            .states;
+            (rendered, icon_elements)
         };
         self.backend.submit(Some(&[Rectangle::from_size(size)]))?;
         // Only after successful submission; only mapped windows are in Space.
@@ -170,10 +184,68 @@ impl Graphics {
                 surface_primary_scanout_output,
             );
         }
+        if !icon_elements.is_empty() {
+            if let Some(icon) = state.selection.drag_icon.as_ref() {
+                send_frames_surface_tree(
+                    &icon.surface,
+                    &output,
+                    self.start.elapsed(),
+                    None,
+                    |_, states| {
+                        states
+                            .cached_state
+                            .get::<SurfaceAttributes>()
+                            .current()
+                            .buffer
+                            .is_some()
+                            .then(|| output.clone())
+                    },
+                );
+            }
+        }
         state.redraw = false;
         state.space.refresh();
         Ok(())
     }
+}
+
+/// Position and import the drag icon into the ordinary GLES render pipeline.
+/// Buffer scale/transform are handled by Smithay's surface render elements.
+fn drag_icon_elements(
+    state: &State,
+    renderer: &mut GlesRenderer,
+    output: &Output,
+) -> Vec<WaylandSurfaceRenderElement<GlesRenderer>> {
+    let Some(icon) = state
+        .selection
+        .drag_icon
+        .as_ref()
+        .filter(|icon| icon.surface.alive())
+    else {
+        return Vec::new();
+    };
+    let Some(output_geometry) = state.space.output_geometry(output) else {
+        return Vec::new();
+    };
+    let Some(pointer) = state.seat.as_ref().and_then(|seat| seat.get_pointer()) else {
+        return Vec::new();
+    };
+    let location = pointer.current_location();
+    if !output_geometry.to_f64().contains(location) {
+        return Vec::new();
+    }
+    let scale = Scale::from(output.current_scale().fractional_scale());
+    let position: Point<i32, Physical> = (location - output_geometry.loc.to_f64()
+        + icon.offset.to_f64())
+    .to_physical(scale)
+    .to_i32_round();
+    AsRenderElements::<GlesRenderer>::render_elements(
+        &SurfaceTree::from_surface(&icon.surface),
+        renderer,
+        position,
+        scale,
+        1.0,
+    )
 }
 
 impl OutputHandler for State {}

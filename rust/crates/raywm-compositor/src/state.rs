@@ -39,6 +39,7 @@ pub struct State {
     pub host_focused: bool,
     pub pressed_buttons: Vec<u32>,
     pub pointer_blocked: bool,
+    pub dnd_active: bool,
     pub popups: PopupManager,
     pub popup_entries: Vec<crate::popups::PopupEntry>,
     pub popup_grab: Option<PopupGrab<Self>>,
@@ -65,6 +66,7 @@ impl State {
             host_focused: false,
             pressed_buttons: Vec::new(),
             pointer_blocked: false,
+            dnd_active: false,
             popups: PopupManager::default(),
             popup_entries: Vec::new(),
             popup_grab: None,
@@ -113,6 +115,7 @@ impl CompositorHandler for State {
         on_commit_buffer_handler::<Self>(surface);
         self.commit_popup(surface);
         self.commit_window(surface);
+        self.commit_drag_icon(surface);
     }
 
     fn new_surface(&mut self, surface: &WlSurface) {
@@ -125,6 +128,7 @@ impl CompositorHandler for State {
     }
 
     fn destroyed(&mut self, surface: &WlSurface) {
+        self.remove_drag_icon(surface);
         self.remove_popup(surface);
         self.remove_window(surface);
     }

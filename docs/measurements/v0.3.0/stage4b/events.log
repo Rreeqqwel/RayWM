@@ -1,0 +1,87 @@
+2026-11-16T01:45:36.693989Z  INFO Window mapped window=1
+2026-11-16T01:45:36.697592Z  INFO Window mapped window=2
+2026-11-16T01:45:36.899122Z  INFO Selection owner changed seat="raywm-nested" clipboard=true mime_types=Some(["text/plain;charset=utf-8"])
+2026-11-16T01:45:36.900314Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T01:45:46.997974Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=true
+2026-11-16T01:45:48.512205Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T01:45:53.003892Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=false
+2026-11-16T01:45:54.384712Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T01:45:59.375550Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=false
+2026-11-16T01:45:59.848645Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T01:46:06.839833Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=true
+2026-11-16T01:46:07.303994Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T01:46:12.294643Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=false
+2026-11-16T01:46:12.722792Z  INFO Window mapped window=3
+2026-11-16T01:46:12.918052Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T01:46:15.411503Z  INFO Window destroyed window=3
+2026-11-16T01:46:18.907440Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=false
+2026-11-16T01:46:20.250560Z  INFO Window mapped window=4
+2026-11-16T01:46:20.419991Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T01:46:27.910510Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=true
+2026-11-16T01:46:28.380935Z  INFO Window destroyed window=4
+2026-11-16T01:46:28.382287Z  INFO Window destroyed window=1
+2026-11-16T01:46:28.382883Z  INFO Window destroyed window=2
+2026-11-16T01:46:28.391843Z  INFO Window mapped window=5
+2026-11-16T01:46:28.393386Z  INFO Popup role created popup=ObjectId(wl_surface@20[0], 24) root=Some(5)
+2026-11-16T01:46:28.394650Z  INFO Popup mapped popup=ObjectId(wl_surface@20[0], 24)
+2026-11-16T01:46:28.395681Z  INFO Popup role created popup=ObjectId(wl_surface@24[0], 33) root=Some(5)
+2026-11-16T01:46:28.397044Z  INFO Popup mapped popup=ObjectId(wl_surface@24[0], 33)
+2026-11-16T01:46:39.186637Z  INFO Window mapped window=5
+2026-11-16T01:46:39.188079Z  INFO Popup role created popup=ObjectId(wl_surface@21[0], 628) root=Some(5)
+2026-11-16T01:46:39.189476Z  INFO Popup mapped popup=ObjectId(wl_surface@21[0], 628)
+2026-11-16T01:46:39.191245Z  INFO Popup role created popup=ObjectId(wl_surface@19[0], 638) root=Some(5)
+2026-11-16T01:46:39.192230Z  INFO Window destroyed window=5
+2026-11-16T01:46:39.197719Z  INFO Window mapped window=6
+2026-11-16T01:46:39.200619Z  INFO Window destroyed window=6
+2026-11-16T01:46:45.808227Z  INFO Window mapped window=7
+2026-11-16T01:46:46.380177Z  INFO Window mapped window=8
+2026-11-16T01:46:47.391915Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T01:46:48.791820Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=true
+2026-11-16T01:46:49.581670Z  INFO Window destroyed window=8
+2026-11-16T01:46:49.587711Z  INFO Window destroyed window=7
+2026-11-16T01:46:49.980296Z  INFO Window mapped window=9
+2026-11-16T01:46:50.130912Z  INFO Window mapped window=10
+2026-11-16T01:46:51.129362Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T01:46:52.528940Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=true
+2026-11-16T01:46:53.314635Z  INFO Window destroyed window=10
+2026-11-16T01:46:53.332323Z  INFO Window destroyed window=9
+2026-11-16T01:46:53.488059Z  INFO Window mapped window=11
+2026-11-16T01:46:53.891799Z  INFO Window mapped window=12
+2026-11-16T01:46:54.833141Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T01:46:55.632499Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=false
+2026-11-16T01:46:56.255154Z  INFO Window destroyed window=11
+2026-11-16T01:46:56.274111Z  INFO Window destroyed window=12
+2026-11-16T01:46:56.448466Z  INFO Window mapped window=13
+2026-11-16T01:46:56.842839Z  INFO Window mapped window=14
+2026-11-16T01:46:58.565310Z  INFO Window destroyed window=13
+2026-11-16T01:47:00.071876Z  INFO Window destroyed window=14
+2026-11-16T01:47:00.455979Z  INFO Window mapped window=15
+2026-11-16T01:47:00.618032Z  INFO Window mapped window=16
+2026-11-16T01:47:01.553000Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-16T01:47:02.328003Z  INFO Window destroyed window=16
+2026-11-16T01:47:04.802398Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=true
+2026-11-16T01:47:05.937785Z  INFO Window destroyed window=15
+2026-11-16T01:47:06.316784Z  INFO Window mapped window=17
+2026-11-16T01:47:06.885114Z  INFO Popup role created popup=ObjectId(wl_surface@30[0], 45) root=Some(17)
+2026-11-16T01:47:07.721773Z  INFO Window destroyed window=17
+2026-11-16T01:47:07.864358Z  INFO Window mapped window=18
+2026-11-16T01:47:09.277968Z  INFO Popup role created popup=ObjectId(wl_surface@27[0], 35) root=Some(18)
+2026-11-16T01:47:11.768247Z  INFO Window destroyed window=18
+2026-11-16T01:47:12.159824Z  INFO Window mapped window=19
+2026-11-16T01:47:13.403033Z  INFO Window mapped window=20
+2026-11-16T01:47:13.404022Z  INFO Window destroyed window=20
+2026-11-16T01:47:13.874984Z  INFO Window mapped window=21
+2026-11-16T01:47:13.877009Z  INFO Window destroyed window=21
+2026-11-16T01:47:14.618499Z  INFO Window mapped window=22
+2026-11-16T01:47:14.620431Z  INFO Window destroyed window=22
+2026-11-16T01:47:15.095098Z  INFO Window mapped window=23
+2026-11-16T01:47:15.096386Z  INFO Window destroyed window=23
+2026-11-16T01:47:15.107102Z  INFO Window destroyed window=19
+2026-11-16T01:47:15.253927Z  INFO Window mapped window=24
+2026-11-16T01:47:16.149511Z  INFO Selection owner changed seat="raywm-nested" clipboard=false mime_types=Some(["text/plain", "text/plain;charset=utf-8"])
+2026-11-16T01:47:16.477187Z  INFO Window mapped window=25
+2026-11-16T01:47:16.478480Z  INFO Window destroyed window=25
+2026-11-16T01:47:16.612814Z  INFO Selection owner changed seat="raywm-nested" clipboard=false mime_types=Some(["text/plain", "text/plain;charset=utf-8"])
+2026-11-16T01:47:16.934337Z  INFO Window mapped window=26
+2026-11-16T01:47:16.935679Z  INFO Window destroyed window=26
+2026-11-16T01:47:16.943085Z  INFO Window destroyed window=24

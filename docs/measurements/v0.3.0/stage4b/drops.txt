@@ -1,0 +1,3 @@
+gtk-to-qt drop payload: gtk-to-qt
+qt-to-gtk drop payload: qt-to-gtk
+source-close: no payload (source gone; no data transferred)
