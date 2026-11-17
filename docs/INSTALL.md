@@ -306,9 +306,9 @@ virtual-input protocols that let any client inject input.
 
 ### Experimental Rust foundation
 
-`rust/` contains the Stage 3 Smithay floating prototype. The desktop session entry,
+`rust/` contains the Stage 5A Smithay workspace/configuration foundation. The desktop session entry,
 updater and release packaging still use Zig. Build on Linux with Rust/Cargo
-(validated with 1.99.1), a C linker, pkg-config and xkbcommon development files.
+(Stage 5A validated with 1.100.0), a C linker, pkg-config and xkbcommon development files.
 Winit additionally needs Wayland and an EGL/OpenGL ES 3 implementation (for
 example Mesa). It uses the host compositor's ordinary client connection; it
 does not acquire a VT, KMS device, libinput devices or session. No wlroots or
@@ -336,6 +336,16 @@ failures log warnings; invalid client requests do not terminate the server. Star
 display, EGL/render/submit or loop failure exits nonzero; a failed client
 admission logs a warning. SIGINT/SIGTERM and closing the Winit window stop the
 server and remove its socket/lock. No ray.conf or Lua configuration is loaded.
+
+| Internal reconciliation diagnostic | Meaning |
+|---|---|
+| `Cannot reconcile workspace layout` | A desired placement plan failed validation; inspect the attached layout error |
+| `Cannot update transient parent` | A stale/cyclic logical parent relation was rejected; inspect the attached command error |
+| `Cannot update logical output` | A backend geometry observation failed core validation; inspect the attached command error |
+
+Stage 5A policy configuration is an internal validated snapshot, without a
+user-facing loader. [RUST_STAGE5A.md](RUST_STAGE5A.md) defines its defaults,
+commands and output/workspace rules.
 
 Private headless launch from `rust/`:
 
@@ -370,8 +380,9 @@ RAYWM_TEST_ROUNDS=1 zig-out/bin/raywm-test-client` after the ordinary Zig build.
 This independent simple client performs configure/ACK, displays a real buffer
 and exits. Multiple clients receive independent floating placement, click focus,
 client-requested move/resize and standard XDG popups. There are no compositor
-modifier bindings or Lua settings yet. Clipboard/data-device is deferred, so foot currently refuses
-to start; general toolkit compatibility is not claimed.
+modifier bindings or Lua settings yet. Standard clipboard, primary selection
+and client DnD are supported; foot and minimal GTK4/Qt6 probes are qualified in
+the private software session. General toolkit compatibility is not claimed.
 
 For an automated safe pixel/input/resize check, run
 `python3 rust/tests/nested-smoke.py` from the repository root. It creates its

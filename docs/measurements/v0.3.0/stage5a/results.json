@@ -1,0 +1,228 @@
+[
+  {
+    "name": "fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "cwd": "rust",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "name": "check",
+    "command": [
+      "cargo",
+      "check",
+      "--workspace",
+      "--all-targets",
+      "--locked"
+    ],
+    "cwd": "rust",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "name": "test",
+    "command": [
+      "cargo",
+      "test",
+      "--workspace",
+      "--locked"
+    ],
+    "cwd": "rust",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "name": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "--workspace",
+      "--all-targets",
+      "--locked",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "cwd": "rust",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "name": "build",
+    "command": [
+      "cargo",
+      "build",
+      "--workspace",
+      "--locked"
+    ],
+    "cwd": "rust",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "name": "headless-check",
+    "command": [
+      "cargo",
+      "check",
+      "--workspace",
+      "--all-targets",
+      "--no-default-features",
+      "--locked"
+    ],
+    "cwd": "rust",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "name": "headless-test",
+    "command": [
+      "cargo",
+      "test",
+      "--workspace",
+      "--no-default-features",
+      "--locked"
+    ],
+    "cwd": "rust",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "name": "headless-clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "--workspace",
+      "--all-targets",
+      "--no-default-features",
+      "--locked",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "cwd": "rust",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "name": "headless-build",
+    "command": [
+      "cargo",
+      "build",
+      "--workspace",
+      "--no-default-features",
+      "--locked"
+    ],
+    "cwd": "rust",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "name": "docs-sync",
+    "command": [
+      "tests/docs-sync.sh"
+    ],
+    "cwd": ".",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "name": "protected-paths",
+    "command": [
+      "git",
+      "diff",
+      "--exit-code",
+      "9d846f6",
+      "--",
+      "src",
+      "protocol",
+      "config",
+      "packaging",
+      "scripts",
+      "tests",
+      "build.zig",
+      "build.zig.zon",
+      "rust/Cargo.toml",
+      "rust/Cargo.lock"
+    ],
+    "cwd": ".",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "name": "stage2",
+    "command": [
+      "python3",
+      "rust/tests/nested-smoke.py"
+    ],
+    "cwd": ".",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "name": "stage3",
+    "command": [
+      "python3",
+      "rust/tests/nested-smoke.py",
+      "--stage3"
+    ],
+    "cwd": ".",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "name": "stage4a",
+    "command": [
+      "python3",
+      "rust/tests/selection-smoke.py"
+    ],
+    "cwd": ".",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "name": "stage4b-initial",
+    "command": [
+      "python3",
+      "rust/tests/stage4b-smoke.py"
+    ],
+    "cwd": ".",
+    "status": "FAIL",
+    "exit_code": 1
+  },
+  {
+    "name": "stage4b",
+    "command": [
+      "python3",
+      "rust/tests/stage4b-smoke.py"
+    ],
+    "cwd": ".",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "name": "docs-sync-final",
+    "command": [
+      "tests/docs-sync.sh"
+    ],
+    "cwd": ".",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "name": "python-syntax",
+    "command": [
+      "python3",
+      "-c",
+      "import ast,pathlib; ast.parse(pathlib.Path('rust/tests/stage4b-smoke.py').read_text())"
+    ],
+    "cwd": ".",
+    "status": "PASS",
+    "exit_code": 0
+  }
+]

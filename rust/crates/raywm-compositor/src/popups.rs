@@ -286,7 +286,7 @@ impl State {
             let parent_mapped = entry.surface.get_parent_surface().is_some_and(|parent| {
                 self.window_id(&parent)
                     .and_then(|id| self.desktop.get(id))
-                    .is_some_and(|model| model.mapped)
+                    .is_some_and(|model| model.mapped())
                     || self.popup_entries.iter().any(|entry| {
                         entry.surface.wl_surface() == &parent && entry.mapped && !entry.dismissed
                     })

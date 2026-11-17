@@ -1,6 +1,13 @@
 //! Small desktop model. IDs are never recycled, including after removal.
 
+use crate::{
+    config::Configuration,
+    layout::Presentation,
+    workspaces::{OutputState, Workspace, WorkspaceId},
+};
 use std::{collections::BTreeMap, error::Error, fmt, num::NonZeroU32};
+#[path = "policy.rs"]
+mod policy;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct WindowId(NonZeroU32);
@@ -11,9 +18,10 @@ impl WindowId {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum OutputId {
     Nested,
+    Virtual(u32),
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -37,15 +45,32 @@ impl Size {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Lifecycle {
+    Created,
+    Mapped,
+    Unmapped,
+}
+
 #[derive(Debug)]
 pub struct WindowState {
     pub id: WindowId,
     pub position: Position,
     pub size: Option<Size>,
-    pub mapped: bool,
+    pub lifecycle: Lifecycle,
+    pub workspace: WorkspaceId,
+    pub parent: Option<WindowId>,
+    pub focus_eligible: bool,
+    pub floating: bool,
+    pub presentation: Presentation,
     pub focused: bool,
-    pub output: Option<OutputId>,
     pub resize: Option<ResizeState>,
+}
+
+impl WindowState {
+    pub fn mapped(&self) -> bool {
+        self.lifecycle == Lifecycle::Mapped
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -131,6 +156,11 @@ pub struct Desktop {
     windows: BTreeMap<WindowId, WindowState>,
     order: Vec<WindowId>,
     interaction: Option<Interaction>,
+    workspaces: BTreeMap<WorkspaceId, Workspace>,
+    outputs: BTreeMap<OutputId, OutputState>,
+    active_workspace: WorkspaceId,
+    next_workspace: Option<u64>,
+    config: Configuration,
 }
 
 impl Default for Desktop {
@@ -140,6 +170,18 @@ impl Default for Desktop {
             windows: BTreeMap::new(),
             order: Vec::new(),
             interaction: None,
+            workspaces: BTreeMap::from([(
+                WorkspaceId(1),
+                Workspace {
+                    id: WorkspaceId(1),
+                    output: None,
+                    layout: Default::default(),
+                },
+            )]),
+            outputs: BTreeMap::new(),
+            active_workspace: WorkspaceId(1),
+            next_workspace: Some(2),
+            config: Configuration::default(),
         }
     }
 }
@@ -155,9 +197,13 @@ impl Desktop {
                 id,
                 position: Position::default(),
                 size: None,
-                mapped: false,
+                lifecycle: Lifecycle::Created,
+                workspace: self.active_workspace,
+                parent: None,
+                focus_eligible: true,
+                floating: true,
+                presentation: Presentation::Normal,
                 focused: false,
-                output: None,
                 resize: None,
             },
         );
@@ -173,29 +219,34 @@ impl Desktop {
         let focused = self.focused() == Some(id);
         self.order.retain(|other| *other != id);
         let removed = self.windows.remove(&id);
+        for child in self.windows.values_mut() {
+            if child.parent == Some(id) {
+                child.parent = None;
+            }
+        }
         if focused {
             self.focus(self.topmost());
         }
         removed
     }
 
-    pub fn map(
-        &mut self,
-        id: WindowId,
-        position: Position,
-        size: Size,
-        output: Option<OutputId>,
-    ) -> bool {
+    pub fn map(&mut self, id: WindowId, position: Position, size: Size) -> bool {
+        if size.width.get() > i32::MAX as u32 || size.height.get() > i32::MAX as u32 {
+            return false;
+        }
         let Some(window) = self.windows.get_mut(&id) else {
             return false;
         };
         window.position = position;
         window.size = Some(size);
-        window.output = output;
-        if !window.mapped {
+        let newly_mapped = !window.mapped();
+        if newly_mapped {
             self.order.push(id);
         }
-        window.mapped = true;
+        window.lifecycle = Lifecycle::Mapped;
+        if newly_mapped {
+            self.raise_family(id);
+        }
         true
     }
 
@@ -205,9 +256,14 @@ impl Desktop {
             return false;
         };
         let focused = window.focused;
-        window.mapped = false;
+        window.lifecycle = Lifecycle::Unmapped;
         window.focused = false;
-        window.output = None;
+        window.parent = None;
+        for child in self.windows.values_mut() {
+            if child.parent == Some(id) {
+                child.parent = None;
+            }
+        }
         self.order.retain(|other| *other != id);
         if focused {
             self.focus(self.topmost());
@@ -220,13 +276,16 @@ impl Desktop {
         if self.interaction.is_some_and(|grab| Some(grab.id) != id) {
             return false;
         }
-        if id.is_some_and(|id| !self.windows.get(&id).is_some_and(|window| window.mapped)) {
+        if id.is_some_and(|id| !self.focusable(id)) {
             return false;
         }
         for window in self.windows.values_mut() {
             window.focused = Some(window.id) == id;
         }
         if let Some(id) = id {
+            if let Some(window) = self.windows.get(&id) {
+                self.active_workspace = window.workspace;
+            }
             self.raise(id);
         }
         true
@@ -244,20 +303,23 @@ impl Desktop {
     }
 
     pub fn topmost(&self) -> Option<WindowId> {
-        self.order.last().copied()
+        self.order
+            .iter()
+            .rev()
+            .copied()
+            .find(|id| self.focusable(*id))
     }
 
     pub fn raise(&mut self, id: WindowId) -> bool {
-        if !self.windows.get(&id).is_some_and(|window| window.mapped) {
+        if !self.focusable(id) {
             return false;
         }
-        self.order.retain(|other| *other != id);
-        self.order.push(id);
+        self.raise_family(id);
         true
     }
 
     pub fn move_to(&mut self, id: WindowId, position: Position) -> bool {
-        let Some(window) = self.windows.get_mut(&id).filter(|window| window.mapped) else {
+        let Some(window) = self.windows.get_mut(&id).filter(|window| window.mapped()) else {
             return false;
         };
         window.position = position;
@@ -271,20 +333,27 @@ impl Desktop {
         if let Some(size) = window.size {
             return Some((window.position, size));
         }
-        let rank = self.windows.keys().take_while(|other| **other < id).count();
+        let rank = self
+            .windows
+            .values()
+            .filter(|other| other.id < id && other.workspace == window.workspace)
+            .count();
         let w = bounds.width.get().min(i32::MAX as u32);
         let h = bounds.height.get().min(i32::MAX as u32);
         let size = if rank == 0 {
             Size::new(w, h)?
         } else {
             Size::new(
-                ((u64::from(w) * 3 / 5) as u32).max(1),
-                ((u64::from(h) * 3 / 5) as u32).max(1),
+                ((u64::from(w) * u64::from(self.config.floating.secondary_percent) / 100) as u32)
+                    .max(1),
+                ((u64::from(h) * u64::from(self.config.floating.secondary_percent) / 100) as u32)
+                    .max(1),
             )?
         };
         let x_room = w.saturating_sub(size.width.get());
         let y_room = h.saturating_sub(size.height.get());
-        let offset = (rank % 5) * 48;
+        let offset = (rank % self.config.floating.cascade_slots as usize)
+            * self.config.floating.cascade_step as usize;
         Some((
             Position {
                 x: (offset as u32).min(x_room) as i32,
@@ -306,13 +375,13 @@ impl Desktop {
     }
 
     fn begin(&mut self, id: WindowId, origin: Position, edges: Option<Edges>) -> bool {
-        if self.interaction.is_some() {
+        if self.interaction.is_some() || !self.focusable(id) {
             return false;
         }
         let Some(window) = self
             .windows
             .get_mut(&id)
-            .filter(|window| window.mapped && window.resize.is_none())
+            .filter(|window| window.mapped() && window.resize.is_none())
         else {
             return false;
         };
@@ -496,15 +565,15 @@ mod tests {
         assert!(!desktop.focus(Some(first)));
         let size = Size::new(320, 200).ok_or("invalid size")?;
         let position = Position { x: 12, y: 16 };
-        assert!(desktop.map(first, position, size, Some(OutputId::Nested)));
+        assert!(desktop.map(first, position, size));
         assert!(desktop.focus(Some(first)));
         assert!(!desktop.focus(Some(second)));
         assert_eq!(desktop.focused(), Some(first));
         let window = desktop.get(first).ok_or("missing window")?;
         assert_eq!(window.position, position);
         assert_eq!(window.size, Some(size));
-        assert_eq!(window.output, Some(OutputId::Nested));
-        assert!(desktop.map(second, Position::default(), size, None));
+        assert_eq!(desktop.output_for(first), None); // headless has no output resource
+        assert!(desktop.map(second, Position::default(), size));
         assert!(desktop.focus(Some(second)));
         assert_eq!(desktop.focused(), Some(second));
         assert!(!desktop.get(first).ok_or("missing window")?.focused);
@@ -529,7 +598,7 @@ mod tests {
             assert!(position.x >= 0 && position.y >= 0);
             assert!(position.x as u32 + size.width.get() <= 800);
             assert!(position.y as u32 + size.height.get() <= 600);
-            desktop.map(id, position, size, Some(OutputId::Nested));
+            desktop.map(id, position, size);
             desktop.focus(Some(id));
         }
         assert_eq!(desktop.stacking(), &ids);
@@ -550,7 +619,7 @@ mod tests {
             let mut desktop = Desktop::default();
             let id = desktop.create()?;
             let initial = Size::new(300, 200).ok_or("size")?;
-            desktop.map(id, Position { x: 100, y: 100 }, initial, None);
+            desktop.map(id, Position { x: 100, y: 100 }, initial);
             desktop.focus(Some(id));
             let edges = Edges::new(bits).ok_or("edges")?;
             assert!(desktop.begin_resize(id, Position { x: 50, y: 50 }, edges));
@@ -598,7 +667,7 @@ mod tests {
         let b = desktop.create()?;
         let size = Size::new(300, 200).ok_or("size")?;
         for id in [a, b] {
-            desktop.map(id, Position::default(), size, None);
+            desktop.map(id, Position::default(), size);
         }
         desktop.focus(Some(a));
         assert!(desktop.begin_move(

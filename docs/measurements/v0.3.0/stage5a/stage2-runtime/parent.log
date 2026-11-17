@@ -1,0 +1,32 @@
+debug(conf): /tmp/raywm-stage2-fwija_sx/config/ray.conf not found (optional)
+00:00:00.000 [INFO] [backend/backend.c:342] Loading user-specified backends due to WLR_BACKENDS: headless
+00:00:00.000 [INFO] [backend/headless/backend.c:60] Creating headless backend
+00:00:00.000 [INFO] [util/env.c:25] Loading WLR_RENDERER option: pixman
+00:00:00.000 [INFO] [render/pixman/renderer.c:328] Creating pixman renderer
+info(protocols): no linux-dmabuf with this renderer: clients use shared memory
+info(protocols): no explicit sync: renderer timeline=false, backend timeline=true, renderer DRM fd=false
+info(xwayland): Xwayland disabled (RAYWM_XWAYLAND=0)
+warning: TEST BUILD: virtual pointer protocol is enabled
+info(ipc): v1 socket /tmp/raywm-stage2-fwija_sx/parent/raywm-wayland-1.sock
+00:00:00.047 [INFO] [backend/headless/backend.c:17] Starting headless backend
+debug(server): event layout id=1
+debug(server): event layout id=0
+debug(server): event output_add id=1
+info(lua): loaded plugin parent (1 key bindings)
+info: running on WAYLAND_DISPLAY=wayland-1
+debug(server): event view_new id=2
+debug(server): event view_map id=2
+debug(server): event view_focus id=2
+debug(server): event input_add id=1
+debug(server): event input_add id=2
+debug(server): event input_remove id=1
+debug(server): event input_remove id=2
+debug(server): event input_add id=3
+debug(server): event input_add id=4
+debug(server): event view_resized id=2
+debug(server): event input_remove id=3
+debug(server): event input_remove id=4
+debug(server): event view_will_unmap id=2
+debug(server): event view_focus id=0
+debug(server): event view_unmap id=2
+debug(server): event output_remove id=1

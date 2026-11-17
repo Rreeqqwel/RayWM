@@ -1,0 +1,9 @@
+
+(gtk4.bin:2736853): Gtk-WARNING **: 01:11:59.653: Unable to acquire session bus: Cannot autolaunch D-Bus without X11 $DISPLAY
+MESA-EGL: warning: failed to get driver name for fd -1
+MESA-EGL: warning: MESA-LOADER: failed to retrieve device information
+MESA-EGL: warning: failed to get driver name for fd -1
+
+(gtk4.bin:2736853): Gdk-WARNING **: 01:11:59.847: vkGetPhysicalDeviceSurfaceFormatsKHR(): A surface is no longer available. (VK_ERROR_SURFACE_LOST_KHR) (-1000000000)
+
+(gtk4.bin:2736853): Gdk-WARNING **: 01:11:59.847: vkGetPhysicalDeviceSurfaceFormatsKHR(): A surface is no longer available. (VK_ERROR_SURFACE_LOST_KHR) (-1000000000)

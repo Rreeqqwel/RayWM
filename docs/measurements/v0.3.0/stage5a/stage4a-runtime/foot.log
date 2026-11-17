@@ -1,0 +1,6 @@
+warn: main.c:495: 'C' is not a UTF-8 locale, falling back to 'C.UTF-8'
+warn: wayland.c:1874: compositor does not implement XDG activation, bell.urgent will fall back to coloring the window margins red
+warn: wayland.c:1880: compositor does not implement fractional scaling
+warn: wayland.c:1883: compositor does not implement server-side cursors, falling back to client-side cursors
+warn: wayland.c:1888: compositor does not implement the xdg-toplevel-icon protocol
+warn: wayland.c:1893: text input interface not implemented by compositor; IME will be disabled

@@ -1,6 +1,6 @@
 # Configuring RayWM
 
-RayWM has two configuration files, each the only authority for its part:
+The Zig desktop has two configuration files, each the only authority for its part:
 
 - **`ray.conf`** (since v0.2.2, renamed from `raywm.conf` in v0.2.3): the
   compositor's basic settings: focus, gaps, borders, the drag modifier,
@@ -124,6 +124,14 @@ instead (for example `gaps_in = 4` at the top of `dwindle.lua`) overrides
 read `ray.conf` at all and keep their own values; everything else keeps
 working. To use `ray.conf` for gaps and borders, update those plugin
 files from `/usr/share/raywm/config/plugins/`.
+
+## Experimental Rust configuration
+
+The Rust Stage 5A prototype does not read or rewrite these files. Its typed
+`Configuration` is an internal validated policy snapshot, applied synchronously
+through a command; it is separate from desktop runtime and Wayland state.
+There is no Rust Lua host or replacement user file format. Defaults, ranges and
+application semantics are defined in [RUST_STAGE5A.md](RUST_STAGE5A.md#configuration).
 
 ## Where the configuration lives
 

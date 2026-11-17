@@ -1,0 +1,81 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+     Running unittests src/main.rs (target/debug/build/raywm-compositor/51569733f8d4265f/out/raywm_smithay-51569733f8d4265f)
+
+running 5 tests
+test stage5a_tests::logical_output_geometry_matches_projected_smithay_output ... ok
+test stage5a_tests::hiding_workspace_dismisses_wire_popup_without_creating_managed_window ... ok
+test stage5a_tests::reparent_to_hidden_workspace_cancels_core_and_adapter_resize ... ok
+test stage5a_tests::workspace_commands_reconcile_real_surfaces_space_and_lifecycle ... ok
+test stage5a_tests::command_resize_waits_for_ack_commit_and_transient_wire_parent_is_resolved ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running ../../tests/headless.rs (target/debug/build/raywm-compositor/92813449d0f2c621/out/headless-92813449d0f2c621)
+
+running 17 tests
+test dnd::dnd_icon_targets_actions_and_teardown ... ignored, requires stage4b-smoke.py private graphical parent and input driver
+test dnd::final_admission_and_accepted_source_disconnect ... ignored, requires stage4b-smoke.py private graphical parent and input driver
+test dnd::reactive_popup_constraints_and_lifecycle ... ignored, requires stage4b-smoke.py private graphical parent and input driver
+test floating::nested_floating_focus_geometry_and_popups ... ignored, requires nested-smoke.py --stage3 and its private input driver
+test nested_graphics_pixels_input_resize_and_unmap ... ignored, requires rust/tests/nested-smoke.py private graphical parent
+test selection::clipboard_primary_and_focus_lifecycle ... ignored, requires selection-smoke.py private graphical parent and input driver
+xdg_surface#7: error 3: ACK the initial configure before committing a buffer (also after unmap)
+xdg_surface#7: error 3: ACK the initial configure before committing a buffer (also after unmap)
+xdg_wm_base#5: error 4: wrong configure serial: 4294967295
+xdg_wm_base#4: error 3: popup parent must be a live toplevel or popup (maximum ancestry 64)
+xdg_surface#14: error 3: popup requires an ACKed configure and must not be dismissed
+xdg_wm_base#4: error 3: popup parent must be a live toplevel or popup (maximum ancestry 64)
+xdg_surface#7: error 3: ACK the initial configure before committing a buffer (also after unmap)
+test malformed_client_is_isolated_and_sigint_cleans_auto_socket ... ok
+test selection::selection_managers_and_source_teardown_are_isolated ... ok
+xdg_wm_base#4: error 3: popup parent must be mapped before its child
+test xdg_initial_ack_map_unmap_remap_and_role_destruction ... ok
+test floating::popup_null_buffer_dismisses_live_descendants ... ok
+test floating::popup_unacked_buffer_is_client_local_error ... ok
+test floating::popup_configure_nested_reposition_and_parent_cleanup ... ok
+test xdg_unconfigured_buffer_invalid_ack_and_disconnect_are_isolated ... ok
+test globals_buffers_subsurfaces_disconnect_and_sigterm ... ok
+test floating::invalid_popup_parents_and_unmapped_ancestor_are_isolated ... ok
+test floating::three_clients_remap_middle_destroy_and_disconnect ... ok
+test bad_startup_and_socket_collision_fail_without_removing_live_socket ... ok
+
+test result: ok. 11 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running unittests src/lib.rs (target/debug/build/raywm-core/26e19da4e6de4b65/out/raywm_core-26e19da4e6de4b65)
+
+running 8 tests
+test tests::socket_names_cannot_escape_the_runtime_directory ... ok
+test windows::tests::id_exhaustion_does_not_wrap_or_recycle ... ok
+test windows::tests::mapping_geometry_focus_and_unmap_are_consistent ... ok
+test windows::policy::tests::workspace_id_exhaustion_never_wraps ... ok
+test windows::tests::removed_ids_are_stale_and_never_reused ... ok
+test windows::tests::move_focus_guard_extremes_and_lifetime_cancellation ... ok
+test windows::tests::resize_edges_limits_anchor_and_coalescing ... ok
+test windows::tests::stacking_cascade_and_fallback_survive_middle_removal ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/stage5a.rs (target/debug/build/raywm-core/9931ef7ba610297f/out/stage5a-9931ef7ba610297f)
+
+running 12 tests
+test command_effects_resize_coalescing_and_committed_geometry_are_distinct ... ok
+test activation_transfer_hidden_focus_and_fallback ... ok
+test configuration_defaults_validation_atomic_replacement_and_placement ... ok
+test commands_reject_busy_stale_and_unsupported_without_mutation ... ok
+test detached_workspace_activation_and_removal_are_explicit ... ok
+test floating_fullscreen_maximized_plans_are_pure_and_validated ... ok
+test output_attach_switch_rebind_remove_and_reappear ... ok
+test output_loss_cancels_resize_and_retains_membership ... ok
+test removal_transfers_mapped_and_unmapped_and_never_recycles_workspace ... ok
+test registry_lifecycle_remap_stable_ids_and_destroy_cleanup ... ok
+test transient_family_transfer_stacking_cycles_and_parent_destruction ... ok
+test deterministic_lifecycle_command_sequences_preserve_invariants ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+   Doc-tests raywm_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

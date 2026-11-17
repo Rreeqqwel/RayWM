@@ -8,6 +8,18 @@ the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
 ### Added
 
+- Rust Stage 5A: extend the existing managed-window registry with explicit
+  lifecycle, workspace membership and transient families; add checked workspace
+  IDs, output bindings/activation, validated floating layout plans and typed
+  configuration snapshots. Internal commands validate before changing core
+  state and reconcile visibility, focus and geometry through Smithay. Tiling,
+  fullscreen/maximize protocol policy and Lua remain deferred with explicit
+  unsupported errors. Real-wire integration and policy tests cover the new
+  ownership boundaries. Remapping preserves floating position, and a resize
+  buffer commit before its configure ACK no longer changes core committed size.
+  The Qt menu qualification reader now waits for a complete log line before
+  parsing JSON, avoiding a race with the running toolkit writer.
+
 - Rust client drag-and-drop through Smithay's `DnDGrab`: held pointer serial
   admission with matching client and origin, source action negotiation (copy/move/ask), target
   enter/motion/leave/drop switching, MIME `receive` fd forwarding, finish and

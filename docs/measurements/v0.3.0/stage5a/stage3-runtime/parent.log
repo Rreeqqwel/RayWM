@@ -1,0 +1,83 @@
+debug(conf): /tmp/raywm-stage3-777donxq/config/ray.conf not found (optional)
+00:00:00.000 [INFO] [backend/backend.c:342] Loading user-specified backends due to WLR_BACKENDS: headless
+00:00:00.000 [INFO] [backend/headless/backend.c:60] Creating headless backend
+00:00:00.000 [INFO] [util/env.c:25] Loading WLR_RENDERER option: pixman
+00:00:00.000 [INFO] [render/pixman/renderer.c:328] Creating pixman renderer
+info(protocols): no linux-dmabuf with this renderer: clients use shared memory
+info(protocols): no explicit sync: renderer timeline=false, backend timeline=true, renderer DRM fd=false
+info(xwayland): Xwayland disabled (RAYWM_XWAYLAND=0)
+warning: TEST BUILD: virtual pointer protocol is enabled
+info(ipc): v1 socket /tmp/raywm-stage3-777donxq/parent/raywm-wayland-1.sock
+00:00:00.008 [INFO] [backend/headless/backend.c:17] Starting headless backend
+debug(server): event layout id=1
+debug(server): event layout id=0
+debug(server): event output_add id=1
+info(lua): loaded plugin parent (1 key bindings)
+info: running on WAYLAND_DISPLAY=wayland-1
+debug(server): event input_add id=1
+debug(server): event input_add id=2
+debug(server): event view_new id=2
+debug(server): event view_map id=2
+debug(server): event view_focus id=2
+debug(server): event input_add id=3
+debug(server): event input_add id=4
+debug(server): event input_remove id=3
+debug(server): event input_remove id=4
+debug(server): event input_add id=5
+debug(server): event input_add id=6
+debug(server): event input_remove id=5
+debug(server): event input_remove id=6
+debug(server): event input_add id=7
+debug(server): event input_add id=8
+debug(server): event input_remove id=7
+debug(server): event input_remove id=8
+debug(server): event input_add id=9
+debug(server): event input_add id=10
+debug(server): event input_remove id=9
+debug(server): event input_remove id=10
+debug(server): event input_add id=11
+debug(server): event input_add id=12
+debug(server): event input_remove id=11
+debug(server): event input_remove id=12
+debug(server): event input_add id=13
+debug(server): event input_add id=14
+debug(server): event input_remove id=13
+debug(server): event input_remove id=14
+debug(server): event input_add id=15
+debug(server): event input_add id=16
+debug(server): event input_remove id=15
+debug(server): event input_remove id=16
+debug(server): event input_add id=17
+debug(server): event input_add id=18
+debug(server): event input_remove id=17
+debug(server): event input_remove id=18
+debug(server): event input_add id=19
+debug(server): event input_add id=20
+debug(server): event input_remove id=19
+debug(server): event input_remove id=20
+debug(server): event input_add id=21
+debug(server): event input_add id=22
+debug(server): event input_remove id=21
+debug(server): event input_remove id=22
+debug(server): event input_add id=23
+debug(server): event input_add id=24
+debug(server): event input_remove id=23
+debug(server): event input_remove id=24
+debug(server): event input_add id=25
+debug(server): event input_add id=26
+debug(server): event input_remove id=25
+debug(server): event input_remove id=26
+debug(server): event input_add id=27
+debug(server): event input_add id=28
+debug(server): event input_remove id=27
+debug(server): event input_remove id=28
+debug(server): event input_add id=29
+debug(server): event input_add id=30
+debug(server): event input_remove id=29
+debug(server): event input_remove id=30
+debug(server): event input_remove id=1
+debug(server): event input_remove id=2
+debug(server): event view_will_unmap id=2
+debug(server): event view_focus id=0
+debug(server): event view_unmap id=2
+debug(server): event output_remove id=1

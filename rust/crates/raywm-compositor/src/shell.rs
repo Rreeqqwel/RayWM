@@ -2,7 +2,7 @@
 //! commit. The custom surface dispatch retains the public XDG error resource;
 //! all protocol requests still run through Smithay's versioned implementation.
 
-use raywm_core::windows::{OutputId, Position, Size, WindowId};
+use raywm_core::windows::{Position, Size, WindowId};
 use smithay::{
     backend::renderer::utils::with_renderer_surface_state,
     desktop::Window,
@@ -49,14 +49,47 @@ pub struct ShellErrorResource(
 impl State {
     /// Space owns protocol/render handles; core alone owns logical geometry and order.
     pub fn sync_scene(&mut self) {
+        // Reparent/output observations may cancel an operation in core. Drop
+        // its adapter flight too; no stale resize anchor survives that change.
+        for view in &mut self.views {
+            if self
+                .desktop
+                .get(view.id)
+                .is_some_and(|w| w.resize.is_none())
+            {
+                let had_flight = view.resize_flight.take().is_some();
+                if let Some(top) = view.window.toplevel() {
+                    let resizing = top.with_pending_state(|state| {
+                        let resizing = state.states.contains(xdg_toplevel::State::Resizing);
+                        state.states.unset(xdg_toplevel::State::Resizing);
+                        resizing
+                    });
+                    if had_flight || resizing {
+                        top.send_pending_configure();
+                    }
+                }
+            }
+        }
+        for view in &self.views {
+            if !self.desktop.visible(view.id) {
+                self.space.unmap_elem(&view.window);
+            }
+        }
+        let mut placements = Vec::new();
+        for workspace in self.desktop.workspaces() {
+            match self.desktop.layout_plan(workspace.id) {
+                Ok(plan) => placements.extend(plan.placements),
+                Err(error) => tracing::error!(?error, "Cannot reconcile workspace layout"),
+            }
+        }
         for id in self.desktop.stacking() {
             if let (Some(model), Some(view)) = (
-                self.desktop.get(*id),
+                placements.iter().find(|placement| placement.id == *id),
                 self.views.iter().find(|view| view.id == *id),
             ) {
                 self.space.map_element(
                     view.window.clone(),
-                    (model.position.x, model.position.y),
+                    (model.geometry.position.x, model.geometry.position.y),
                     false,
                 );
             }
@@ -155,7 +188,7 @@ impl State {
         let was_mapped = self
             .desktop
             .get(view.id)
-            .is_some_and(|window| window.mapped);
+            .is_some_and(|window| window.mapped());
         if !mapped {
             if was_mapped {
                 self.space.unmap_elem(&view.window);
@@ -191,7 +224,12 @@ impl State {
             if let Some(size) =
                 Size::new(geometry.size.w.max(0) as u32, geometry.size.h.max(0) as u32)
             {
-                let position = if was_mapped {
+                let position = if was_mapped
+                    || self
+                        .desktop
+                        .get(view.id)
+                        .is_some_and(|window| window.size.is_some())
+                {
                     self.desktop
                         .get(view.id)
                         .map(|window| window.position)
@@ -218,12 +256,9 @@ impl State {
                             .min(bounds.height.get().saturating_sub(size.height.get()) as i32),
                     }
                 };
-                self.desktop.map(
-                    view.id,
-                    position,
-                    size,
-                    self.output.as_ref().map(|_| OutputId::Nested),
-                );
+                if !was_mapped {
+                    self.desktop.map(view.id, position, size);
+                }
                 let resized = view
                     .resize_flight
                     .filter(|(serial, _)| view.acked.is_some_and(|acked| acked >= *serial));
@@ -372,6 +407,17 @@ impl XdgShellHandler for State {
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
         self.remove_window(surface.wl_surface());
+    }
+    fn parent_changed(&mut self, surface: ToplevelSurface) {
+        let Some(id) = self.window_id(surface.wl_surface()) else {
+            return;
+        };
+        let parent = surface.parent().and_then(|parent| self.window_id(&parent));
+        if let Err(error) = self.desktop.set_parent(id, parent) {
+            tracing::warn!(%error, "Cannot update transient parent");
+        }
+        self.sync_focus();
+        self.repair_pointer_focus();
     }
     fn move_request(
         &mut self,

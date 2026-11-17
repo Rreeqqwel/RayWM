@@ -77,6 +77,10 @@ impl Graphics {
         seat.add_pointer();
         state.seat = Some(seat);
         state.output = Some(output.clone());
+        state.desktop.update_output(
+            raywm_core::windows::OutputId::Nested,
+            core_geometry(mode.size)?,
+        )?;
         state.redraw = true;
         tracing::info!(
             width = mode.size.w,
@@ -119,6 +123,14 @@ impl Graphics {
                 output.delete_mode(previous);
             }
             state.space.map_output(output, (0, 0));
+            if let Ok(geometry) = core_geometry(size) {
+                if let Err(error) = state
+                    .desktop
+                    .update_output(raywm_core::windows::OutputId::Nested, geometry)
+                {
+                    tracing::error!(%error, "Cannot update logical output");
+                }
+            }
             state.request_window_size(size.to_logical(1));
             state.space.refresh();
             state.reposition_popups();
@@ -250,3 +262,11 @@ fn drag_icon_elements(
 
 impl OutputHandler for State {}
 delegate_output!(State);
+
+fn core_geometry(size: Size<i32, Physical>) -> Result<raywm_core::windows::Geometry> {
+    Ok(raywm_core::windows::Geometry {
+        position: Default::default(),
+        size: raywm_core::windows::Size::new(size.w.max(1) as u32, size.h.max(1) as u32)
+            .ok_or("invalid nested output size")?,
+    })
+}

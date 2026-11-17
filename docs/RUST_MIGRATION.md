@@ -1,4 +1,4 @@
-# Rust / Smithay migration — Stages 1–4B
+# Rust / Smithay migration — Stages 1–5A
 
 This is the foundation for a future v0.3 migration, **not a v0.3 release**.
 The working desktop remains Zig 0.16.0 + wlroots 0.20 + Lua 5.4.
@@ -10,7 +10,11 @@ virtual output and renderer. Stage 4A added the standard
 focus following and a serial policy. Stage 4B adds negotiated client
 drag-and-drop with a rendered drag icon, compositor-driven reactive popup
 constraints and GTK 4 / Qt 6 pointer-driven DnD qualification. It does not add
-a clipboard manager or server-side DnD. No Lua host exists;
+a clipboard manager or server-side DnD. Stage 5A extends the existing core
+registry with workspaces/output bindings, pure layout contracts, validated
+configuration snapshots and typed internal commands. See
+[Rust Stage 5A architecture](RUST_STAGE5A.md) and its
+[qualification](measurements/v0.3.0/stage5a/qualification.md). No Lua host exists;
 this is not a daily-use replacement for the Zig desktop.
 No Zig module, package payload, release branch or project version is replaced.
 
@@ -157,18 +161,26 @@ signalfd; rustix supplies safe UID validation and test polling/signals.
 Tracing formats diagnostics. `wayland-client`, client `wayland-protocols` and
 `tempfile` support real-client tests. No Lua binding is selected prematurely.
 
-## Rust implementation (Stages 1–4B)
+## Rust implementation (Stages 1–5A)
 
 ```text
 rust/
   Cargo.toml / Cargo.lock
   crates/raywm-core/
-    src/lib.rs                 validated socket basename, config and error
-    src/windows.rs             IDs, committed geometry, stack/focus and interactions
+    src/lib.rs                 bootstrap/socket contract and core module exports
+    src/windows.rs             registry, lifecycle, committed geometry and interactions
+    src/policy.rs              Desktop workspace/output/command transitions
+    src/workspaces.rs          workspace/output model types
+    src/layout.rs              pure layout inputs, plans and validation
+    src/config.rs              typed policy defaults and validation
+    src/commands.rs            requests, result events, effects and errors
+    tests/stage5a.rs            policy invariants and deterministic transition sequences
   crates/raywm-compositor/
     src/main.rs                CLI, directory validation, display, loop, shutdown
     src/state.rs               core protocol handlers and client data
     src/shell.rs               XDG lifecycle, committed windows and ID adapter
+    src/policy.rs              internal command validation and reconciliation
+    src/stage5a_tests.rs        real-wire core/Space integration tests
     src/nested.rs              Winit output, EGL/GLES rendering and resize
     src/input.rs               seat focus, keyboard/pointer forwarding and cleanup
     src/grabs.rs               input validation and ID-based move/resize pointer grab
@@ -186,8 +198,9 @@ rust/
 
 Core has no dependencies on Smithay, Lua or native backends. Its desktop
 model supplies checked IDs, committed geometry, stacking/focus, interaction
-state and output association. Configurable policy and ray.conf remain future
-work; Stage 3 intentionally uses a small fixed floating policy.
+state, workspace membership and output association derived through the workspace.
+Stage 5A configuration snapshots govern future floating placement; ray.conf
+parsing and Lua remain future work. See [the current contracts](RUST_STAGE5A.md).
 The private Cargo packages use `0.0.0` and `publish = false`; this is not a
 change to RayWM's release version.
 
@@ -233,11 +246,15 @@ committed position/size, bottom-to-top order, exclusive root focus and active
 operation state. `View` associates an ID with one Smithay `Window` and XDG
 handshake metadata; it does not maintain an independent geometry policy.
 `sync_scene` projects core order and positions into `Space<Window>`.
-A role keeps its ID across unmap/remap; role destruction or disconnect removes
+Workspace membership is stored only in the core window record; output
+association is derived from the workspace binding. Hidden mapped windows leave
+Space without becoming protocol-unmapped. A role keeps its ID across
+unmap/remap; role destruction or disconnect removes
 it from the bindings, core and Space. ID exhaustion returns an error and closes
 the new toplevel instead of wrapping.
 
-Initial placement is a 48-pixel cascade using live IDs and output bounds,
+Default initial placement is a 48-pixel cascade using live IDs in the workspace
+and output bounds,
 with five offsets. The first live role suggests the output size (preserving
 Stage 2 single-window resize behavior); subsequent roles suggest 3/5 of it.
 Clients may choose their own positive size. Actual new placement is bounded
@@ -531,8 +548,8 @@ wlroots 0.20.2, Wayland 1.26.0, Lua 5.4.9 and xkbcommon 1.13.2:
 | `zig build -Dtest-input -p zig-out/test-input` | PASS |
 | `SUITES="smoke focus docs docs-sync captures session ipc" tests/run.sh zig-out/test-input/bin /tmp/raywm-stage1-zig-integration` | PASS: all seven suites; 8 documented plugin examples, 11 capture scenarios, 10 session scenarios, 3053 IPC checks plus lock/path lifecycle cases |
 
-Rust checks run from `rust/` with Rust/Cargo 1.99.1. This is the verified
-toolchain, not a claim that older Rust versions were tested:
+Historical Stages 1–4B checks used Rust/Cargo 1.99.1. Stage 5A uses 1.100.0;
+see its qualification report for current results. Commands run from `rust/`:
 
 ```sh
 cargo fmt --all -- --check
@@ -542,13 +559,14 @@ cargo test --workspace --locked
 cargo build --workspace --locked
 ```
 
-Stage 4B passes all five commands above. The default test command runs 18
-automatic tests (seven core, eleven protocol/process); six graphical tests
-are explicitly ignored there and run by the separate smoke scenarios below.
-Headless-only clippy/tests and `tests/docs-sync.sh` also pass. The three
-original Stage 1 process tests remain in place; only the expected registry
-set expands for XDG and selection. Source equality confirms
-Zig/build/config/protocol files are unchanged.
+Stage 5A results are recorded in its
+[qualification report](measurements/v0.3.0/stage5a/qualification.md). The default
+test command runs 36 automatic tests (20 core, five core/Smithay integration,
+eleven protocol/process); six graphical tests are explicitly ignored there
+and run by the separate smoke scenarios below. Headless-only clippy/tests and
+`tests/docs-sync.sh` also pass. The original process/protocol regressions remain
+in place. Source equality confirms protected Zig/build/config/protocol files
+and Cargo dependency manifests/lock are unchanged.
 
 `cargo test` retains a core socket-path validation test and the original five
 subprocess smoke tests: registry/sync and mandatory shm formats; buffer
@@ -677,8 +695,10 @@ payloads, traces and images are in the
 
 ### Prototype limits
 
-One nested output, scale 1, fixed floating placement/focus policy and full
-redraw are supported. Standard clipboard/primary selection and client-initiated
+One nested output, scale 1, floating placement/focus policy and full
+redraw are supported. Stage 5A adds internal workspace commands and validated
+placement configuration, without user bindings, workspace UX or a config file
+loader. Standard clipboard/primary selection and client-initiated
 DnD with a rendered drag icon are implemented; server-initiated DnD, client
 cursor rendering, server-side decorations,
 maximize/minimize/fullscreen/window menu policy, layer-shell,
@@ -746,9 +766,13 @@ prototype, not an installed desktop.
    qualification, GTK primary selection and two hover-driven Qt submenu levels.
    Server-side DnD, a full toolkit matrix and the pinned Smithay source-disconnect
    protocol defect remain open; see the Final qualification.
-5. **Next: Stage 5 — workspace/configuration ownership and Lua host:** compatibility boundary and unchanged API v1,
-   parser/layered reload, adversarial budget/ownership tests and plugin traces.
-   Parallel Zig/Rust executables use independent private sockets/config roots.
+5. **Stage 5A — implemented:** unified managed-window/workspace/output model,
+   floating and stateful layout contracts, validated configuration snapshots
+   and internal typed commands with controlled Smithay reconciliation.
+   **Stage 5B remains next:** tiling algorithm, workspace UX and stateful
+   configure/restore policy. **Stage 5C remains deferred:** Lua host, compatible
+   configuration loading/reload and adversarial plugin tests. Parallel Zig/Rust
+   executables use independent private sockets/config roots.
 6. **Shell and services:** layer-shell, lock/presentation barriers, capture,
    selection/DnD/IME, activation/filtering, taskbar/workspace publication and
    bounded same-UID IPC. Verify every old protocol version/limit against the

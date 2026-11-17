@@ -1,6 +1,10 @@
-//! Framework-independent bootstrap configuration. Desktop policy comes later.
+//! Framework-independent compositor policy. No Wayland resources or Lua state.
 
+pub mod commands;
+pub mod config;
+pub mod layout;
 pub mod windows;
+pub mod workspaces;
 
 use std::{error::Error, fmt};
 

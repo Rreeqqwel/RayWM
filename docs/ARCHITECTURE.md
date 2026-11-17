@@ -5,9 +5,11 @@ does what must be correct and fast: Wayland protocols, input, outputs,
 rendering and resource lifetimes. Plugins decide where windows go and
 what keys do.
 
-The experimental `rust/` workspace implements a separate Stage 3 floating prototype.
-`raywm-core` owns checked IDs, committed geometry, stacking/focus, output
-assignment and move/resize state. `raywm-compositor` projects this authority
+The experimental `rust/` workspace implements a separate Stage 5A architecture foundation.
+`raywm-core` owns checked IDs, committed geometry, stacking/focus, workspace
+membership, workspace/output bindings, configuration snapshots and move/resize
+state. Typed commands and pure layout plans are described in
+[RUST_STAGE5A.md](RUST_STAGE5A.md). `raywm-compositor` projects this authority
 into Smithay Space/Window, validates input serials, synchronizes configure/ACK/
 commit anchors and manages standard PopupManager trees/grabs. It uses an optional
 Winit virtual output, EGL/GLES rendering and keyboard/pointer seat forwarding.

@@ -20,10 +20,7 @@ impl State {
         if self.popup_root.is_some_and(|root| id != Some(root)) {
             return;
         }
-        if self.desktop.focus(id) {
-            self.sync_focus();
-            self.redraw = true;
-        }
+        let _ = self.execute_command(raywm_core::commands::Command::FocusWindow(id));
     }
 
     pub fn sync_focus(&mut self) {
@@ -41,7 +38,7 @@ impl State {
             if self
                 .desktop
                 .get(view.id)
-                .is_some_and(|window| window.mapped)
+                .is_some_and(|window| window.mapped())
             {
                 top.with_pending_state(|state| {
                     if active {
@@ -75,8 +72,7 @@ impl State {
         };
         let valid = pointer.current_focus().is_some_and(|surface| {
             self.surface_window(&surface)
-                .and_then(|id| self.desktop.get(id))
-                .is_some_and(|window| window.mapped)
+                .is_some_and(|id| self.desktop.visible(id))
         });
         if !valid {
             pointer.unset_grab(self, SERIAL_COUNTER.next_serial(), time);

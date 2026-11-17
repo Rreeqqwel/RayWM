@@ -15,7 +15,7 @@ CLI and nested launch are in [INSTALL.md](INSTALL.md#experimental-rust-foundatio
 architecture, historical baselines and qualification limits are in
 [RUST_MIGRATION.md](RUST_MIGRATION.md).
 
-From `rust/` (validated with Rust/Cargo 1.99.1):
+From `rust/` (Stage 5A validated with Rust/Cargo 1.100.0):
 
 ```sh
 cargo fmt --all -- --check
@@ -30,10 +30,18 @@ cargo clippy --workspace --all-targets --no-default-features --locked -- -D warn
 cargo test --workspace --no-default-features --locked
 ```
 
-The default tests comprise seven core tests and eleven real headless process/
-protocol tests; Stage 4B's DnD/icon, reactive-popup and admission/edge-case tests
-are graphical and
-therefore ignored in that run. They cover ID deletion/non-reuse/exhaustion, geometry and
+The default tests comprise 20 core tests, five real-wire in-process
+core/Smithay integration tests and eleven real headless process/protocol tests.
+The six graphical tests are ignored in that run and executed by the separate
+harnesses below. Stage 5A covers workspace creation/removal,
+checked ID exhaustion, membership/family transfers, output binding/loss,
+active visibility/focus, validated layout plans and configuration replacement,
+command rejection and stale references, plus 600 deterministic transitions.
+The in-process tests issue real XDG/shm requests and inspect core and Space
+after internal commands, delayed resize ACK/commit, popup dismissal, transient
+reparent cancellation, remap and destruction. See
+[Stage 5A qualification](measurements/v0.3.0/stage5a/qualification.md).
+The remaining tests also cover ID deletion/non-reuse/exhaustion, geometry and
 focus, cascade/stack/fallback policy, all resize edges, size limits, anchored
 commit geometry and operation cancellation; registry/sync, shm and synchronized subsurface buffer lifetimes;
 initial configure/ACK, map/unmap/remap and role recreation; premature-buffer/
@@ -118,6 +126,9 @@ UTF-8 payload via FD to independent wl-paste. Toolkit WAYLAND_DEBUG traces,
 receiver payloads and source-disconnect cleanup are checked. Missing toolkit
 development files fail with a BLOCKED reason. Output size is restored to
 800x600 after the reactive scenario, before the next pointer-driven scenario.
+The Qt menu log reader waits for newline-terminated JSON records while the
+toolkit is still writing; malformed complete records still fail.
+
 The third Rust scenario rejects foreign/wrong-origin DnD and replayed/expired
 popup grants, and explicitly reproduces accepted-offer source disconnect:
 Smithay 0.7 emits drop/leave with FD EOF. This is a confirmed upstream limitation,
@@ -140,7 +151,8 @@ This qualifies a nested software renderer, basic input, the standard
 clipboard/primary-selection paths and client-initiated DnD with drag icons. It
 does not qualify physical hardware, server-side DnD, a full toolkit application
 matrix or desktop parity. No Lua/IPC/config/IME/Xwayland
-services are ported in Stages 1–4A. Rust checks remain local commands, not
+services are ported through Stage 5A; its configuration layer is an internal
+validated snapshot, without a file loader or Lua host. Rust checks remain local commands, not
 additional release or CI jobs.
 
 ## Requirements

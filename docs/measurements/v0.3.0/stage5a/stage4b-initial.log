@@ -1,0 +1,698 @@
+artifacts: /tmp/raywm-stage4b-69yriwt4
+dnd::dnd_icon_targets_actions_and_teardown: PASS
+dnd::reactive_popup_constraints_and_lifecycle: PASS
+dnd::final_admission_and_accepted_source_disconnect: PASS
+source-disconnect: CONFIRMED Smithay 0.7 upstream limitation (drop + FD EOF, zero bytes)
+gtk-to-qt: pointer-driven toolkit DnD PASS (gtk-to-qt)
+qt-to-gtk: pointer-driven toolkit DnD PASS (qt-to-gtk)
+cancel: toolkit drag cancellation PASS
+target-close: drag survives target disconnect PASS
+source-close: drag teardown without data PASS
+gtk-menu: context-menu popup PASS
+parent:
+debug(conf): /tmp/raywm-stage4b-69yriwt4/config/ray.conf not found (optional)
+00:00:00.000 [INFO] [backend/backend.c:342] Loading user-specified backends due to WLR_BACKENDS: headless
+00:00:00.000 [INFO] [backend/headless/backend.c:60] Creating headless backend
+00:00:00.000 [INFO] [util/env.c:25] Loading WLR_RENDERER option: pixman
+00:00:00.000 [INFO] [render/pixman/renderer.c:328] Creating pixman renderer
+info(protocols): no linux-dmabuf with this renderer: clients use shared memory
+info(protocols): no explicit sync: renderer timeline=false, backend timeline=true, renderer DRM fd=false
+info(xwayland): Xwayland disabled (RAYWM_XWAYLAND=0)
+warning: TEST BUILD: virtual pointer protocol is enabled
+info(ipc): v1 socket /tmp/raywm-stage4b-69yriwt4/parent/raywm-wayland-1.sock
+00:00:00.009 [INFO] [backend/headless/backend.c:17] Starting headless backend
+debug(server): event layout id=1
+debug(server): event layout id=0
+debug(server): event output_add id=1
+info(lua): loaded plugin parent (2 key bindings)
+info: running on WAYLAND_DISPLAY=wayland-1
+debug(server): event input_add id=1
+debug(server): event input_add id=2
+debug(server): event view_new id=2
+debug(server): event view_map id=2
+debug(server): event view_focus id=2
+debug(server): event input_add id=3
+debug(server): event input_add id=4
+debug(server): event input_remove id=3
+debug(server): event input_remove id=4
+debug(server): event input_add id=5
+debug(server): event input_add id=6
+debug(server): event input_remove id=5
+debug(server): event input_remove id=6
+debug(server): event input_add id=7
+debug(server): event input_add id=8
+debug(server): event input_remove id=7
+debug(server): event input_remove id=8
+debug(server): event input_add id=9
+debug(server): event input_add id=10
+debug(server): event input_remove id=9
+debug(server): event input_remove id=10
+debug(server): event input_add id=11
+debug(server): event input_add id=12
+debug(server): event input_remove id=11
+debug(server): event input_remove id=12
+debug(server): event input_add id=13
+debug(server): event input_add id=14
+debug(server): event input_remove id=13
+debug(server): event input_remove id=14
+debug(server): event input_add id=15
+debug(server): event input_add id=16
+debug(server): event input_remove id=15
+debug(server): event input_remove id=16
+debug(server): event input_add id=17
+debug(server): event input_add id=18
+debug(server): event input_remove id=17
+debug(server): event input_remove id=18
+debug(server): event input_add id=19
+debug(server): event input_add id=20
+debug(server): event input_remove id=19
+debug(server): event input_remove id=20
+debug(server): event input_add id=21
+debug(server): event input_add id=22
+debug(server): event input_remove id=21
+debug(server): event input_remove id=22
+debug(server): event input_add id=23
+debug(server): event input_add id=24
+debug(server): event input_remove id=23
+debug(server): event input_remove id=24
+debug(server): event input_add id=25
+debug(server): event input_add id=26
+debug(server): event input_remove id=25
+debug(server): event input_remove id=26
+debug(server): event input_add id=27
+debug(server): event input_add id=28
+debug(server): event input_remove id=27
+debug(server): event input_remove id=28
+debug(server): event input_add id=29
+debug(server): event input_add id=30
+debug(server): event view_resized id=2
+debug(server): event input_remove id=29
+debug(server): event input_remove id=30
+debug(server): event input_add id=31
+debug(server): event input_add id=32
+debug(server): event input_remove id=31
+debug(server): event input_remove id=32
+debug(server): event input_add id=33
+debug(server): event input_add id=34
+debug(server): event input_remove id=33
+debug(server): event input_remove id=34
+debug(server): event input_add id=35
+debug(server): event input_add id=36
+debug(server): event input_remove id=35
+debug(server): event input_remove id=36
+debug(server): event view_resized id=2
+debug(server): event input_add id=37
+debug(server): event input_add id=38
+debug(server): event input_remove id=37
+debug(server): event input_remove id=38
+debug(server): event input_add id=39
+debug(server): event input_add id=40
+debug(server): event input_remove id=39
+debug(server): event input_remove id=40
+debug(server): event input_add id=41
+debug(server): event input_add id=42
+debug(server): event input_remove id=41
+debug(server): event input_remove id=42
+debug(server): event input_add id=43
+debug(server): event input_add id=44
+debug(server): event input_remove id=43
+debug(server): event input_remove id=44
+debug(server): event input_add id=45
+debug(server): event input_add id=46
+debug(server): event input_remove id=45
+debug(server): event input_remove id=46
+debug(server): event input_add id=47
+debug(server): event input_add id=48
+debug(server): event input_remove id=47
+debug(server): event input_remove id=48
+debug(server): event input_add id=49
+debug(server): event input_add id=50
+debug(server): event input_remove id=49
+debug(server): event input_remove id=50
+debug(server): event input_add id=51
+debug(server): event input_add id=52
+debug(server): event input_remove id=51
+debug(server): event input_remove id=52
+debug(server): event input_add id=53
+debug(server): event input_add id=54
+debug(server): event input_remove id=53
+debug(server): event input_remove id=54
+debug(server): event input_add id=55
+debug(server): event input_add id=56
+debug(server): event input_remove id=55
+debug(server): event input_remove id=56
+debug(server): event input_add id=57
+debug(server): event input_add id=58
+debug(server): event input_remove id=57
+debug(server): event input_remove id=58
+debug(server): event input_add id=59
+debug(server): event input_add id=60
+debug(server): event input_remove id=59
+debug(server): event input_remove id=60
+debug(server): event input_add id=61
+debug(server): event input_add id=62
+debug(server): event input_remove id=61
+debug(server): event input_remove id=62
+debug(server): event input_add id=63
+debug(server): event input_add id=64
+debug(server): event input_remove id=63
+debug(server): event input_remove id=64
+debug(server): event input_add id=65
+debug(server): event input_add id=66
+debug(server): event input_remove id=65
+debug(server): event input_remove id=66
+debug(server): event input_add id=67
+debug(server): event input_add id=68
+debug(server): event input_remove id=67
+debug(server): event input_remove id=68
+debug(server): event input_add id=69
+debug(server): event input_add id=70
+debug(server): event input_remove id=69
+debug(server): event input_remove id=70
+debug(server): event input_add id=71
+debug(server): event input_add id=72
+debug(server): event input_remove id=71
+debug(server): event input_remove id=72
+debug(server): event input_add id=73
+debug(server): event input_add id=74
+debug(server): event input_remove id=73
+debug(server): event input_remove id=74
+debug(server): event input_add id=75
+debug(server): event input_add id=76
+debug(server): event input_remove id=75
+debug(server): event input_remove id=76
+debug(server): event input_add id=77
+debug(server): event input_add id=78
+debug(server): event input_remove id=77
+debug(server): event input_remove id=78
+debug(server): event input_add id=79
+debug(server): event input_add id=80
+debug(server): event input_remove id=79
+debug(server): event input_remove id=80
+debug(server): event input_add id=81
+debug(server): event input_add id=82
+debug(server): event input_remove id=81
+debug(server): event input_remove id=82
+debug(server): event input_add id=83
+debug(server): event input_add id=84
+debug(server): event input_remove id=83
+debug(server): event input_remove id=84
+debug(server): event input_add id=85
+debug(server): event input_add id=86
+debug(server): event input_remove id=85
+debug(server): event input_remove id=86
+
+nested:
+ } reason=ConnectionClosed
+2026-11-17T22:13:52.192015Z  INFO Window role created (unmapped) window=17
+2026-11-17T22:13:52.192268Z  INFO Initial configure sent window=17
+2026-11-17T22:13:52.194568Z  INFO Configure acknowledged window=17 serial=387
+2026-11-17T22:13:52.282875Z  INFO Window mapped window=17
+2026-11-17T22:13:52.283483Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[0], 18)) after=Some(ObjectId(wl_surface@18[1], 21))
+2026-11-17T22:13:52.286722Z  INFO Configure acknowledged window=16 serial=389
+2026-11-17T22:13:52.287347Z  INFO Configure acknowledged window=17 serial=390
+2026-11-17T22:13:53.992609Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 25 } reason=ConnectionClosed
+2026-11-17T22:13:53.993138Z  INFO Window destroyed window=16
+2026-11-17T22:13:55.490704Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 26 } reason=ConnectionClosed
+2026-11-17T22:13:55.491038Z  INFO Window destroyed window=17
+2026-11-17T22:13:55.491169Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@18[1], 21)) after=None
+2026-11-17T22:13:55.571556Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 30 }
+2026-11-17T22:13:55.664078Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 31 }
+2026-11-17T22:13:55.664855Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 31 } reason=ConnectionClosed
+2026-11-17T22:13:55.665044Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 32 }
+2026-11-17T22:13:55.665574Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 32 } reason=ConnectionClosed
+2026-11-17T22:13:55.696270Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 33 }
+2026-11-17T22:13:55.697088Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 33 } reason=ConnectionClosed
+2026-11-17T22:13:55.761922Z  INFO Window role created (unmapped) window=18
+2026-11-17T22:13:55.762235Z  INFO Initial configure sent window=18
+2026-11-17T22:13:55.763940Z  INFO Configure acknowledged window=18 serial=409
+2026-11-17T22:13:55.857701Z  INFO Window mapped window=18
+2026-11-17T22:13:55.858020Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@18[0], 21))
+2026-11-17T22:13:55.861799Z  INFO Configure acknowledged window=18 serial=414
+2026-11-17T22:13:55.882359Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 34 }
+2026-11-17T22:13:55.887747Z  INFO Window role created (unmapped) window=19
+2026-11-17T22:13:55.888035Z  INFO Initial configure sent window=19
+2026-11-17T22:13:55.981505Z  INFO Configure acknowledged window=19 serial=420
+2026-11-17T22:13:55.982098Z  INFO Window mapped window=19
+2026-11-17T22:13:55.982699Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@18[0], 21)) after=Some(ObjectId(wl_surface@17[1], 18))
+2026-11-17T22:13:55.987192Z  INFO Configure acknowledged window=18 serial=422
+2026-11-17T22:13:55.987871Z  INFO Configure acknowledged window=19 serial=423
+2026-11-17T22:13:56.916038Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-17T22:13:57.688999Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 34 } reason=ConnectionClosed
+2026-11-17T22:13:57.689295Z  INFO Window destroyed window=19
+2026-11-17T22:13:57.689510Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[1], 18)) after=Some(ObjectId(wl_surface@18[0], 21))
+2026-11-17T22:13:57.692241Z  INFO Configure acknowledged window=18 serial=432
+2026-11-17T22:14:00.165023Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=true
+2026-11-17T22:14:01.294131Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 30 } reason=ConnectionClosed
+2026-11-17T22:14:01.294472Z  INFO Window destroyed window=18
+2026-11-17T22:14:01.294548Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@18[0], 21)) after=None
+2026-11-17T22:14:01.370459Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 35 }
+2026-11-17T22:14:01.466778Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 36 }
+2026-11-17T22:14:01.467594Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 36 } reason=ConnectionClosed
+2026-11-17T22:14:01.467847Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 37 }
+2026-11-17T22:14:01.468496Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 37 } reason=ConnectionClosed
+2026-11-17T22:14:01.495729Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 38 }
+2026-11-17T22:14:01.496656Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 38 } reason=ConnectionClosed
+2026-11-17T22:14:01.555031Z  INFO Window role created (unmapped) window=20
+2026-11-17T22:14:01.555427Z  INFO Initial configure sent window=20
+2026-11-17T22:14:01.557047Z  INFO Configure acknowledged window=20 serial=441
+2026-11-17T22:14:01.653378Z  INFO Window mapped window=20
+2026-11-17T22:14:01.653883Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@18[0], 21))
+2026-11-17T22:14:01.659498Z  INFO Configure acknowledged window=20 serial=446
+2026-11-17T22:14:02.213949Z  INFO Popup role created popup=ObjectId(wl_surface@30[0], 45) root=Some(20)
+2026-11-17T22:14:02.214265Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@18[0], 21)) after=Some(ObjectId(wl_surface@30[0], 45))
+2026-11-17T22:14:03.036171Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 35 } reason=ConnectionClosed
+2026-11-17T22:14:03.036611Z  INFO Window destroyed window=20
+2026-11-17T22:14:03.036677Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@30[0], 45)) after=None
+2026-11-17T22:14:03.069276Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 39 }
+2026-11-17T22:14:03.199353Z  INFO Window role created (unmapped) window=21
+2026-11-17T22:14:03.199679Z  INFO Initial configure sent window=21
+2026-11-17T22:14:03.202500Z  INFO Configure acknowledged window=21 serial=474
+2026-11-17T22:14:03.203151Z  INFO Window mapped window=21
+2026-11-17T22:14:03.203598Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@17[0], 18))
+2026-11-17T22:14:03.230106Z  INFO Configure acknowledged window=21 serial=479
+2026-11-17T22:14:04.673568Z  INFO Popup role created popup=ObjectId(wl_surface@27[0], 35) root=Some(21)
+2026-11-17T22:14:04.673983Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[0], 18)) after=Some(ObjectId(wl_surface@27[0], 35))
+2026-11-17T22:14:04.677224Z  INFO Popup mapped popup=ObjectId(wl_surface@27[0], 35)
+2026-11-17T22:14:05.425590Z  INFO Popup role created popup=ObjectId(wl_surface@30[0], 48) root=Some(21)
+2026-11-17T22:14:05.425955Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@27[0], 35)) after=Some(ObjectId(wl_surface@30[0], 48))
+2026-11-17T22:14:05.426852Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[0], 18)) after=Some(ObjectId(wl_surface@30[0], 48))
+2026-11-17T22:14:05.430790Z  INFO Popup mapped popup=ObjectId(wl_surface@30[0], 48)
+2026-11-17T22:14:05.725762Z  INFO Popup role created popup=ObjectId(wl_surface@41[0], 60) root=Some(21)
+2026-11-17T22:14:05.726100Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@30[0], 48)) after=Some(ObjectId(wl_surface@41[0], 60))
+2026-11-17T22:14:05.727089Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[0], 18)) after=Some(ObjectId(wl_surface@41[0], 60))
+2026-11-17T22:14:05.731464Z  INFO Popup mapped popup=ObjectId(wl_surface@41[0], 60)
+2026-11-17T22:14:06.953071Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@41[0], 60)) after=Some(ObjectId(wl_surface@30[0], 48))
+2026-11-17T22:14:06.953850Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@30[0], 48)) after=Some(ObjectId(wl_surface@27[0], 35))
+
+parent:
+debug(conf): /tmp/raywm-stage4b-69yriwt4/config/ray.conf not found (optional)
+00:00:00.000 [INFO] [backend/backend.c:342] Loading user-specified backends due to WLR_BACKENDS: headless
+00:00:00.000 [INFO] [backend/headless/backend.c:60] Creating headless backend
+00:00:00.000 [INFO] [util/env.c:25] Loading WLR_RENDERER option: pixman
+00:00:00.000 [INFO] [render/pixman/renderer.c:328] Creating pixman renderer
+info(protocols): no linux-dmabuf with this renderer: clients use shared memory
+info(protocols): no explicit sync: renderer timeline=false, backend timeline=true, renderer DRM fd=false
+info(xwayland): Xwayland disabled (RAYWM_XWAYLAND=0)
+warning: TEST BUILD: virtual pointer protocol is enabled
+info(ipc): v1 socket /tmp/raywm-stage4b-69yriwt4/parent/raywm-wayland-1.sock
+00:00:00.009 [INFO] [backend/headless/backend.c:17] Starting headless backend
+debug(server): event layout id=1
+debug(server): event layout id=0
+debug(server): event output_add id=1
+info(lua): loaded plugin parent (2 key bindings)
+info: running on WAYLAND_DISPLAY=wayland-1
+debug(server): event input_add id=1
+debug(server): event input_add id=2
+debug(server): event view_new id=2
+debug(server): event view_map id=2
+debug(server): event view_focus id=2
+debug(server): event input_add id=3
+debug(server): event input_add id=4
+debug(server): event input_remove id=3
+debug(server): event input_remove id=4
+debug(server): event input_add id=5
+debug(server): event input_add id=6
+debug(server): event input_remove id=5
+debug(server): event input_remove id=6
+debug(server): event input_add id=7
+debug(server): event input_add id=8
+debug(server): event input_remove id=7
+debug(server): event input_remove id=8
+debug(server): event input_add id=9
+debug(server): event input_add id=10
+debug(server): event input_remove id=9
+debug(server): event input_remove id=10
+debug(server): event input_add id=11
+debug(server): event input_add id=12
+debug(server): event input_remove id=11
+debug(server): event input_remove id=12
+debug(server): event input_add id=13
+debug(server): event input_add id=14
+debug(server): event input_remove id=13
+debug(server): event input_remove id=14
+debug(server): event input_add id=15
+debug(server): event input_add id=16
+debug(server): event input_remove id=15
+debug(server): event input_remove id=16
+debug(server): event input_add id=17
+debug(server): event input_add id=18
+debug(server): event input_remove id=17
+debug(server): event input_remove id=18
+debug(server): event input_add id=19
+debug(server): event input_add id=20
+debug(server): event input_remove id=19
+debug(server): event input_remove id=20
+debug(server): event input_add id=21
+debug(server): event input_add id=22
+debug(server): event input_remove id=21
+debug(server): event input_remove id=22
+debug(server): event input_add id=23
+debug(server): event input_add id=24
+debug(server): event input_remove id=23
+debug(server): event input_remove id=24
+debug(server): event input_add id=25
+debug(server): event input_add id=26
+debug(server): event input_remove id=25
+debug(server): event input_remove id=26
+debug(server): event input_add id=27
+debug(server): event input_add id=28
+debug(server): event input_remove id=27
+debug(server): event input_remove id=28
+debug(server): event input_add id=29
+debug(server): event input_add id=30
+debug(server): event view_resized id=2
+debug(server): event input_remove id=29
+debug(server): event input_remove id=30
+debug(server): event input_add id=31
+debug(server): event input_add id=32
+debug(server): event input_remove id=31
+debug(server): event input_remove id=32
+debug(server): event input_add id=33
+debug(server): event input_add id=34
+debug(server): event input_remove id=33
+debug(server): event input_remove id=34
+debug(server): event input_add id=35
+debug(server): event input_add id=36
+debug(server): event input_remove id=35
+debug(server): event input_remove id=36
+debug(server): event view_resized id=2
+debug(server): event input_add id=37
+debug(server): event input_add id=38
+debug(server): event input_remove id=37
+debug(server): event input_remove id=38
+debug(server): event input_add id=39
+debug(server): event input_add id=40
+debug(server): event input_remove id=39
+debug(server): event input_remove id=40
+debug(server): event input_add id=41
+debug(server): event input_add id=42
+debug(server): event input_remove id=41
+debug(server): event input_remove id=42
+debug(server): event input_add id=43
+debug(server): event input_add id=44
+debug(server): event input_remove id=43
+debug(server): event input_remove id=44
+debug(server): event input_add id=45
+debug(server): event input_add id=46
+debug(server): event input_remove id=45
+debug(server): event input_remove id=46
+debug(server): event input_add id=47
+debug(server): event input_add id=48
+debug(server): event input_remove id=47
+debug(server): event input_remove id=48
+debug(server): event input_add id=49
+debug(server): event input_add id=50
+debug(server): event input_remove id=49
+debug(server): event input_remove id=50
+debug(server): event input_add id=51
+debug(server): event input_add id=52
+debug(server): event input_remove id=51
+debug(server): event input_remove id=52
+debug(server): event input_add id=53
+debug(server): event input_add id=54
+debug(server): event input_remove id=53
+debug(server): event input_remove id=54
+debug(server): event input_add id=55
+debug(server): event input_add id=56
+debug(server): event input_remove id=55
+debug(server): event input_remove id=56
+debug(server): event input_add id=57
+debug(server): event input_add id=58
+debug(server): event input_remove id=57
+debug(server): event input_remove id=58
+debug(server): event input_add id=59
+debug(server): event input_add id=60
+debug(server): event input_remove id=59
+debug(server): event input_remove id=60
+debug(server): event input_add id=61
+debug(server): event input_add id=62
+debug(server): event input_remove id=61
+debug(server): event input_remove id=62
+debug(server): event input_add id=63
+debug(server): event input_add id=64
+debug(server): event input_remove id=63
+debug(server): event input_remove id=64
+debug(server): event input_add id=65
+debug(server): event input_add id=66
+debug(server): event input_remove id=65
+debug(server): event input_remove id=66
+debug(server): event input_add id=67
+debug(server): event input_add id=68
+debug(server): event input_remove id=67
+debug(server): event input_remove id=68
+debug(server): event input_add id=69
+debug(server): event input_add id=70
+debug(server): event input_remove id=69
+debug(server): event input_remove id=70
+debug(server): event input_add id=71
+debug(server): event input_add id=72
+debug(server): event input_remove id=71
+debug(server): event input_remove id=72
+debug(server): event input_add id=73
+debug(server): event input_add id=74
+debug(server): event input_remove id=73
+debug(server): event input_remove id=74
+debug(server): event input_add id=75
+debug(server): event input_add id=76
+debug(server): event input_remove id=75
+debug(server): event input_remove id=76
+debug(server): event input_add id=77
+debug(server): event input_add id=78
+debug(server): event input_remove id=77
+debug(server): event input_remove id=78
+debug(server): event input_add id=79
+debug(server): event input_add id=80
+debug(server): event input_remove id=79
+debug(server): event input_remove id=80
+debug(server): event input_add id=81
+debug(server): event input_add id=82
+debug(server): event input_remove id=81
+debug(server): event input_remove id=82
+debug(server): event input_add id=83
+debug(server): event input_add id=84
+debug(server): event input_remove id=83
+debug(server): event input_remove id=84
+debug(server): event input_add id=85
+debug(server): event input_add id=86
+debug(server): event input_remove id=85
+debug(server): event input_remove id=86
+
+nested:
+ } reason=ConnectionClosed
+2026-11-17T22:13:52.192015Z  INFO Window role created (unmapped) window=17
+2026-11-17T22:13:52.192268Z  INFO Initial configure sent window=17
+2026-11-17T22:13:52.194568Z  INFO Configure acknowledged window=17 serial=387
+2026-11-17T22:13:52.282875Z  INFO Window mapped window=17
+2026-11-17T22:13:52.283483Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[0], 18)) after=Some(ObjectId(wl_surface@18[1], 21))
+2026-11-17T22:13:52.286722Z  INFO Configure acknowledged window=16 serial=389
+2026-11-17T22:13:52.287347Z  INFO Configure acknowledged window=17 serial=390
+2026-11-17T22:13:53.992609Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 25 } reason=ConnectionClosed
+2026-11-17T22:13:53.993138Z  INFO Window destroyed window=16
+2026-11-17T22:13:55.490704Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 26 } reason=ConnectionClosed
+2026-11-17T22:13:55.491038Z  INFO Window destroyed window=17
+2026-11-17T22:13:55.491169Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@18[1], 21)) after=None
+2026-11-17T22:13:55.571556Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 30 }
+2026-11-17T22:13:55.664078Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 31 }
+2026-11-17T22:13:55.664855Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 31 } reason=ConnectionClosed
+2026-11-17T22:13:55.665044Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 32 }
+2026-11-17T22:13:55.665574Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 32 } reason=ConnectionClosed
+2026-11-17T22:13:55.696270Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 33 }
+2026-11-17T22:13:55.697088Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 33 } reason=ConnectionClosed
+2026-11-17T22:13:55.761922Z  INFO Window role created (unmapped) window=18
+2026-11-17T22:13:55.762235Z  INFO Initial configure sent window=18
+2026-11-17T22:13:55.763940Z  INFO Configure acknowledged window=18 serial=409
+2026-11-17T22:13:55.857701Z  INFO Window mapped window=18
+2026-11-17T22:13:55.858020Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@18[0], 21))
+2026-11-17T22:13:55.861799Z  INFO Configure acknowledged window=18 serial=414
+2026-11-17T22:13:55.882359Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 34 }
+2026-11-17T22:13:55.887747Z  INFO Window role created (unmapped) window=19
+2026-11-17T22:13:55.888035Z  INFO Initial configure sent window=19
+2026-11-17T22:13:55.981505Z  INFO Configure acknowledged window=19 serial=420
+2026-11-17T22:13:55.982098Z  INFO Window mapped window=19
+2026-11-17T22:13:55.982699Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@18[0], 21)) after=Some(ObjectId(wl_surface@17[1], 18))
+2026-11-17T22:13:55.987192Z  INFO Configure acknowledged window=18 serial=422
+2026-11-17T22:13:55.987871Z  INFO Configure acknowledged window=19 serial=423
+2026-11-17T22:13:56.916038Z  INFO Client drag-and-drop started seat="raywm-nested" has_source=true has_icon=true
+2026-11-17T22:13:57.688999Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 34 } reason=ConnectionClosed
+2026-11-17T22:13:57.689295Z  INFO Window destroyed window=19
+2026-11-17T22:13:57.689510Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[1], 18)) after=Some(ObjectId(wl_surface@18[0], 21))
+2026-11-17T22:13:57.692241Z  INFO Configure acknowledged window=18 serial=432
+2026-11-17T22:14:00.165023Z  INFO Client drag-and-drop finished seat="raywm-nested" has_target=true validated=true
+2026-11-17T22:14:01.294131Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 30 } reason=ConnectionClosed
+2026-11-17T22:14:01.294472Z  INFO Window destroyed window=18
+2026-11-17T22:14:01.294548Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@18[0], 21)) after=None
+2026-11-17T22:14:01.370459Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 35 }
+2026-11-17T22:14:01.466778Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 36 }
+2026-11-17T22:14:01.467594Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 36 } reason=ConnectionClosed
+2026-11-17T22:14:01.467847Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 37 }
+2026-11-17T22:14:01.468496Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 37 } reason=ConnectionClosed
+2026-11-17T22:14:01.495729Z  INFO Wayland client connected client_id=InnerClientId { id: 1, serial: 38 }
+2026-11-17T22:14:01.496656Z  INFO Wayland client disconnected client_id=InnerClientId { id: 1, serial: 38 } reason=ConnectionClosed
+2026-11-17T22:14:01.555031Z  INFO Window role created (unmapped) window=20
+2026-11-17T22:14:01.555427Z  INFO Initial configure sent window=20
+2026-11-17T22:14:01.557047Z  INFO Configure acknowledged window=20 serial=441
+2026-11-17T22:14:01.653378Z  INFO Window mapped window=20
+2026-11-17T22:14:01.653883Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@18[0], 21))
+2026-11-17T22:14:01.659498Z  INFO Configure acknowledged window=20 serial=446
+2026-11-17T22:14:02.213949Z  INFO Popup role created popup=ObjectId(wl_surface@30[0], 45) root=Some(20)
+2026-11-17T22:14:02.214265Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@18[0], 21)) after=Some(ObjectId(wl_surface@30[0], 45))
+2026-11-17T22:14:03.036171Z  INFO Wayland client disconnected client_id=InnerClientId { id: 0, serial: 35 } reason=ConnectionClosed
+2026-11-17T22:14:03.036611Z  INFO Window destroyed window=20
+2026-11-17T22:14:03.036677Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@30[0], 45)) after=None
+2026-11-17T22:14:03.069276Z  INFO Wayland client connected client_id=InnerClientId { id: 0, serial: 39 }
+2026-11-17T22:14:03.199353Z  INFO Window role created (unmapped) window=21
+2026-11-17T22:14:03.199679Z  INFO Initial configure sent window=21
+2026-11-17T22:14:03.202500Z  INFO Configure acknowledged window=21 serial=474
+2026-11-17T22:14:03.203151Z  INFO Window mapped window=21
+2026-11-17T22:14:03.203598Z  INFO Keyboard focus applied before=None after=Some(ObjectId(wl_surface@17[0], 18))
+2026-11-17T22:14:03.230106Z  INFO Configure acknowledged window=21 serial=479
+2026-11-17T22:14:04.673568Z  INFO Popup role created popup=ObjectId(wl_surface@27[0], 35) root=Some(21)
+2026-11-17T22:14:04.673983Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[0], 18)) after=Some(ObjectId(wl_surface@27[0], 35))
+2026-11-17T22:14:04.677224Z  INFO Popup mapped popup=ObjectId(wl_surface@27[0], 35)
+2026-11-17T22:14:05.425590Z  INFO Popup role created popup=ObjectId(wl_surface@30[0], 48) root=Some(21)
+2026-11-17T22:14:05.425955Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@27[0], 35)) after=Some(ObjectId(wl_surface@30[0], 48))
+2026-11-17T22:14:05.426852Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[0], 18)) after=Some(ObjectId(wl_surface@30[0], 48))
+2026-11-17T22:14:05.430790Z  INFO Popup mapped popup=ObjectId(wl_surface@30[0], 48)
+2026-11-17T22:14:05.725762Z  INFO Popup role created popup=ObjectId(wl_surface@41[0], 60) root=Some(21)
+2026-11-17T22:14:05.726100Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@30[0], 48)) after=Some(ObjectId(wl_surface@41[0], 60))
+2026-11-17T22:14:05.727089Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@17[0], 18)) after=Some(ObjectId(wl_surface@41[0], 60))
+2026-11-17T22:14:05.731464Z  INFO Popup mapped popup=ObjectId(wl_surface@41[0], 60)
+2026-11-17T22:14:06.953071Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@41[0], 60)) after=Some(ObjectId(wl_surface@30[0], 48))
+2026-11-17T22:14:06.953850Z  INFO Keyboard focus applied before=Some(ObjectId(wl_surface@30[0], 48)) after=Some(ObjectId(wl_surface@27[0], 35))
+
+seat-keeper:
+
+qt-menu-ctx:
+"menu":"grand","surface":true,"visible":true,"w":124,"x":501,"y":204}
+[22:14:06.834107]  -> wl_surface#41.frame(new id wl_callback#48)
+[22:14:06.834125] {Default Queue}  -> wl_surface#41.offset(0, 0)
+[22:14:06.834136] {Default Queue}  -> wl_surface#41.attach(wl_buffer#46, 0, 0)
+[22:14:06.834148] {Default Queue}  -> wl_surface#41.damage_buffer(2, 2, 120, 25)
+[22:14:06.834158] {Default Queue}  -> wl_surface#41.commit()
+MENU {"action":"DEEPER-QT","event":"hovered","h":54,"items":[{"text":"NESTED-QT","x":437,"y":191},{"text":"DEEPER-QT","x":437,"y":216}],"menu":"child","surface":true,"visible":true,"w":130,"x":373,"y":177}
+MENU {"action":"DEEPER-QT","event":"hovered","h":54,"items":[{"text":"CTX-QT","x":312,"y":164},{"text":"MORE-QT","x":312,"y":189}],"menu":"root","surface":true,"visible":true,"w":124,"x":251,"y":150}
+MENU {"action":"","event":"motion","h":54,"items":[{"text":"NESTED-QT","x":437,"y":191},{"text":"DEEPER-QT","x":437,"y":216}],"local_x":64,"local_y":39,"menu":"child","surface":true,"visible":true,"w":130,"x":373,"y":177}
+MENU {"action":"","event":"motion","h":29,"items":[{"text":"LEAF-QT","x":562,"y":218}],"local_x":-64,"local_y":12,"menu":"grand","surface":true,"visible":true,"w":124,"x":501,"y":204}
+[22:14:06.834555] wl_buffer#39.release()
+MENU {"action":"","event":"paint","h":54,"items":[{"text":"NESTED-QT","x":437,"y":191},{"text":"DEEPER-QT","x":437,"y":216}],"menu":"child","surface":true,"visible":true,"w":130,"x":373,"y":177}
+[22:14:06.834880]  -> wl_surface#30.frame(new id wl_callback#49)
+[22:14:06.834898] {Default Queue}  -> wl_surface#30.offset(0, 0)
+[22:14:06.834909] {Default Queue}  -> wl_surface#30.attach(wl_buffer#39, 0, 0)
+[22:14:06.834920] {Default Queue}  -> wl_surface#30.damage_buffer(2, 27, 126, 25)
+[22:14:06.834930] {Default Queue}  -> wl_surface#30.commit()
+[22:14:06.839782] {Display Queue} wl_display#1.delete_id(48)
+[22:14:06.839808] {Display Queue} wl_display#1.delete_id(49)
+[22:14:06.839819] wl_callback#48.done(110069)
+[22:14:06.839834] wl_callback#49.done(110069)
+[22:14:06.900310] {Default Queue} wl_pointer#16.leave(545, wl_surface#30)
+[22:14:06.900350] {Default Queue} wl_pointer#16.frame()
+[22:14:06.900373] {Default Queue} wl_pointer#16.enter(545, wl_surface#41, 59.00000000, 14.00000000)
+[22:14:06.900393] {Default Queue}  -> wl_pointer#16.set_cursor(545, wl_surface#25, 3, 1)
+[22:14:06.900416] {Default Queue}  -> wl_surface#25.set_buffer_scale(1)
+[22:14:06.900427] {Default Queue}  -> wl_surface#25.attach(wl_buffer#23, 0, 0)
+[22:14:06.900438] {Default Queue}  -> wl_surface#25.damage(0, 0, 24, 24)
+[22:14:06.900462] {Default Queue}  -> wl_surface#25.commit()
+[22:14:06.900485] {Default Queue} wl_pointer#16.frame()
+[22:14:06.900502] {Default Queue} wl_pointer#16.motion(700903025, 61.00000000, 14.00000000)
+[22:14:06.900518] {Default Queue} wl_pointer#16.frame()
+MENU {"action":"LEAF-QT","event":"hovered","h":29,"items":[{"text":"LEAF-QT","x":562,"y":218}],"menu":"grand","surface":true,"visible":true,"w":124,"x":501,"y":204}
+MENU {"action":"LEAF-QT","event":"hovered","h":54,"items":[{"text":"NESTED-QT","x":437,"y":191},{"text":"DEEPER-QT","x":437,"y":216}],"menu":"child","surface":true,"visible":true,"w":130,"x":373,"y":177}
+MENU {"action":"LEAF-QT","event":"hovered","h":54,"items":[{"text":"CTX-QT","x":312,"y":164},{"text":"MORE-QT","x":312,"y":189}],"menu":"root","surface":true,"visible":true,"w":124,"x":251,"y":150}
+MENU {"action":"","event":"motion","h":29,"items":[{"text":"LEAF-QT","x":562,"y":218}],"local_x":61,"local_y":14,"menu":"grand","surface":true,"visible":true,"w":124,"x":501,"y":204}
+[22:14:06.900911] wl_buffer#44.release()
+MENU {"action":"","event":"paint","h":29,"items":[{"text":"LEAF-QT","x":562,"y":218}],"menu":"grand","surface":true,"visible":true,"w":124,"x":501,"y":204}
+[22:14:06.901239]  -> wl_surface#41.frame(new id wl_callback#49)
+[22:14:06.901258] {Default Queue}  -> wl_surface#41.offset(0, 0)
+[22:14:06.901269] {Default Queue}  -> wl_surface#41.attach(wl_buffer#44, 0, 0)
+[22:14:06.901281] {Default Queue}  -> wl_surface#41.damage_buffer(2, 2, 120, 25)
+[22:14:06.901291] {Default Queue}  -> wl_surface#41.commit()
+[22:14:06.905983] {Display Queue} wl_display#1.delete_id(49)
+[22:14:06.906019] wl_callback#49.done(110135)
+[22:14:06.951726] {Default Queue} wl_pointer#16.leave(553, wl_surface#41)
+[22:14:06.951766] {Default Queue} wl_pointer#16.frame()
+[22:14:06.951789] {Default Queue} wl_pointer#16.enter(553, wl_surface#17, 700.00000000, 550.00000000)
+[22:14:06.951809] {Default Queue}  -> wl_pointer#16.set_cursor(553, wl_surface#25, 3, 1)
+[22:14:06.951823] {Default Queue}  -> wl_surface#25.set_buffer_scale(1)
+[22:14:06.951833] {Default Queue}  -> wl_surface#25.attach(wl_buffer#23, 0, 0)
+[22:14:06.951844] {Default Queue}  -> wl_surface#25.damage(0, 0, 24, 24)
+[22:14:06.951854] {Default Queue}  -> wl_surface#25.commit()
+[22:14:06.951865] {Default Queue} wl_pointer#16.frame()
+[22:14:06.951876] {Default Queue} wl_pointer#16.button(554, 700903077, 272, 1)
+[22:14:06.951900] {Default Queue} wl_pointer#16.frame()
+[22:14:06.951909] {Default Queue} wl_pointer#16.button(555, 700903077, 272, 0)
+[22:14:06.951924] {Default Queue} wl_pointer#16.frame()
+MENU {"action":"","event":"motion","h":29,"items":[{"text":"LEAF-QT","x":562,"y":218}],"local_x":199,"local_y":346,"menu":"grand","surface":true,"visible":true,"w":124,"x":501,"y":204}
+[22:14:06.952146] {Default Queue}  -> xdg_popup#45.destroy()
+[22:14:06.952167] {Default Queue}  -> xdg_surface#43.destroy()
+[22:14:06.952179] {Default Queue}  -> wl_surface#41.attach(nil, 0, 0)
+[22:14:06.952190] {Default Queue}  -> wl_surface#41.commit()
+MENU {"action":"","event":"aboutToHide","h":29,"items":[{"text":"LEAF-QT","x":562,"y":218}],"menu":"grand","surface":false,"visible":false,"w":124,"x":501,"y":204}
+[22:14:06.952268] {Default Queue}  -> wl_surface#41.destroy()
+[22:14:06.952282] {Default Queue}  -> wl_display#1.sync(new id wl_callback#49)
+[22:14:06.952326] {Default Queue}  -> xdg_popup#38.destroy()
+[22:14:06.952342] {Default Queue}  -> xdg_surface#36.destroy()
+[22:14:06.952352] {Default Queue}  -> wl_surface#30.attach(nil, 0, 0)
+[22:14:06.952362] {Default Queue}  -> wl_surface#30.commit()
+MENU {"action":"","event":"aboutToHide","h":54,"items":[{"text":"NESTED-QT","x":437,"y":191},{"text":"DEEPER-QT","x":437,"y":216}],"menu":"child","surface":false,"visible":false,"w":130,"x":373,"y":177}
+[22:14:06.952465] {Default Queue}  -> wl_surface#30.destroy()
+[22:14:06.952541] {Default Queue}  -> xdg_popup#31.destroy()
+[22:14:06.952560] {Default Queue}  -> xdg_surface#29.destroy()
+[22:14:06.952570] {Default Queue}  -> wl_surface#27.attach(nil, 0, 0)
+[22:14:06.952580] {Default Queue}  -> wl_surface#27.commit()
+MENU {"action":"","event":"aboutToHide","h":54,"items":[{"text":"CTX-QT","x":312,"y":164},{"text":"MORE-QT","x":312,"y":189}],"menu":"root","surface":false,"visible":false,"w":124,"x":251,"y":150}
+[22:14:06.952691] {Default Queue}  -> wl_surface#27.destroy()
+[22:14:06.952868] {Default Queue}  -> wl_shm_pool#47.destroy()
+[22:14:06.952891]  -> wl_buffer#44.destroy()
+[22:14:06.952911] {Default Queue}  -> wl_shm_pool#42.destroy()
+[22:14:06.952922]  -> wl_buffer#46.destroy()
+[22:14:06.953026] {Default Queue}  -> wl_shm_pool#40.destroy()
+[22:14:06.953044]  -> wl_buffer#37.destroy()
+[22:14:06.953068] {Default Queue}  -> wl_shm_pool#35.destroy()
+[22:14:06.953080]  -> wl_buffer#39.destroy()
+[22:14:06.953142] {Default Queue}  -> wl_shm_pool#34.destroy()
+[22:14:06.953156]  -> wl_buffer#32.destroy()
+[22:14:06.953176] {Default Queue}  -> wl_shm_pool#28.destroy()
+[22:14:06.953188]  -> wl_buffer#33.destroy()
+[22:14:06.953292] wl_buffer#26.release()
+[22:14:06.953768]  -> wl_surface#17.frame(new id wl_callback#48)
+[22:14:06.953796] {Default Queue}  -> wl_surface#17.offset(0, 0)
+[22:14:06.953808] {Default Queue}  -> wl_surface#17.attach(wl_buffer#26, 0, 0)
+[22:14:06.953819] {Default Queue}  -> wl_surface#17.damage_buffer(0, 40, 300, 30)
+[22:14:06.953830] {Default Queue}  -> wl_surface#17.commit()
+
+Traceback (most recent call last):
+  File "/home/reyz/RayWM/rust/tests/stage4b-smoke.py", line 821, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/home/reyz/RayWM/rust/tests/stage4b-smoke.py", line 732, in main
+    run_context_menu(qt, "qt-menu")
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/home/reyz/RayWM/rust/tests/stage4b-smoke.py", line 663, in run_context_menu
+    qualify_menu(process, f"{label}-ctx")
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/reyz/RayWM/rust/tests/stage4b-smoke.py", line 723, in qualify_menu
+    wait_for(lambda menu=menu: observed(menu, "aboutToHide"), f"{menu} outside-click hide", timeout=5)
+    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/reyz/RayWM/rust/tests/stage4b-smoke.py", line 97, in wait_for
+    while not predicate():
+              ~~~~~~~~~^^
+  File "/home/reyz/RayWM/rust/tests/stage4b-smoke.py", line 723, in <lambda>
+    wait_for(lambda menu=menu: observed(menu, "aboutToHide"), f"{menu} outside-click hide", timeout=5)
+                               ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/home/reyz/RayWM/rust/tests/stage4b-smoke.py", line 678, in observed
+    return [e for e in events() if e["menu"] == menu and e["event"] == event
+                       ~~~~~~^^
+  File "/home/reyz/RayWM/rust/tests/stage4b-smoke.py", line 674, in events
+    return [json.loads(line[5:]) for line in log.read_text(errors="replace").splitlines()
+            ~~~~~~~~~~^^^^^^^^^^
+  File "/usr/lib/python3.14/json/__init__.py", line 352, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "/usr/lib/python3.14/json/decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/json/decoder.py", line 361, in raw_decode
+    obj, end = self.scan_once(s, idx)
+               ~~~~~~~~~~~~~~^^^^^^^^
+json.decoder.JSONDecodeError: Unterminated string starting at: line 1 column 119 (char 118)

@@ -409,7 +409,9 @@ From `rust/`, run `cargo fmt --all -- --check`,
 `cargo check --workspace --locked`,
 `cargo clippy --workspace --all-targets --locked -- -D warnings`,
 `cargo test --workspace --locked` and `cargo build --workspace --locked`.
-These check the core window/ID/focus/stack/interaction model, real XDG
+These check the core window/ID/focus/stack/interaction model, workspace/output
+bindings, configuration/layout contracts, typed commands and real-wire
+core/Space integration, plus real XDG
 configure/ACK/lifecycle, popup parent/error isolation, subtree cleanup and the
 standard clipboard/primary-selection managers. The graphical smoke is separate:
 `python3 rust/tests/nested-smoke.py` checks pixels, frames, input, resize and
@@ -426,6 +428,12 @@ FD payloads and two real hover-driven Qt submenu levels. It also checks popup
 press/release admission and DnD grab ownership. The pinned Smithay 0.7
 accepted-source-disconnect defect (drop with empty FD) remains documented in
 [Stage 4B-Final qualification](docs/measurements/v0.3.0/stage4b/final-qualification.md).
+Stage 5A architecture and command support are in
+[the Rust core contracts](docs/RUST_STAGE5A.md); current test evidence is in
+[Stage 5A qualification](docs/measurements/v0.3.0/stage5a/qualification.md).
+Internal diagnostics `Cannot reconcile workspace layout`, `Cannot update
+transient parent` and `Cannot update logical output` include typed errors;
+see [Rust installation diagnostics](docs/INSTALL.md#experimental-rust-foundation).
 
 `raywm-smithay --backend winit` opens one nested EGL/GLES window/output with
 floating windows, keyboard/pointer focus, client move/resize, XDG popups,

@@ -4,9 +4,12 @@ mod grabs;
 mod input;
 #[cfg(feature = "winit")]
 mod nested;
+mod policy;
 mod popups;
 mod selection;
 mod shell;
+#[cfg(test)]
+mod stage5a_tests;
 mod state;
 
 use std::{

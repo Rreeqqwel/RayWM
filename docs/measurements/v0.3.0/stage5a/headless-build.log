@@ -1,0 +1,6 @@
+   Compiling wayland-protocols v0.32.13
+   Compiling wayland-protocols-wlr v0.3.12
+   Compiling wayland-protocols-misc v0.3.12
+   Compiling smithay v0.7.0
+   Compiling raywm-compositor v0.0.0 (/home/reyz/RayWM/rust/crates/raywm-compositor)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 15.24s

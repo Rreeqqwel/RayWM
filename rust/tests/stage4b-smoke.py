@@ -671,7 +671,11 @@ int main(int argc, char **argv) {
                 log = directory / f"{name}.log"
 
                 def events():
-                    return [json.loads(line[5:]) for line in log.read_text(errors="replace").splitlines()
+                    # The toolkit is still appending. A snapshot may end in
+                    # the middle of its JSON write; wait for the newline.
+                    # Malformed complete records must still fail qualification.
+                    complete = log.read_text(errors="replace").split("\n")[:-1]
+                    return [json.loads(line[5:]) for line in complete
                             if line.startswith("MENU ")]
 
                 def observed(menu, event, action=None):

@@ -1,0 +1,1 @@
+PASS: ast.parse rust/tests/stage4b-smoke.py
