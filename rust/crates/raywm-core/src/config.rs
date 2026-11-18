@@ -6,6 +6,7 @@ use std::{error::Error, fmt};
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Configuration {
     pub floating: FloatingConfig,
+    pub layout: crate::layout::LayoutParameters,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -30,6 +31,7 @@ pub enum ConfigError {
     CascadeStep,
     CascadeSlots,
     SecondaryPercent,
+    Gaps,
 }
 
 impl fmt::Display for ConfigError {
@@ -37,6 +39,7 @@ impl fmt::Display for ConfigError {
         f.write_str(match self {
             Self::CascadeStep => "cascade step must be at most 4096 pixels",
             Self::CascadeSlots => "cascade slots must be between 1 and 256",
+            Self::Gaps => "gaps must be at most 4096 pixels",
             Self::SecondaryPercent => "secondary window percent must be between 1 and 100",
         })
     }
@@ -53,6 +56,9 @@ impl Configuration {
         }
         if !(1..=100).contains(&self.floating.secondary_percent) {
             return Err(ConfigError::SecondaryPercent);
+        }
+        if self.layout.gaps.inner > 4096 || self.layout.gaps.outer > 4096 {
+            return Err(ConfigError::Gaps);
         }
         Ok(())
     }

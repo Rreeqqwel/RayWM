@@ -26,7 +26,7 @@ pub struct PopupEntry {
     pub root: Option<WindowId>,
     initial: Option<Serial>,
     configured: bool,
-    dismissed: bool,
+    pub(crate) dismissed: bool,
     mapped: bool,
     /// Last geometry sent (or already pending) for this popup. Reactive
     /// updates are coalesced: a configure is sent only when this changes.
@@ -173,10 +173,10 @@ impl State {
         let geometry = root
             .and_then(|id| self.views.iter().find(|view| view.id == id))
             .and_then(|view| self.space.element_geometry(&view.window));
-        let output = self
-            .output
-            .as_ref()
-            .and_then(|output| self.space.output_geometry(output));
+        let output = root
+            .and_then(|id| self.desktop.output_for(id))
+            .and_then(|id| self.desktop.output(id))
+            .map(|output| crate::shell::logical_rectangle(output.geometry));
         let geometry = popup.with_pending_state(|state| {
             if let Some(positioner) = positioner {
                 state.positioner = positioner;
@@ -204,13 +204,6 @@ impl State {
     /// output change or nested popup transition. Only actual geometry changes
     /// produce a configure; clients without a reactive positioner are skipped.
     pub fn reposition_popups(&mut self) {
-        let Some(output_bounds) = self
-            .output
-            .as_ref()
-            .and_then(|output| self.space.output_geometry(output))
-        else {
-            return;
-        };
         for index in 0..self.popup_entries.len() {
             if self.popup_entries[index].dismissed
                 || !self.popup_entries[index].mapped
@@ -238,7 +231,14 @@ impl State {
                 continue;
             };
             let positioner = surface.with_pending_state(|state| state.positioner);
-            let mut bounds = output_bounds;
+            let Some(output) = self
+                .desktop
+                .output_for(root)
+                .and_then(|id| self.desktop.output(id))
+            else {
+                continue;
+            };
+            let mut bounds = crate::shell::logical_rectangle(output.geometry);
             bounds.loc -= window_geometry.loc;
             bounds.loc -= parent_offset;
             let geometry = positioner.get_unconstrained_geometry(bounds);

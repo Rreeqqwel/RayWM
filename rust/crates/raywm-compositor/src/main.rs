@@ -49,6 +49,7 @@ struct Runtime {
 struct Options {
     socket: HeadlessConfig,
     winit: bool,
+    floating: bool,
 }
 
 fn main() -> ExitCode {
@@ -75,7 +76,7 @@ fn arguments() -> Result<Option<Options>> {
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--help" | "-h") => {
-                println!("Usage: raywm-smithay [--backend headless|winit] [--socket NAME]\n\nExperimental Wayland compositor. Default backend: headless.\nWinit opens one nested window; headless has no rendering or input.\nRequires an owned mode-0700 XDG_RUNTIME_DIR. SIGINT/SIGTERM stop cleanly.");
+                println!("Usage: raywm-smithay [--backend headless|winit] [--socket NAME] [--floating]\n\nExperimental Wayland compositor. Default backend: headless.\nWinit opens one nested window with master-stack layout; --floating starts all workspaces in floating mode. Headless has no rendering or input.\nRequires an owned mode-0700 XDG_RUNTIME_DIR. SIGINT/SIGTERM stop cleanly.");
                 return Ok(None);
             }
             Some("--socket") if config.socket.socket_name.is_none() => {
@@ -85,6 +86,7 @@ fn arguments() -> Result<Option<Options>> {
                     .map_err(|_| "socket name must be ASCII")?;
                 config.socket.socket_name = Some(SocketName::new(name)?);
             }
+            Some("--floating") if !config.floating => config.floating = true,
             Some("--backend") if !backend_seen => {
                 backend_seen = true;
                 let backend = args.next().ok_or("--backend requires headless or winit")?;
@@ -139,7 +141,15 @@ fn run(config: Options) -> Result<()> {
         .map_err(|error| io::Error::other(format!("register signals: {}", error.error)))?;
 
     let display = Display::<State>::new()?;
-    let state = State::new(&display.handle());
+    let mut state = State::new(&display.handle());
+    if config.winit {
+        let layout = if config.floating {
+            raywm_core::layout::LayoutKind::Floating
+        } else {
+            raywm_core::layout::LayoutKind::MasterStack
+        };
+        state.desktop = raywm_core::windows::Desktop::hybrid(layout);
+    }
     // Poll an owned duplicate; keep Display in Runtime so dispatch needs no
     // unsafe Generic::get_mut and the registered FD cannot outlive its owner.
     let display_fd = display.as_fd().try_clone_to_owned()?;
@@ -233,6 +243,12 @@ fn run(config: Options) -> Result<()> {
         backend.kill_client(client, DisconnectReason::ConnectionClosed);
     }
     let cleanup = runtime.display.dispatch_clients(&mut runtime.state);
+    #[cfg(feature = "winit")]
+    if let Some(output) = runtime.state.output.take() {
+        runtime
+            .state
+            .forget_output(raywm_core::windows::OutputId::Nested, &output)?;
+    }
     runtime.state.output_manager.take();
     drop(backend);
     // Client destruction hooks have now released their GPU resources. Keep

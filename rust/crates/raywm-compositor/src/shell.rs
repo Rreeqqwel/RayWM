@@ -2,7 +2,10 @@
 //! commit. The custom surface dispatch retains the public XDG error resource;
 //! all protocol requests still run through Smithay's versioned implementation.
 
-use raywm_core::windows::{Position, Size, WindowId};
+use raywm_core::{
+    layout::Presentation,
+    windows::{Geometry, Position, Size, SizeHints, WindowId},
+};
 use smithay::{
     backend::renderer::utils::with_renderer_surface_state,
     desktop::Window,
@@ -21,9 +24,9 @@ use smithay::{
             get_parent, is_sync_subsurface, with_states, BufferAssignment, SurfaceAttributes,
         },
         shell::xdg::{
-            Configure, PopupSurface, PositionerState, ToplevelSurface, XdgPositionerUserData,
-            XdgShellHandler, XdgShellState, XdgShellSurfaceUserData, XdgSurfaceUserData,
-            XdgWmBaseUserData,
+            Configure, PopupSurface, PositionerState, SurfaceCachedState, ToplevelSurface,
+            XdgPositionerUserData, XdgShellHandler, XdgShellState, XdgShellSurfaceUserData,
+            XdgSurfaceUserData, XdgWmBaseUserData,
         },
     },
 };
@@ -38,6 +41,49 @@ pub struct View {
     configured: bool,
     acked: Option<Serial>,
     pub resize_flight: Option<(Serial, bool)>,
+    pub managed_box: Option<Geometry>,
+    managed_configure: Option<ManagedConfigure>,
+    managed_flight: Option<(Serial, ManagedConfigure)>,
+    queued_configure: Option<ManagedConfigure>,
+    reply_to_request: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ManagedConfigure {
+    size: Size,
+    tiled: bool,
+    presentation: Presentation,
+}
+
+pub(crate) fn logical_rectangle(
+    geometry: Geometry,
+) -> smithay::utils::Rectangle<i32, smithay::utils::Logical> {
+    smithay::utils::Rectangle::new(
+        (geometry.position.x, geometry.position.y).into(),
+        (
+            geometry.size.width.get() as i32,
+            geometry.size.height.get() as i32,
+        )
+            .into(),
+    )
+}
+
+/// Read the currently committed XDG hints, never pending client requests.
+pub(crate) fn size_hints(surface: &WlSurface) -> SizeHints {
+    with_states(surface, |states| {
+        let mut cache = states.cached_state.get::<SurfaceCachedState>();
+        let hints = cache.current();
+        SizeHints {
+            min: (
+                hints.min_size.w.max(0) as u32,
+                hints.min_size.h.max(0) as u32,
+            ),
+            max: (
+                hints.max_size.w.max(0) as u32,
+                hints.max_size.h.max(0) as u32,
+            ),
+        }
+    })
 }
 
 // Tied to wl_surface lifetime, so errors use the originating wm_base without
@@ -47,6 +93,53 @@ pub struct ShellErrorResource(
 );
 
 impl State {
+    #[cfg(any(feature = "winit", test))]
+    pub fn observe_output(
+        &mut self,
+        id: raywm_core::windows::OutputId,
+        output: &smithay::output::Output,
+    ) -> Result<(), raywm_core::commands::CommandError> {
+        use raywm_core::commands::CommandError;
+        let mode = output.current_mode().ok_or(CommandError::InvalidGeometry)?;
+        let location = output.current_location();
+        let size: smithay::utils::Size<i32, smithay::utils::Logical> = output
+            .current_transform()
+            .transform_size(mode.size)
+            .to_f64()
+            .to_logical(output.current_scale().fractional_scale())
+            .to_i32_ceil();
+        let geometry = Geometry {
+            position: Position {
+                x: location.x,
+                y: location.y,
+            },
+            size: Size::new(size.w.max(0) as u32, size.h.max(0) as u32)
+                .ok_or(CommandError::InvalidGeometry)?,
+        };
+        self.desktop.update_output(id, geometry)?;
+        self.space.map_output(output, location);
+        self.sync_focus();
+        self.repair_pointer_focus();
+        self.reposition_popups();
+        self.redraw = true;
+        Ok(())
+    }
+
+    #[cfg(any(feature = "winit", test))]
+    pub fn forget_output(
+        &mut self,
+        id: raywm_core::windows::OutputId,
+        output: &smithay::output::Output,
+    ) -> Result<(), raywm_core::commands::CommandError> {
+        self.desktop.remove_output(id)?;
+        self.space.unmap_output(output);
+        self.sync_focus();
+        self.repair_pointer_focus();
+        self.reposition_popups();
+        self.redraw = true;
+        Ok(())
+    }
+
     /// Space owns protocol/render handles; core alone owns logical geometry and order.
     pub fn sync_scene(&mut self) {
         // Reparent/output observations may cancel an operation in core. Drop
@@ -70,29 +163,102 @@ impl State {
                 }
             }
         }
-        for view in &self.views {
-            if !self.desktop.visible(view.id) {
-                self.space.unmap_elem(&view.window);
-            }
-        }
-        let mut placements = Vec::new();
+        let requested: std::collections::BTreeSet<_> = self
+            .views
+            .iter()
+            .filter(|view| view.reply_to_request)
+            .filter_map(|view| self.desktop.get(view.id).map(|w| w.workspace))
+            .collect();
+        let mut placements = std::collections::BTreeMap::new();
         for workspace in self.desktop.workspaces() {
-            match self.desktop.layout_plan(workspace.id) {
-                Ok(plan) => placements.extend(plan.placements),
+            let request = requested.contains(&workspace.id);
+            let plan = if request {
+                self.desktop.workspace_plan(workspace.id)
+            } else {
+                self.desktop.layout_plan(workspace.id)
+            };
+            match plan {
+                Ok(plan) => placements.extend(plan.placements.into_iter().map(|p| (p.id, p))),
                 Err(error) => tracing::error!(?error, "Cannot reconcile workspace layout"),
             }
         }
-        for id in self.desktop.stacking() {
-            if let (Some(model), Some(view)) = (
-                placements.iter().find(|placement| placement.id == *id),
-                self.views.iter().find(|view| view.id == *id),
-            ) {
-                self.space.map_element(
-                    view.window.clone(),
-                    (model.geometry.position.x, model.geometry.position.y),
-                    false,
-                );
+        for view in &mut self.views {
+            let shown = self.desktop.visible(view.id);
+            let model = placements.get(&view.id);
+            if !shown || !model.is_some_and(|p| p.visible) {
+                view.managed_box = None;
+                self.space.unmap_elem(&view.window);
             }
+            if let Some(model) = model {
+                let desired = (model.tiled || model.presentation != Presentation::Normal)
+                    .then_some(ManagedConfigure {
+                        size: model.geometry.size,
+                        tiled: model.tiled,
+                        presentation: model.presentation,
+                    });
+                if desired != view.managed_configure
+                    && (shown
+                        || view.reply_to_request
+                        || view.managed_configure.is_some()
+                        || desired.is_some_and(|config| config.tiled))
+                {
+                    // On return to normal floating, suggest the saved size once.
+                    let config = desired.unwrap_or(ManagedConfigure {
+                        size: model.geometry.size,
+                        tiled: false,
+                        presentation: Presentation::Normal,
+                    });
+                    view.queued_configure = Some(config);
+                    view.managed_configure = desired;
+                }
+            }
+        }
+        let hidden: std::collections::BTreeSet<_> = self
+            .popup_entries
+            .iter()
+            .filter(|entry| !entry.dismissed)
+            .filter_map(|entry| entry.root)
+            .filter(|id| !self.desktop.visible(*id))
+            .collect();
+        for id in hidden {
+            if let Some(root) = self
+                .views
+                .iter()
+                .find(|view| view.id == id)
+                .and_then(|view| view.window.toplevel())
+                .map(|top| top.wl_surface().clone())
+            {
+                self.dismiss_window_popups(&root);
+            }
+        }
+        let mut order = self.desktop.stacking().to_vec();
+        order.sort_by_key(|id| self.desktop.stacking_layer(*id));
+        for id in order {
+            let Some(model) = placements
+                .get(&id)
+                .filter(|p| p.visible && self.desktop.visible(id))
+            else {
+                continue;
+            };
+            let Some(view) = self.views.iter_mut().find(|view| view.id == id) else {
+                continue;
+            };
+            let mut position = model.geometry.position;
+            if model.presentation == Presentation::Fullscreen {
+                // XDG permits a smaller fullscreen buffer and requires
+                // centering it within the output's border fill.
+                if let Some(size) = self.desktop.get(id).and_then(|w| w.size) {
+                    let output = model.geometry.size;
+                    position.x += (output.width.get().saturating_sub(size.width.get()) / 2) as i32;
+                    position.y +=
+                        (output.height.get().saturating_sub(size.height.get()) / 2) as i32;
+                }
+            }
+            self.desktop.place_at(id, position);
+            self.space
+                .map_element(view.window.clone(), (position.x, position.y), false);
+            view.managed_box = (model.tiled || model.presentation != Presentation::Normal)
+                .then_some(model.geometry);
         }
         self.space.refresh();
     }
@@ -189,6 +355,7 @@ impl State {
             .desktop
             .get(view.id)
             .is_some_and(|window| window.mapped());
+        let mut changed = false;
         if !mapped {
             if was_mapped {
                 self.space.unmap_elem(&view.window);
@@ -197,6 +364,12 @@ impl State {
                 view.initial = None;
                 view.acked = None;
                 view.resize_flight = None;
+                view.managed_configure = None;
+                view.managed_flight = None;
+                view.queued_configure = None;
+                view.managed_box = None;
+                view.reply_to_request = false;
+                changed = true;
                 toplevel.reset_initial_configure_sent();
                 toplevel
                     .with_pending_state(|state| state.states.unset(xdg_toplevel::State::Resizing));
@@ -204,19 +377,41 @@ impl State {
             } else if root == *surface && view.initial.is_none() {
                 // Initial configure follows the initial bufferless commit,
                 // never get_toplevel. Remap performs the handshake again.
-                let size = self
-                    .output
-                    .as_ref()
-                    .and_then(|output| output.current_mode())
-                    .and_then(|mode| {
-                        let bounds =
-                            Size::new(mode.size.w.max(1) as u32, mode.size.h.max(1) as u32)?;
-                        self.desktop.placement(view.id, bounds).map(|(_, size)| {
-                            (size.width.get() as i32, size.height.get() as i32).into()
-                        })
+                let output = self
+                    .desktop
+                    .workspace_output(view.id)
+                    .and_then(|id| self.desktop.output(id));
+                let model = self.desktop.get(view.id);
+                let presentation = model
+                    .filter(|_| output.is_some())
+                    .map_or(Presentation::Normal, |w| w.presentation);
+                let initial = output.and_then(|out| match presentation {
+                    Presentation::Normal if self.desktop.can_move_resize(view.id) => self
+                        .desktop
+                        .placement(view.id, out.usable.size)
+                        .map(|(_, size)| size),
+                    Presentation::Normal => None,
+                    Presentation::Maximized => Some(out.usable.size),
+                    Presentation::Fullscreen => Some(out.geometry.size),
+                });
+                if let Some(size) = initial {
+                    let config = ManagedConfigure {
+                        size,
+                        presentation,
+                        tiled: false,
+                    };
+                    configure_managed(toplevel, config);
+                    if presentation != Presentation::Normal {
+                        view.managed_configure = Some(config);
+                    }
+                } else {
+                    toplevel.with_pending_state(|state| {
+                        state.size = None;
+                        update_managed_flags(state, false, Presentation::Normal);
                     });
-                toplevel.with_pending_state(|state| state.size = size);
+                }
                 view.initial = Some(toplevel.send_configure());
+                view.reply_to_request = false;
                 tracing::info!(window = view.id.get(), "Initial configure sent");
             }
         } else if view.configured {
@@ -224,46 +419,78 @@ impl State {
             if let Some(size) =
                 Size::new(geometry.size.w.max(0) as u32, geometry.size.h.max(0) as u32)
             {
-                let position = if was_mapped
-                    || self
+                if root == *surface {
+                    changed |= self.desktop.set_size_hints(view.id, size_hints(&root));
+                }
+                if !was_mapped {
+                    let output = self
                         .desktop
-                        .get(view.id)
-                        .is_some_and(|window| window.size.is_some())
-                {
-                    self.desktop
-                        .get(view.id)
-                        .map(|window| window.position)
-                        .unwrap_or_default()
-                } else {
-                    let bounds = self
-                        .output
-                        .as_ref()
-                        .and_then(|output| output.current_mode())
-                        .and_then(|mode| {
-                            Size::new(mode.size.w.max(1) as u32, mode.size.h.max(1) as u32)
-                        })
-                        .unwrap_or(size);
-                    let (position, _) = self
+                        .workspace_output(view.id)
+                        .and_then(|id| self.desktop.output(id));
+                    let bounds = output.map_or(size, |out| out.usable.size);
+                    let (mut position, fallback) = self
                         .desktop
                         .placement(view.id, bounds)
                         .unwrap_or((Position::default(), size));
-                    Position {
-                        x: position
-                            .x
-                            .min(bounds.width.get().saturating_sub(size.width.get()) as i32),
-                        y: position
-                            .y
-                            .min(bounds.height.get().saturating_sub(size.height.get()) as i32),
+                    let new_window = self
+                        .desktop
+                        .get(view.id)
+                        .is_some_and(|w| w.floating_geometry.is_none());
+                    let floating_size = if view.managed_configure.is_some() {
+                        fallback
+                    } else {
+                        size
+                    };
+                    if new_window {
+                        position.x =
+                            position
+                                .x
+                                .min(bounds.width.get().saturating_sub(floating_size.width.get())
+                                    as i32);
+                        position.y = position.y.min(
+                            bounds
+                                .height
+                                .get()
+                                .saturating_sub(floating_size.height.get())
+                                as i32,
+                        );
+                        if let Some(output) = output {
+                            position.x = position.x.saturating_add(output.usable.position.x);
+                            position.y = position.y.saturating_add(output.usable.position.y);
+                        }
                     }
-                };
-                if !was_mapped {
                     self.desktop.map(view.id, position, size);
+                    if new_window {
+                        self.desktop.seed_floating_geometry(
+                            view.id,
+                            Geometry {
+                                position,
+                                size: floating_size,
+                            },
+                        );
+                    }
+                    changed = true;
                 }
-                let resized = view
-                    .resize_flight
-                    .filter(|(serial, _)| view.acked.is_some_and(|acked| acked >= *serial));
-                if resized.is_some() || view.resize_flight.is_none() {
-                    self.desktop.commit_size(view.id, size);
+                let resized = view.resize_flight.filter(|(serial, _)| {
+                    root == *surface && view.acked.is_some_and(|acked| acked >= *serial)
+                });
+                let managed_ack = root == *surface
+                    && view
+                        .managed_flight
+                        .is_some_and(|(serial, _)| view.acked.is_some_and(|acked| acked >= serial));
+                if managed_ack {
+                    view.managed_flight = None;
+                    changed |= view.queued_configure.is_some();
+                }
+                if (resized.is_some() || view.resize_flight.is_none())
+                    && view.managed_flight.is_none()
+                    && (root == *surface || self.desktop.can_move_resize(view.id))
+                {
+                    changed |= self.desktop.commit_geometry(
+                        view.id,
+                        size,
+                        view.managed_configure.is_none(),
+                    );
                 }
                 if let Some((_, finished)) = resized {
                     view.resize_flight = None;
@@ -292,9 +519,10 @@ impl State {
             self.dismiss_window_popups(&root);
         }
         self.redraw = true;
-        self.sync_scene();
-        self.sync_focus();
-        self.repair_pointer_focus();
+        if changed {
+            self.sync_focus();
+            self.repair_pointer_focus();
+        }
         self.reposition_popups();
     }
 
@@ -310,7 +538,6 @@ impl State {
         let view = self.views.remove(index);
         self.space.unmap_elem(&view.window);
         self.desktop.remove(view.id);
-        self.sync_scene();
         self.redraw = true;
         tracing::info!(window = view.id.get(), "Window destroyed");
         self.sync_focus();
@@ -324,6 +551,8 @@ impl State {
     ) {
         for view in &self.views {
             if view.initial.is_some()
+                && self.desktop.can_move_resize(view.id)
+                && view.managed_flight.is_none()
                 && self
                     .desktop
                     .get(view.id)
@@ -351,6 +580,100 @@ impl State {
     }
 }
 
+impl State {
+    fn request_presentation(&mut self, surface: &ToplevelSurface, fullscreen: bool, enabled: bool) {
+        let Some(id) = self.window_id(surface.wl_surface()) else {
+            return;
+        };
+        if self.desktop.interaction_window() == Some(id) {
+            self.cancel_operation();
+        }
+        if let Err(error) = self.desktop.protocol_presentation(id, fullscreen, enabled) {
+            tracing::debug!(%error, "XDG presentation preference could not be applied");
+        }
+        if let Some(view) = self.views.iter_mut().find(|view| view.id == id) {
+            view.reply_to_request = true;
+        }
+        self.sync_focus();
+        self.repair_pointer_focus();
+        self.reposition_popups();
+        self.redraw = true;
+    }
+}
+
+impl View {
+    pub fn send_focus_configure(&mut self) {
+        if self.initial.is_none() {
+            return;
+        }
+        let Some(top) = self.window.toplevel() else {
+            return;
+        };
+        let force = std::mem::take(&mut self.reply_to_request);
+        // Repeated geometry changes within one mode coalesce until the
+        // outstanding configure is ACKed and committed. An explicit XDG
+        // request or a new mode may send immediately, superseding that gate.
+        let managed = self.queued_configure.filter(|next| {
+            force
+                || self.managed_flight.is_none_or(|(_, flight)| {
+                    (next.tiled, next.presentation) != (flight.tiled, flight.presentation)
+                })
+        });
+        if let Some(config) = managed {
+            self.queued_configure = None;
+            configure_managed(top, config);
+        }
+        let serial = if force {
+            Some(top.send_configure())
+        } else {
+            top.send_pending_configure()
+        };
+        if let Some(configure) = serial.zip(managed) {
+            self.managed_flight = Some(configure);
+        }
+    }
+}
+
+fn configure_managed(top: &ToplevelSurface, config: ManagedConfigure) {
+    top.with_pending_state(|state| {
+        state.size = Some(
+            (
+                config.size.width.get() as i32,
+                config.size.height.get() as i32,
+            )
+                .into(),
+        );
+        update_managed_flags(state, config.tiled, config.presentation);
+    });
+}
+
+fn update_managed_flags(
+    state: &mut smithay::wayland::shell::xdg::ToplevelState,
+    tiled: bool,
+    presentation: Presentation,
+) {
+    for (flag, enabled) in [
+        (
+            xdg_toplevel::State::Maximized,
+            presentation == Presentation::Maximized,
+        ),
+        (
+            xdg_toplevel::State::Fullscreen,
+            presentation == Presentation::Fullscreen,
+        ),
+        (xdg_toplevel::State::TiledLeft, tiled),
+        (xdg_toplevel::State::TiledRight, tiled),
+        (xdg_toplevel::State::TiledTop, tiled),
+        (xdg_toplevel::State::TiledBottom, tiled),
+    ] {
+        if enabled {
+            state.states.set(flag);
+        } else {
+            state.states.unset(flag);
+        }
+    }
+}
+
 impl XdgShellHandler for State {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
         &mut self.xdg
@@ -368,6 +691,11 @@ impl XdgShellHandler for State {
                     configured: false,
                     acked: None,
                     resize_flight: None,
+                    managed_box: None,
+                    managed_configure: None,
+                    managed_flight: None,
+                    queued_configure: None,
+                    reply_to_request: false,
                 });
             }
             Err(error) => {
@@ -437,6 +765,22 @@ impl XdgShellHandler for State {
         if let Some(edges) = raywm_core::windows::Edges::new(edges as u32) {
             self.start_operation(surface, seat, serial, Some(edges));
         }
+    }
+    fn maximize_request(&mut self, surface: ToplevelSurface) {
+        self.request_presentation(&surface, false, true);
+    }
+    fn unmaximize_request(&mut self, surface: ToplevelSurface) {
+        self.request_presentation(&surface, false, false);
+    }
+    fn fullscreen_request(
+        &mut self,
+        surface: ToplevelSurface,
+        _output: Option<smithay::reexports::wayland_server::protocol::wl_output::WlOutput>,
+    ) {
+        self.request_presentation(&surface, true, true);
+    }
+    fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
+        self.request_presentation(&surface, true, false);
     }
     fn new_popup(&mut self, surface: PopupSurface, _: PositionerState) {
         self.create_popup(surface);

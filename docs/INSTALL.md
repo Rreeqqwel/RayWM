@@ -306,9 +306,9 @@ virtual-input protocols that let any client inject input.
 
 ### Experimental Rust foundation
 
-`rust/` contains the Stage 5A Smithay workspace/configuration foundation. The desktop session entry,
+`rust/` contains the Stage 5B experimental Smithay window manager. The desktop session entry,
 updater and release packaging still use Zig. Build on Linux with Rust/Cargo
-(Stage 5A validated with 1.100.0), a C linker, pkg-config and xkbcommon development files.
+(Stage 5B validated with 1.100.0), a C linker, pkg-config and xkbcommon development files.
 Winit additionally needs Wayland and an EGL/OpenGL ES 3 implementation (for
 example Mesa). It uses the host compositor's ordinary client connection; it
 does not acquire a VT, KMS device, libinput devices or session. No wlroots or
@@ -323,6 +323,7 @@ renderer-free build is `cargo build -p raywm-compositor --no-default-features
 |---|---|
 | `raywm-smithay --backend headless` | Default: core protocols and XDG lifecycle, no output, renderer or input |
 | `raywm-smithay --backend winit` | One nested host window, EGL/GLES rendering, virtual output and keyboard/pointer seat |
+| `raywm-smithay --floating` | Start the Winit workspaces in Floating mode. Default: Master-Stack |
 | `raywm-smithay --socket NAME` | ASCII basename in XDG_RUNTIME_DIR; default: `wayland-1` through `wayland-32`; an occupied socket is an error |
 | `raywm-smithay --help` / `-h` | Print help without initializing display/backend |
 | `XDG_RUNTIME_DIR` | Absolute, owned, mode-0700 directory, not a symlink; contains the new server socket |
@@ -343,9 +344,8 @@ server and remove its socket/lock. No ray.conf or Lua configuration is loaded.
 | `Cannot update transient parent` | A stale/cyclic logical parent relation was rejected; inspect the attached command error |
 | `Cannot update logical output` | A backend geometry observation failed core validation; inspect the attached command error |
 
-Stage 5A policy configuration is an internal validated snapshot, without a
-user-facing loader. [RUST_STAGE5A.md](RUST_STAGE5A.md) defines its defaults,
-commands and output/workspace rules.
+Stage 5B policy configuration uses an internal validated snapshot.
+[RUST_STAGE5B.md](RUST_STAGE5B.md) lists shortcuts, layouts and workspace rules.
 
 Private headless launch from `rust/`:
 

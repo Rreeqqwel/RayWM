@@ -76,7 +76,9 @@ end }
 ''')
 
     def env(runtime):
-        return {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(directory),
+        libraries = {key: os.environ[key] for key in ("LD_LIBRARY_PATH", "QT_PLUGIN_PATH",
+                     "GI_TYPELIB_PATH", "XDG_DATA_DIRS") if key in os.environ}
+        return libraries | {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(directory),
                 "XDG_RUNTIME_DIR": str(runtime), "XDG_CACHE_HOME": str(directory / "cache"),
                 "XDG_CONFIG_HOME": str(directory / "config-home")}
 
@@ -123,7 +125,7 @@ end }
             "WAYLAND_DISPLAY": str(parent_socket), "LIBGL_ALWAYS_SOFTWARE": "1",
             "EGL_PLATFORM": "wayland", "MESA_SHADER_CACHE_DIR": str(directory / "shader-cache"),
         }
-        nested = start([compositor, "--backend", "winit", "--socket", "nested"], nested_env, "nested")
+        nested = start([compositor, "--backend", "winit", "--floating", "--socket", "nested"], nested_env, "nested")
         nested_socket = nested_dir / "nested"
         wait_for(lambda: nested_socket.exists()
                  and "Nested Wayland server ready" in (directory / "nested.log").read_text(),

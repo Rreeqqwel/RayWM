@@ -664,7 +664,7 @@ fn reactive_popup_constraints_and_lifecycle() -> Result<()> {
     start_gate(
         &control,
         "popup-move",
-        "move 20 20 down left sleep 2000 move 560 410 sleep 800 up left sleep 300",
+        "move 20 20 down left sleep 2000 move 520 360 sleep 800 up left sleep 300",
     )?;
     let since = a.probe.input_serials.len();
     let serial = wait_press(&mut a, since)?;
@@ -673,8 +673,8 @@ fn reactive_popup_constraints_and_lifecycle() -> Result<()> {
     let moved = wait_popup_geometry(&mut a, &popup.popup, Some(initial), "parent move")?;
     assert_ne!(moved, initial);
     // Popup configure coordinates are relative to the parent window geometry;
-    // the parent moved to (540,390), so check the resulting screen rectangle.
-    let parent = (540, 390);
+    // the parent moved to (500,340), so check the resulting screen rectangle.
+    let parent = (500, 340);
     assert!(parent.0 + moved.0 + moved.2 <= 800 && parent.1 + moved.1 + moved.3 <= 600);
     a.ack(&popup.xdg)?;
     popup.surface.commit();
@@ -707,11 +707,40 @@ fn reactive_popup_constraints_and_lifecycle() -> Result<()> {
     assert!(parent.0 + resized.0 + child_resized.0 + child_resized.2 <= 700);
     assert!(parent.1 + resized.1 + child_resized.1 + child_resized.3 <= 500);
 
-    // The nested popup follows its parent popup after the toplevel moves back.
+    // Pick an exposed pixel of the root. After the output shrinks, the
+    // constrained popups can cover the point where the first drag ended.
+    let popup_origin = (parent.0 + resized.0, parent.1 + resized.1);
+    let obscured = |x, y| {
+        [
+            (popup_origin.0, popup_origin.1, resized.2, resized.3),
+            (
+                popup_origin.0 + child_resized.0,
+                popup_origin.1 + child_resized.1,
+                child_resized.2,
+                child_resized.3,
+            ),
+        ]
+        .into_iter()
+        .any(|(left, top, width, height)| {
+            x >= left && x < left + width && y >= top && y < top + height
+        })
+    };
+    let limit = (
+        (parent.0 + a.size.0).min(700),
+        (parent.1 + a.size.1).min(500),
+    );
+    let (x, y) = (parent.1 + 1..limit.1)
+        .flat_map(|y| (parent.0 + 1..limit.0).map(move |x| (x, y)))
+        .find(|&(x, y)| !obscured(x, y))
+        .ok_or("no exposed toplevel pixel for move back")?;
+    let end = (x - parent.0 + 40, y - parent.1 + 40);
     start_gate(
         &control,
         "popup-move-back",
-        "move 560 410 down left sleep 2000 move 60 60 sleep 800 up left sleep 300",
+        &format!(
+            "move {x} {y} down left sleep 2000 move {} {} sleep 800 up left sleep 300",
+            end.0, end.1,
+        ),
     )?;
     let since = a.probe.input_serials.len();
     let serial = wait_press(&mut a, since)?;

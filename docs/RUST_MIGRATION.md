@@ -1,4 +1,4 @@
-# Rust / Smithay migration — Stages 1–5A
+# Rust / Smithay migration — Stages 1–5B
 
 This is the foundation for a future v0.3 migration, **not a v0.3 release**.
 The working desktop remains Zig 0.16.0 + wlroots 0.20 + Lua 5.4.
@@ -14,9 +14,10 @@ a clipboard manager or server-side DnD. Stage 5A extends the existing core
 registry with workspaces/output bindings, pure layout contracts, validated
 configuration snapshots and typed internal commands. See
 [Rust Stage 5A architecture](RUST_STAGE5A.md) and its
-[qualification](measurements/v0.3.0/stage5a/qualification.md). No Lua host exists;
-this is not a daily-use replacement for the Zig desktop.
-No Zig module, package payload, release branch or project version is replaced.
+[qualification](measurements/v0.3.0/stage5a/qualification.md). Stage 5B
+adds hybrid tiling, fullscreen and maximize, workspace shortcuts and
+restore geometry. [Stage 5B architecture and controls](RUST_STAGE5B.md) ·
+[Stage 5B qualification](measurements/v0.3.0/stage5b/qualification.md).
 
 ## Baseline and audit scope
 
@@ -695,26 +696,21 @@ payloads, traces and images are in the
 
 ### Prototype limits
 
-One nested output, scale 1, floating placement/focus policy and full
-redraw are supported. Stage 5A adds internal workspace commands and validated
-placement configuration, without user bindings, workspace UX or a config file
-loader. Standard clipboard/primary selection and client-initiated
-DnD with a rendered drag icon are implemented; server-initiated DnD, client
-cursor rendering, server-side decorations,
-maximize/minimize/fullscreen/window menu policy, layer-shell,
-Xwayland, Lua, IPC, ray.conf and effects are not. Foot, wl-clipboard, minimal
-GTK 4 / Qt 6 probes and the DnD pair qualify as independent clients; no general
-toolkit application matrix is claimed. A drag icon is rendered only while the
-pointer is over the nested output; cursor surfaces remain Winit's.
+Winit supports one nested output, full redraw, Master-Stack, Columns, Monocle
+and Floating, plus XDG maximize and fullscreen. Workspace/output transitions
+are qualified with virtual outputs through the core and Smithay Space.
+Standard clipboard, primary selection, and client DnD with a drag icon are
+implemented. Server-initiated DnD, native outputs, client cursor rendering,
+server-side decorations, minimize, the compositor window menu, layer-shell,
+Xwayland, Lua, IPC, ray.conf and effects remain deferred.
 
 Physical DRM/KMS/input/hotplug, hardware GL, full GTK/Qt applications, IME,
 server-side DnD, device rules, fractional client scaling, presentation-time,
 sanitizers and production resource/admission budgets remain unqualified. If a
 DnD source
 disconnects with the pointer over an accepting target, Smithay may still emit a
-drop indication with no data (documented above). Output resize updates the mode
-and clamps oversized windows; it does not implement multi-output relocation or
-configurable focus navigation. Popup constraints react to parent/output changes
+drop indication with no data (documented above). Output resize updates the
+mode, recalculates tiling, and may suggest a smaller floating size. Popup constraints react to parent/output changes
 for reactive positioners; non-reactive clients keep their chosen geometry.
 The unchanged Zig suites are not rerun wholesale in Stages 2/3/4A/4B; the Stage 1
 baseline remains historical and source equality is checked. Context-loss
@@ -769,9 +765,10 @@ prototype, not an installed desktop.
 5. **Stage 5A — implemented:** unified managed-window/workspace/output model,
    floating and stateful layout contracts, validated configuration snapshots
    and internal typed commands with controlled Smithay reconciliation.
-   **Stage 5B remains next:** tiling algorithm, workspace UX and stateful
-   configure/restore policy. **Stage 5C remains deferred:** Lua host, compatible
-   configuration loading/reload and adversarial plugin tests. Parallel Zig/Rust
+   **Stage 5B — implemented:** tiling algorithms, workspace user controls,
+   mode transitions and XDG configure/restore policy. **Stage 5C remains
+   deferred:** Lua host, compatible configuration loading/reload and
+   adversarial plugin tests. Parallel Zig/Rust
    executables use independent private sockets/config roots.
 6. **Shell and services:** layer-shell, lock/presentation barriers, capture,
    selection/DnD/IME, activation/filtering, taskbar/workspace publication and

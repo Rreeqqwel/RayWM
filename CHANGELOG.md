@@ -4,17 +4,22 @@ All notable changes to RayWM. Versions follow [Semantic
 Versioning](https://semver.org/); before 1.0, minor versions may break
 the Lua API (the API version, `raywm.api_version`, is bumped when they do).
 
-## [Unreleased] — Rust migration foundation, floating and clipboard prototype
+## [Unreleased] — Rust migration foundation and hybrid window management
 
 ### Added
+
+- Rust Stage 5B adds Master-Stack, Columns, Monocle and Floating layouts,
+  nine workspace shortcuts, family transfers, tile reordering, fullscreen and
+  maximize. Managed geometry uses XDG configure/ACK/commit with independent
+  floating restore geometry. Workspace bindings recover after logical output
+  loss. GTK4 and Qt6 qualify together in the software nested compositor.
 
 - Rust Stage 5A: extend the existing managed-window registry with explicit
   lifecycle, workspace membership and transient families; add checked workspace
   IDs, output bindings/activation, validated floating layout plans and typed
   configuration snapshots. Internal commands validate before changing core
-  state and reconcile visibility, focus and geometry through Smithay. Tiling,
-  fullscreen/maximize protocol policy and Lua remain deferred with explicit
-  unsupported errors. Real-wire integration and policy tests cover the new
+  state and reconcile visibility, focus and geometry through Smithay.
+  Real-wire integration and policy tests cover the new
   ownership boundaries. Remapping preserves floating position, and a resize
   buffer commit before its configure ACK no longer changes core committed size.
   The Qt menu qualification reader now waits for a complete log line before

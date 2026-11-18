@@ -1,5 +1,4 @@
-//! Seat focus and input forwarding. Only Winit events enter this module;
-//! there is no libinput device, global shortcut or synthetic host input.
+//! Seat focus, compositor shortcuts and client input forwarding.
 
 use raywm_core::windows::WindowId;
 use smithay::{
@@ -25,13 +24,16 @@ impl State {
 
     pub fn sync_focus(&mut self) {
         self.sync_scene();
-        let focused = self.desktop.focused();
+        let focused = self
+            .desktop
+            .focused()
+            .filter(|_| self.host_focused || self.seat.is_none());
         let mut target = None;
-        for view in &self.views {
+        for view in &mut self.views {
             let Some(top) = view.window.toplevel() else {
                 continue;
             };
-            let active = focused == Some(view.id);
+            let active = focused == Some(view.id) && self.desktop.visible(view.id);
             if active {
                 target = Some(top.wl_surface().clone());
             }
@@ -47,8 +49,8 @@ impl State {
                         state.states.unset(xdg_toplevel::State::Activated);
                     }
                 });
-                top.send_pending_configure();
             }
+            view.send_focus_configure();
         }
         if let Some(grab) = &self.popup_grab {
             target = grab.current_grab();
@@ -74,7 +76,7 @@ impl State {
             self.surface_window(&surface)
                 .is_some_and(|id| self.desktop.visible(id))
         });
-        if !valid {
+        if !valid && (pointer.current_focus().is_some() || pointer.is_grabbed()) {
             pointer.unset_grab(self, SERIAL_COUNTER.next_serial(), time);
             let location = pointer.current_location();
             pointer.motion(
@@ -102,23 +104,30 @@ impl State {
                 }
                 self.pointer_blocked = !self.pressed_buttons.is_empty();
             }
-            // A destroyed focus surface may reveal another window under the
-            // stationary pointer. Re-establish pointer focus so the next click
-            // targets the visible window instead of a null focus.
-            let under = if self.pointer_blocked {
-                None
-            } else {
-                self.surface_under(location)
-            };
-            pointer.motion(
-                self,
-                under,
-                &MotionEvent {
-                    location,
-                    serial: SERIAL_COUNTER.next_serial(),
-                    time,
-                },
-            );
+        }
+        // Layout changes can move a tile under a stationary pointer.
+        if !pointer.is_grabbed() && !self.pointer_blocked {
+            let location = pointer.current_location();
+            let under = self.surface_under(location);
+            if under.as_ref().map(|(surface, _)| surface) != pointer.current_focus().as_ref()
+                || valid
+            {
+                let serial = SERIAL_COUNTER.next_serial();
+                let previous = pointer.current_focus();
+                pointer.motion(
+                    self,
+                    under,
+                    &MotionEvent {
+                        location,
+                        serial,
+                        time,
+                    },
+                );
+                if pointer.current_focus() != previous {
+                    let focus = pointer.current_focus();
+                    self.note_selection_serial(serial, focus.as_ref());
+                }
+            }
             pointer.frame(self);
         }
     }
@@ -139,7 +148,13 @@ impl State {
                     KeyState::Released,
                     SERIAL_COUNTER.next_serial(),
                     time,
-                    |_, _, _| FilterResult::Forward,
+                    |state, _, _| {
+                        if state.shortcut_keys.remove(&key) {
+                            FilterResult::Intercept(())
+                        } else {
+                            FilterResult::Forward
+                        }
+                    },
                 );
             }
         }
@@ -176,7 +191,7 @@ impl State {
         tracing::info!(focused, "Host focus changed");
         self.host_focused = focused;
         if focused {
-            let target = self.desktop.topmost();
+            let target = self.desktop.focused().or_else(|| self.desktop.topmost());
             self.focus_window(target);
         } else {
             self.clear_input();
@@ -191,14 +206,122 @@ impl State {
         WlSurface,
         smithay::utils::Point<f64, smithay::utils::Logical>,
     )> {
-        use smithay::desktop::WindowSurfaceType;
-        self.space
-            .element_under(position)
-            .and_then(|(window, location)| {
-                window
-                    .surface_under(position - location.to_f64(), WindowSurfaceType::ALL)
-                    .map(|(surface, point)| (surface, (point + location).to_f64()))
-            })
+        use smithay::desktop::WindowSurfaceType as SurfaceType;
+        self.space.elements().rev().find_map(|window| {
+            let view = self.views.iter().find(|view| view.window == *window)?;
+            if let Some(output) = self
+                .desktop
+                .output_for(view.id)
+                .and_then(|id| self.desktop.output(id))
+            {
+                if !crate::shell::logical_rectangle(output.geometry)
+                    .to_f64()
+                    .contains(position)
+                {
+                    return None;
+                }
+            }
+            let location = self.space.element_location(window)? - window.geometry().loc;
+            let local = position - location.to_f64();
+            let inside = view.managed_box.is_none_or(|geometry| {
+                crate::shell::logical_rectangle(geometry)
+                    .to_f64()
+                    .contains(position)
+            });
+            let surfaces = if inside {
+                SurfaceType::ALL
+            } else {
+                SurfaceType::POPUP | SurfaceType::SUBSURFACE
+            };
+            window
+                .surface_under(local, surfaces)
+                .map(|(surface, point)| (surface, (point + location).to_f64()))
+        })
+    }
+
+    #[cfg(feature = "winit")]
+    fn key_event(
+        &mut self,
+        keyboard: &smithay::input::keyboard::KeyboardHandle<Self>,
+        code: smithay::backend::input::Keycode,
+        event: KeyState,
+        serial: smithay::utils::Serial,
+        time: u32,
+    ) {
+        let (command, mods_changed) =
+            keyboard.input_intercept(self, code, event, |state, mods, key| {
+                if event != KeyState::Pressed || !mods.logo || mods.ctrl || mods.alt {
+                    return None;
+                }
+                key.raw_syms()
+                    .first()
+                    .and_then(|sym| state.shortcut(sym.raw(), mods.shift))
+                    .filter(|command| {
+                        if state.popup_root.is_some() {
+                            crate::policy::is_workspace_switch(command)
+                        } else {
+                            !keyboard.is_grabbed()
+                        }
+                    })
+            });
+        if event == KeyState::Released && self.shortcut_keys.remove(&code) {
+            return;
+        }
+        if self.shortcut_keys.contains(&code) {
+            return;
+        }
+        if let Some(command) = command {
+            self.shortcut_keys.insert(code);
+            match self.execute_command(command) {
+                Ok(_) => {}
+                Err(error) => tracing::debug!(%error, "Shortcut command rejected"),
+            }
+            return;
+        }
+        if event == KeyState::Pressed {
+            self.key_grant = keyboard
+                .current_focus()
+                .map(|target| (serial, target, std::time::Instant::now()));
+        }
+        keyboard.input_forward(self, code, event, serial, time, mods_changed);
+        let focus = keyboard.current_focus();
+        self.note_selection_serial(serial, focus.as_ref());
+    }
+
+    #[cfg(feature = "winit")]
+    fn shortcut(&self, symbol: u32, shift: bool) -> Option<raywm_core::commands::Command> {
+        use raywm_core::commands::Command;
+        use smithay::input::keyboard::keysyms::{
+            KEY_Page_Down as PAGE_DOWN, KEY_Page_Up as PAGE_UP, KEY_f as F, KEY_j as J, KEY_k as K,
+            KEY_m as M, KEY_space as SPACE, KEY_1, KEY_9,
+        };
+        let focused = self.desktop.focused();
+        let workspace = self.desktop.active_workspace();
+        Some(match (symbol, shift) {
+            (KEY_1..=KEY_9, false) => Command::ActivateWorkspace(
+                self.desktop
+                    .workspace_number((symbol - KEY_1 + 1) as usize)?,
+            ),
+            (KEY_1..=KEY_9, true) => Command::MoveWindowToWorkspace {
+                id: focused?,
+                workspace: self
+                    .desktop
+                    .workspace_number((symbol - KEY_1 + 1) as usize)?,
+            },
+            (J, false) => Command::FocusNext,
+            (K, false) => Command::FocusPrevious,
+            (J | K, true) => Command::ReorderWindow {
+                id: focused?,
+                forward: symbol == J,
+            },
+            (F, false) => Command::ToggleFullscreen(focused?),
+            (M, false) => Command::ToggleMaximized(focused?),
+            (SPACE, false) => Command::CycleLayout(workspace),
+            (SPACE, true) => Command::ToggleFloating(focused?),
+            (PAGE_DOWN, false) => Command::NextWorkspace,
+            (PAGE_UP, false) => Command::PreviousWorkspace,
+            _ => return None,
+        })
     }
 
     #[cfg(feature = "winit")]
@@ -215,21 +338,13 @@ impl State {
             InputEvent::Keyboard { event } => {
                 if let Some(keyboard) = self.seat.as_ref().and_then(|seat| seat.get_keyboard()) {
                     let serial = SERIAL_COUNTER.next_serial();
-                    if event.state() == KeyState::Pressed {
-                        self.key_grant = keyboard
-                            .current_focus()
-                            .map(|target| (serial, target, std::time::Instant::now()));
-                    }
-                    keyboard.input::<(), _>(
-                        self,
+                    self.key_event(
+                        &keyboard,
                         event.key_code(),
                         event.state(),
                         serial,
                         event.time_msec(),
-                        |_, _, _| FilterResult::Forward,
                     );
-                    let focus = keyboard.current_focus();
-                    self.note_selection_serial(serial, focus.as_ref());
                 }
             }
             InputEvent::PointerMotionAbsolute { event } => {
@@ -237,7 +352,7 @@ impl State {
                 let Some(geometry) = self.space.output_geometry(output) else {
                     return;
                 };
-                let position = event.position_transformed(geometry.size);
+                let position = event.position_transformed(geometry.size) + geometry.loc.to_f64();
                 if let Some(pointer) = self.seat.as_ref().and_then(|seat| seat.get_pointer()) {
                     let under = if self.pointer_blocked {
                         None
@@ -277,14 +392,9 @@ impl State {
                         self.pressed_buttons.push(button);
                     }
                     if !pointer.is_grabbed() && !self.pointer_blocked {
-                        let target = self
-                            .space
-                            .element_under(pointer.current_location())
-                            .map(|(window, _)| window.clone());
-                        let id = target
-                            .as_ref()
-                            .and_then(|window| window.toplevel())
-                            .and_then(|top| self.window_id(top.wl_surface()));
+                        let id = self
+                            .surface_under(pointer.current_location())
+                            .and_then(|(surface, _)| self.surface_window(&surface));
                         self.focus_window(id);
                     }
                 } else {

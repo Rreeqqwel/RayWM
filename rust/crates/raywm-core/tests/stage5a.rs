@@ -198,7 +198,7 @@ fn output_attach_switch_rebind_remove_and_reappear() -> Result {
     assert_eq!(d.active_workspace(), first);
     d.remove_output(other)?;
     assert!(!d.visible(a));
-    assert_eq!(d.output_for(a), None);
+    assert_eq!(d.output_for(a), Some(OutputId::Nested));
     assert_eq!(d.focused(), Some(b));
     d.remove_output(OutputId::Nested)?;
     assert_eq!(d.workspace(second).ok_or("workspace")?.output, None);
@@ -274,7 +274,7 @@ fn transient_family_transfer_stacking_cycles_and_parent_destruction() -> Result 
 }
 
 #[test]
-fn commands_reject_busy_stale_and_unsupported_without_mutation() -> Result {
+fn commands_reject_busy_stale_and_invalid_modes_without_mutation() -> Result {
     let mut d = Desktop::default();
     let a = mapped(&mut d)?;
     let b = d.create()?;
@@ -286,21 +286,18 @@ fn commands_reject_busy_stale_and_unsupported_without_mutation() -> Result {
         }),
         Err(E::NotMapped)
     );
-    assert_eq!(d.execute(C::ToggleFloating(a)), Err(E::Unsupported));
+    assert_eq!(d.execute(C::ToggleFloating(b)), Err(E::NotMapped));
     assert_eq!(
         d.execute(C::SetPresentation {
             id: a,
             presentation: Presentation::Fullscreen
         }),
-        Err(E::Unsupported)
+        Err(E::UnknownOutput)
     );
-    assert_eq!(
-        d.execute(C::SetLayout {
-            id: ws,
-            layout: LayoutKind::Tiling
-        }),
-        Err(E::Unsupported)
-    );
+    d.execute(C::SetLayout {
+        id: ws,
+        layout: LayoutKind::MasterStack,
+    })?;
     assert!(d.begin_move(a, Position::default()));
     assert_eq!(
         d.execute(C::MoveWindowToWorkspace {
@@ -418,10 +415,14 @@ fn floating_fullscreen_maximized_plans_are_pure_and_validated() -> Result {
         geometry,
         floating: true,
         presentation: Presentation::Normal,
+        hints: Default::default(),
     };
     let calculate = |window| {
         Floating.arrange(&LayoutInput {
             bounds: Some(bounds()),
+            usable: None,
+            active_tile: None,
+            parameters: Default::default(),
             windows: &[window],
         })
     };
@@ -437,21 +438,30 @@ fn floating_fullscreen_maximized_plans_are_pure_and_validated() -> Result {
         assert_eq!(
             Floating.arrange(&LayoutInput {
                 bounds: None,
+                usable: None,
+                active_tile: None,
+                parameters: Default::default(),
                 windows: &[window]
             }),
             Err(LayoutError::MissingOutput)
         );
     }
     assert_eq!(
-        LayoutKind::Tiling.arrange(&LayoutInput {
+        LayoutKind::MasterStack.arrange(&LayoutInput {
             bounds: None,
+            usable: None,
+            active_tile: None,
+            parameters: Default::default(),
             windows: &[]
         }),
-        Err(LayoutError::Unsupported)
+        Ok(LayoutPlan { placements: vec![] })
     );
     assert_eq!(
         Floating.arrange(&LayoutInput {
             bounds: None,
+            usable: None,
+            active_tile: None,
+            parameters: Default::default(),
             windows: &[window, window]
         }),
         Err(LayoutError::MissingOutput)
@@ -460,6 +470,9 @@ fn floating_fullscreen_maximized_plans_are_pure_and_validated() -> Result {
     assert_eq!(
         Floating.arrange(&LayoutInput {
             bounds: None,
+            usable: None,
+            active_tile: None,
+            parameters: Default::default(),
             windows: &[window, window]
         }),
         Err(LayoutError::DuplicateWindow)
@@ -467,6 +480,9 @@ fn floating_fullscreen_maximized_plans_are_pure_and_validated() -> Result {
     assert_eq!(
         LayoutPlan { placements: vec![] }.validate(&LayoutInput {
             bounds: None,
+            usable: None,
+            active_tile: None,
+            parameters: Default::default(),
             windows: &[window]
         }),
         Err(LayoutError::InvalidPlan)
@@ -477,6 +493,9 @@ fn floating_fullscreen_maximized_plans_are_pure_and_validated() -> Result {
     assert_eq!(
         invalid.validate(&LayoutInput {
             bounds: None,
+            usable: None,
+            active_tile: None,
+            parameters: Default::default(),
             windows: &[window]
         }),
         Err(LayoutError::InvalidPlan)

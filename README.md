@@ -428,19 +428,22 @@ FD payloads and two real hover-driven Qt submenu levels. It also checks popup
 press/release admission and DnD grab ownership. The pinned Smithay 0.7
 accepted-source-disconnect defect (drop with empty FD) remains documented in
 [Stage 4B-Final qualification](docs/measurements/v0.3.0/stage4b/final-qualification.md).
-Stage 5A architecture and command support are in
-[the Rust core contracts](docs/RUST_STAGE5A.md); current test evidence is in
-[Stage 5A qualification](docs/measurements/v0.3.0/stage5a/qualification.md).
+Stage 5B adds hybrid tiling, workspaces and XDG window states. Run
+`python3 rust/tests/stage5b-smoke.py` after building to qualify GTK4 and Qt6
+together through private Xvfb and Mesa software EGL.
+[Architecture and controls](docs/RUST_STAGE5B.md) ·
+[Stage 5B qualification](docs/measurements/v0.3.0/stage5b/qualification.md).
 Internal diagnostics `Cannot reconcile workspace layout`, `Cannot update
 transient parent` and `Cannot update logical output` include typed errors;
 see [Rust installation diagnostics](docs/INSTALL.md#experimental-rust-foundation).
 
 `raywm-smithay --backend winit` opens one nested EGL/GLES window/output with
-floating windows, keyboard/pointer focus, client move/resize, XDG popups,
+nine Master-Stack workspaces, Columns, Monocle and Floating layouts,
+fullscreen and maximize, keyboard/pointer focus, client move/resize, XDG popups,
 `wl_data_device_manager` clipboard/primary selection and client drag-and-drop
 with a frontmost drag icon; `--backend headless` is the
-default protocol-only mode. Other options are `--socket NAME` and
-`--help` / `-h`. It requires a
+default protocol-only mode. Use `--floating` to start the Winit workspaces in Floating mode. Other options
+are `--socket NAME` and `--help` / `-h`. It requires a
 private XDG_RUNTIME_DIR and keeps incoming WAYLAND_DISPLAY for the parent;
 logs report socket/window/output lifecycle and accepted interactive operations.
 Server-side DnD, Lua and full desktop policy are not ported; this is

@@ -30,6 +30,7 @@ struct Probe {
     globals: Vec<(u32, String, u32)>,
     configures: Vec<(xdg_surface::XdgSurface, u32)>,
     closes: usize,
+    top_configures: Vec<(xdg_toplevel::XdgToplevel, (i32, i32), Vec<u32>)>,
     popup_done: usize,
 }
 impl Dispatch<wl_registry::WlRegistry, ()> for Probe {
@@ -68,14 +69,31 @@ impl Dispatch<xdg_surface::XdgSurface, ()> for Probe {
 impl Dispatch<xdg_toplevel::XdgToplevel, ()> for Probe {
     fn event(
         state: &mut Self,
-        _: &xdg_toplevel::XdgToplevel,
+        top: &xdg_toplevel::XdgToplevel,
         event: xdg_toplevel::Event,
         _: &(),
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if matches!(event, xdg_toplevel::Event::Close) {
-            state.closes += 1;
+        match event {
+            xdg_toplevel::Event::Close => state.closes += 1,
+            xdg_toplevel::Event::Configure {
+                width,
+                height,
+                states,
+            } => {
+                let flags = states
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .copied()
+                    .map(u32::from_ne_bytes)
+                    .collect();
+                state
+                    .top_configures
+                    .push((top.clone(), (width, height), flags));
+            }
+            _ => {}
         }
     }
 }
@@ -414,7 +432,6 @@ fn logical_output_geometry_matches_projected_smithay_output() -> Result<()> {
         size: Size::new(800, 600).ok_or("size")?,
     };
     h.state.desktop.update_output(OutputId::Nested, geometry)?;
-    h.state.output = Some(output.clone());
     let _a = h.window()?;
     let id = h.state.views[0].id;
     assert_eq!(h.state.desktop.output_for(id), Some(OutputId::Nested));
@@ -466,3 +483,6 @@ fn reparent_to_hidden_workspace_cancels_core_and_adapter_resize() -> Result<()> 
     assert_eq!(h.state.space.elements().count(), 1);
     Ok(())
 }
+
+#[path = "stage5b_tests.rs"]
+mod stage5b;

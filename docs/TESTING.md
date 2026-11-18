@@ -15,7 +15,7 @@ CLI and nested launch are in [INSTALL.md](INSTALL.md#experimental-rust-foundatio
 architecture, historical baselines and qualification limits are in
 [RUST_MIGRATION.md](RUST_MIGRATION.md).
 
-From `rust/` (Stage 5A validated with Rust/Cargo 1.100.0):
+From `rust/` (Stage 5B validated with Rust/Cargo 1.100.0):
 
 ```sh
 cargo fmt --all -- --check
@@ -30,7 +30,7 @@ cargo clippy --workspace --all-targets --no-default-features --locked -- -D warn
 cargo test --workspace --no-default-features --locked
 ```
 
-The default tests comprise 20 core tests, five real-wire in-process
+The default tests comprise 29 core tests, nine real-wire in-process
 core/Smithay integration tests and eleven real headless process/protocol tests.
 The six graphical tests are ignored in that run and executed by the separate
 harnesses below. Stage 5A covers workspace creation/removal,
@@ -58,6 +58,15 @@ and output. Protocol errors printed by negative
 cases are expected; the connection is rejected and a fresh client still works.
 Each process has a scrubbed environment, private mode-0700 runtime directory,
 bounded waits and a kill/reap guard. Headless mode sends no fabricated frames.
+
+Stage 5B adds coverage of tiling arithmetic, infeasible size hints, restore
+geometry, workspace focus and output fallback. New real-wire tests verify
+tiled/monocle Space projection, concurrent XDG configures, late ACKs while
+hidden and two Smithay output handles. The separate Stage 5B graphical test
+runs real GTK4 and Qt6 together through private Xvfb and software EGL. It
+requires `Xvfb`, `xdotool`, Python 3 with Pillow, GTK4 introspection and PyQt6.
+Run `python3 rust/tests/stage5b-smoke.py` from the repository root after a
+default Cargo build. [Stage 5B qualification](measurements/v0.3.0/stage5b/qualification.md).
 
 The Stage 2/3 graphical tests, the Stage 4A selection test and the three Stage 4B
 DnD/popup/admission tests are explicitly ignored by default because they need
@@ -150,9 +159,8 @@ from `wl-copy`. Every process/socket/lock is cleaned up. Evidence is in
 This qualifies a nested software renderer, basic input, the standard
 clipboard/primary-selection paths and client-initiated DnD with drag icons. It
 does not qualify physical hardware, server-side DnD, a full toolkit application
-matrix or desktop parity. No Lua/IPC/config/IME/Xwayland
-services are ported through Stage 5A; its configuration layer is an internal
-validated snapshot, without a file loader or Lua host. Rust checks remain local commands, not
+matrix or desktop parity. The Rust configuration layer uses an internal
+validated snapshot. Lua, a file loader, IPC, IME and Xwayland remain deferred. Rust checks remain local commands, not
 additional release or CI jobs.
 
 ## Requirements

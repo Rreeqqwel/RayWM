@@ -93,7 +93,6 @@ impl SerialLog {
     }
 
     /// Track an input serial delivered to one of the focused client's objects.
-    #[cfg(feature = "winit")]
     fn note(&mut self, serial: Serial, client: &ClientId) {
         if self.focus.as_ref() == Some(client) {
             self.push(serial, client.clone());
@@ -166,7 +165,6 @@ impl SelectionState {
             .note_focus(client.map(Client::id), delivered, serial);
     }
 
-    #[cfg(feature = "winit")]
     fn note_serial(&mut self, serial: Serial, client: &ClientId) {
         self.serials.note(serial, client);
     }
@@ -180,7 +178,6 @@ impl State {
     /// Record an input serial that a focused client can later present with
     /// `set_selection` (for example the Ctrl+C key press or a pointer button).
     /// Headless mode has no seat, so it can never receive such a request.
-    #[cfg(feature = "winit")]
     pub fn note_selection_serial(&mut self, serial: Serial, surface: Option<&WlSurface>) {
         let Some(surface) = surface else {
             return;

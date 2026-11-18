@@ -64,22 +64,19 @@ def main():
 end }
 ''')
     foot_config = directory / "foot.ini"
-    foot_config.write_text('''[main]
-font=monospace:size=10
-[csd]
-preferred=none
-[colors-dark]
-background=ff0000
-foreground=ffffff
-alpha=1.0
-[colors-light]
-background=ff0000
-foreground=ffffff
-alpha=1.0
-''')
+    foot_base = "[main]\nfont=monospace:pixelsize=16\npad=0x0\n[csd]\npreferred=none\n"
+    foot_colors = "background=ff0000\nforeground=ffffff\nalpha=1.0\n"
+    foot_config.write_text(foot_base + "[colors-dark]\n" + foot_colors + "[colors-light]\n" + foot_colors)
+    config_check = ["foot", "--check-config", "--config", str(foot_config)]
+    if subprocess.run(config_check, capture_output=True, timeout=10).returncode:
+        # Older foot exposes the same color settings in a single section.
+        foot_config.write_text(foot_base + "[colors]\n" + foot_colors)
+        subprocess.run(config_check, capture_output=True, timeout=10, check=True)
 
     def env(runtime):
-        return {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(directory),
+        libraries = {key: os.environ[key] for key in ("LD_LIBRARY_PATH", "QT_PLUGIN_PATH",
+                     "GI_TYPELIB_PATH", "XDG_DATA_DIRS") if key in os.environ}
+        return libraries | {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(directory),
                 "XDG_RUNTIME_DIR": str(runtime), "XDG_CACHE_HOME": str(directory / "cache"),
                 "XDG_CONFIG_HOME": str(directory / "config-home")}
 
@@ -126,7 +123,7 @@ alpha=1.0
             "WAYLAND_DISPLAY": str(parent_socket), "LIBGL_ALWAYS_SOFTWARE": "1",
             "EGL_PLATFORM": "wayland", "MESA_SHADER_CACHE_DIR": str(directory / "shader-cache"),
         }
-        nested = start([compositor, "--backend", "winit", "--socket", "nested"], nested_env, "nested")
+        nested = start([compositor, "--backend", "winit", "--floating", "--socket", "nested"], nested_env, "nested")
         nested_socket = nested_dir / "nested"
         wait_for(lambda: nested_socket.exists()
                  and "Nested Wayland server ready" in (directory / "nested.log").read_text(),
@@ -180,23 +177,28 @@ alpha=1.0
         typed_marker = directory / "foot-typed"
         paste_marker = directory / "foot-pasted"
         mapped_before = log.count("Window mapped")
-        foot_env = client_env() | {"FOOT_TYPED": str(typed_marker),
+        foot_env = client_env() | {"LC_ALL": "C.UTF-8", "FOOT_TYPED": str(typed_marker),
                                    "FOOT_PASTED": str(paste_marker), "TERM": "foot"}
         foot = start([shutil.which("foot"), "-c", str(foot_config), "-w", "400x240",
                       "-T", "raywm-stage4-foot", "--", "sh", "-c",
-                      'printf "FOOTCOPY-1234\\n"; read x; printf "%s" "$x" > "$FOOT_TYPED"; '
+                      'printf "\\033[2J\\033[HFOOTCOPY-1234\\n"; read x; printf "%s" "$x" > "$FOOT_TYPED"; '
                       'read y; printf "%s" "$y" > "$FOOT_PASTED"'],
                      foot_env, "foot")
         wait_for(lambda: foot.poll() is None
                  and (directory / "nested.log").read_text(errors="replace").count("Window mapped") > mapped_before,
                  "foot window map", timeout=20)
-        time.sleep(0.4)
         screenshot = directory / "foot.png"
-        subprocess.run(["grim", str(screenshot)], env=driver_env, timeout=10,
-                       check=True, capture_output=True)
-        subprocess.run([sys.executable, str(ROOT / "tests/support/png_check.py"), str(screenshot),
-                        "--size", "1280x720", "--pixel", "200,120,ff0000"],
-                       timeout=10, check=True)
+
+        def foot_rendered():
+            subprocess.run(["grim", str(screenshot)], env=driver_env, timeout=10,
+                           check=True, capture_output=True)
+            return subprocess.run(
+                [sys.executable, str(ROOT / "tests/support/png_check.py"), str(screenshot),
+                 "--size", "1280x720", "--pixel", "200,120,ff0000"],
+                timeout=10, capture_output=True,
+            ).returncode == 0
+
+        wait_for(foot_rendered, "foot submitted the configured red background", timeout=20)
         print("foot: map/render PASS (red client-selected background at 200,120)", flush=True)
 
         # Focus foot and type into the waiting shell: real keyboard delivery.
@@ -208,8 +210,8 @@ alpha=1.0
             raise RuntimeError(f"foot keyboard marker: {typed_marker.read_text()!r}")
         print("foot: keyboard input PASS", flush=True)
 
-        # Select the printed line; foot offers it as the primary selection.
-        drive("move", "2", "36", "down", "left", "move", "300", "36", "up", "left", "sleep", "200")
+        # The fixture clears the terminal and writes the offer on the first row.
+        drive("move", "2", "8", "down", "left", "move", "300", "8", "up", "left", "sleep", "200")
         subprocess.run(["grim", str(directory / "foot-selected.png")], env=driver_env,
                        timeout=10, check=True, capture_output=True)
         primary = subprocess.run([shutil.which("wl-paste"), "-p", "-n"], env=client_env(),

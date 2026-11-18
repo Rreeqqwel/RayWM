@@ -1,7 +1,7 @@
 //! Synchronous policy requests and resulting facts/effects; no event bus.
 use crate::{
     config::{ConfigError, Configuration},
-    layout::{LayoutKind, Presentation},
+    layout::{Gaps, LayoutKind, MasterRatio, Presentation},
     windows::{OutputId, Position, Size, WindowId},
     workspaces::WorkspaceId,
 };
@@ -25,6 +25,10 @@ pub enum Command {
         fallback: WorkspaceId,
     },
     ActivateWorkspace(WorkspaceId),
+    NextWorkspace,
+    PreviousWorkspace,
+    FocusNext,
+    FocusPrevious,
     MoveWindowToWorkspace {
         id: WindowId,
         workspace: WorkspaceId,
@@ -37,7 +41,16 @@ pub enum Command {
         id: WorkspaceId,
         layout: LayoutKind,
     },
+    CycleLayout(WorkspaceId),
     ToggleFloating(WindowId),
+    ToggleFullscreen(WindowId),
+    ToggleMaximized(WindowId),
+    ReorderWindow {
+        id: WindowId,
+        forward: bool,
+    },
+    SetMasterRatio(MasterRatio),
+    SetGaps(Gaps),
     SetPresentation {
         id: WindowId,
         presentation: Presentation,
@@ -60,6 +73,8 @@ pub enum Event {
     },
     WorkspaceBound(WorkspaceId),
     LayoutChanged(WorkspaceId),
+    WindowModeChanged(WindowId),
+    WindowReordered(WindowId),
     ConfigurationApplied,
 }
 
@@ -84,7 +99,8 @@ pub enum CommandError {
     NotMapped,
     NotVisible,
     Busy,
-    Unsupported,
+    InvalidMode,
+    NoCandidate,
     InvalidGeometry,
     InvalidParent,
     IdExhausted,

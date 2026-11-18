@@ -14,10 +14,7 @@ use smithay::{
         },
     },
     utils::{Logical, Point, Serial},
-    wayland::{
-        compositor::{get_parent, with_states},
-        shell::xdg::{SurfaceCachedState, ToplevelSurface},
-    },
+    wayland::{compositor::get_parent, shell::xdg::ToplevelSurface},
 };
 
 impl State {
@@ -90,22 +87,7 @@ impl State {
             .interaction_window()
             .and_then(|id| self.views.iter().find(|view| view.id == id))
             .and_then(|view| view.window.toplevel())
-            .map(|top| {
-                with_states(top.wl_surface(), |states| {
-                    let mut cache = states.cached_state.get::<SurfaceCachedState>();
-                    let state = cache.current();
-                    SizeHints {
-                        min: (
-                            state.min_size.w.max(0) as u32,
-                            state.min_size.h.max(0) as u32,
-                        ),
-                        max: (
-                            state.max_size.w.max(0) as u32,
-                            state.max_size.h.max(0) as u32,
-                        ),
-                    }
-                })
-            })
+            .map(|top| crate::shell::size_hints(top.wl_surface()))
             .unwrap_or_default()
     }
 

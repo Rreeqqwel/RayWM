@@ -2,7 +2,7 @@
 
 use crate::{
     config::Configuration,
-    layout::Presentation,
+    layout::{LayoutKind, Presentation},
     workspaces::{OutputState, Workspace, WorkspaceId},
 };
 use std::{collections::BTreeMap, error::Error, fmt, num::NonZeroU32};
@@ -63,6 +63,10 @@ pub struct WindowState {
     pub focus_eligible: bool,
     pub floating: bool,
     pub presentation: Presentation,
+    pub floating_geometry: Option<Geometry>,
+    pub hints: SizeHints,
+    maximized: bool,
+    tile_rank: u32,
     pub focused: bool,
     pub resize: Option<ResizeState>,
 }
@@ -93,7 +97,7 @@ impl Edges {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SizeHints {
     pub min: (u32, u32),
     pub max: (u32, u32),
@@ -161,6 +165,8 @@ pub struct Desktop {
     active_workspace: WorkspaceId,
     next_workspace: Option<u64>,
     config: Configuration,
+    default_layout: LayoutKind,
+    automatic_workspaces: bool,
 }
 
 impl Default for Desktop {
@@ -176,12 +182,17 @@ impl Default for Desktop {
                     id: WorkspaceId(1),
                     output: None,
                     layout: Default::default(),
+                    home: None,
+                    explicitly_detached: false,
+                    last_focus: None,
                 },
             )]),
             outputs: BTreeMap::new(),
             active_workspace: WorkspaceId(1),
             next_workspace: Some(2),
             config: Configuration::default(),
+            default_layout: LayoutKind::Floating,
+            automatic_workspaces: false,
         }
     }
 }
@@ -201,8 +212,12 @@ impl Desktop {
                 workspace: self.active_workspace,
                 parent: None,
                 focus_eligible: true,
-                floating: true,
+                floating: false,
                 presentation: Presentation::Normal,
+                floating_geometry: None,
+                hints: SizeHints::default(),
+                maximized: false,
+                tile_rank: id.get(),
                 focused: false,
                 resize: None,
             },
@@ -215,6 +230,7 @@ impl Desktop {
     }
 
     pub fn remove(&mut self, id: WindowId) -> Option<WindowState> {
+        self.forget_workspace_focus(id);
         self.cancel_operation(id);
         let focused = self.focused() == Some(id);
         self.order.retain(|other| *other != id);
@@ -239,6 +255,9 @@ impl Desktop {
         };
         window.position = position;
         window.size = Some(size);
+        if window.floating_geometry.is_none() {
+            window.floating_geometry = Some(Geometry { position, size });
+        }
         let newly_mapped = !window.mapped();
         if newly_mapped {
             self.order.push(id);
@@ -251,6 +270,7 @@ impl Desktop {
     }
 
     pub fn unmap(&mut self, id: WindowId) -> bool {
+        self.forget_workspace_focus(id);
         self.cancel_operation(id);
         let Some(window) = self.windows.get_mut(&id) else {
             return false;
@@ -276,16 +296,14 @@ impl Desktop {
         if self.interaction.is_some_and(|grab| Some(grab.id) != id) {
             return false;
         }
-        if id.is_some_and(|id| !self.focusable(id)) {
+        if id.is_some_and(|id| !self.selectable(id)) {
             return false;
         }
         for window in self.windows.values_mut() {
             window.focused = Some(window.id) == id;
         }
         if let Some(id) = id {
-            if let Some(window) = self.windows.get(&id) {
-                self.active_workspace = window.workspace;
-            }
+            self.remember_workspace_focus(id);
             self.raise(id);
         }
         true
@@ -305,13 +323,13 @@ impl Desktop {
     pub fn topmost(&self) -> Option<WindowId> {
         self.order
             .iter()
-            .rev()
             .copied()
-            .find(|id| self.focusable(*id))
+            .filter(|id| self.focusable(*id))
+            .max_by_key(|id| self.stacking_layer(*id))
     }
 
     pub fn raise(&mut self, id: WindowId) -> bool {
-        if !self.focusable(id) {
+        if !self.selectable(id) {
             return false;
         }
         self.raise_family(id);
@@ -323,6 +341,9 @@ impl Desktop {
             return false;
         };
         window.position = position;
+        if let Some(restore) = &mut window.floating_geometry {
+            restore.position = position;
+        }
         true
     }
 
@@ -330,8 +351,8 @@ impl Desktop {
     /// windows use smaller cascade rectangles; no reference to a first ID is retained.
     pub fn placement(&self, id: WindowId, bounds: Size) -> Option<(Position, Size)> {
         let window = self.windows.get(&id)?;
-        if let Some(size) = window.size {
-            return Some((window.position, size));
+        if let Some(geometry) = window.floating_geometry {
+            return Some((geometry.position, geometry.size));
         }
         let rank = self
             .windows
@@ -375,7 +396,7 @@ impl Desktop {
     }
 
     fn begin(&mut self, id: WindowId, origin: Position, edges: Option<Edges>) -> bool {
-        if self.interaction.is_some() || !self.focusable(id) {
+        if self.interaction.is_some() || !self.focusable(id) || !self.can_move_resize(id) {
             return false;
         }
         let Some(window) = self
@@ -429,6 +450,9 @@ impl Desktop {
                 window.position = Position {
                     x: clamp_coordinate(i64::from(grab.initial.position.x) + dx),
                     y: clamp_coordinate(i64::from(grab.initial.position.y) + dy),
+                };
+                if let Some(restore) = &mut window.floating_geometry {
+                    restore.position = window.position;
                 }
             }
             Operation::Resize => {
@@ -494,8 +518,20 @@ impl Desktop {
     }
 
     /// Called only after the adapter has associated this commit with its ACK.
-    pub fn commit_size(&mut self, id: WindowId, size: Size) {
+    pub fn seed_floating_geometry(&mut self, id: WindowId, geometry: Geometry) {
         if let Some(window) = self.windows.get_mut(&id) {
+            window.floating_geometry = Some(geometry);
+        }
+    }
+
+    pub fn commit_size(&mut self, id: WindowId, size: Size) -> bool {
+        self.commit_geometry(id, size, true)
+    }
+
+    pub fn commit_geometry(&mut self, id: WindowId, size: Size, update_restore: bool) -> bool {
+        let floating = update_restore && self.can_move_resize(id);
+        if let Some(window) = self.windows.get_mut(&id) {
+            let previous = (window.position, window.size);
             if let Some(resize) = window.resize {
                 if resize.edges.left() {
                     window.position.x = clamp_coordinate(
@@ -513,7 +549,15 @@ impl Desktop {
                 }
             }
             window.size = Some(size);
+            if floating {
+                window.floating_geometry = Some(Geometry {
+                    position: window.position,
+                    size,
+                });
+            }
+            return previous != (window.position, window.size);
         }
+        false
     }
     pub fn finish_resize(&mut self, id: WindowId) {
         if let Some(window) = self.windows.get_mut(&id) {

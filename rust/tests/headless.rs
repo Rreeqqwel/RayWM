@@ -71,7 +71,9 @@ impl Server {
         let socket = dir.path().join(name.unwrap_or("wayland-1"));
         let mut server = Self { child, dir, socket };
         let deadline = Instant::now() + WAIT;
-        while !server.socket.exists() {
+        // bind() can create the filesystem entry before the listener is
+        // ready. Wait for the server to register it before connecting.
+        while !server.socket.exists() || !server.log()?.contains("Headless Wayland server ready") {
             if server.child.try_wait()?.is_some() || Instant::now() >= deadline {
                 return Err(format!("startup failed: {}", server.log()?).into());
             }
