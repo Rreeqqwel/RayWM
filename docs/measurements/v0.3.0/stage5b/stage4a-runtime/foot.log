@@ -1,0 +1,6 @@
+warn: wayland.c:1720: compositor does not implement XDG activation, bell.urgent will fall back to coloring the window margins red
+warn: wayland.c:1726: compositor does not implement fractional scaling
+warn: wayland.c:1729: compositor does not implement server-side cursors, falling back to client-side cursors
+warn: wayland.c:1734: compositor does not implement the XDG toplevel icon protocol
+warn: wayland.c:1739: text input interface not implemented by compositor; IME will be disabled
+warn: render.c:3079: compositor is not releasing buffers immediately; expect lower rendering performance

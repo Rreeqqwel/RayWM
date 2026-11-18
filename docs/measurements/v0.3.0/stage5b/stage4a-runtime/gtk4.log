@@ -1,0 +1,2 @@
+
+(gtk4.bin:30342): Gtk-WARNING **: 12:09:49.328: Unable to acquire session bus: Cannot autolaunch D-Bus without X11 $DISPLAY

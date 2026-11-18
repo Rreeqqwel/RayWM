@@ -1,0 +1,27 @@
+client: output scale 1
+client: round 0 configured 800x600
+client: surface enter
+client: activated
+client: round 0 frame done
+client: subsurface mapped
+client: hold resized 800x600
+client: kbd keymap
+client: kbd repeat 25 200
+client: kbd enter
+client: deactivated
+client: kbd leave
+client: ptr leave window
+client: hold resized 800x600
+client: ptr enter sub at 10,10
+client: activated
+client: kbd enter
+client: ptr motion 10,10
+client: ptr button 272 pressed sub
+client: csd move requested
+client: hold resized 800x600
+client: ptr leave sub
+client: ptr enter window at 130,130
+client: ptr leave window
+client: ptr enter sub at 10,10
+client: kbd key 30 pressed
+client: kbd key 30 released

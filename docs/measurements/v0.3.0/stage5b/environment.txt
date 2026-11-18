@@ -1,0 +1,43 @@
+Run date (UTC): 2026-11-18
+Platform: Linux 6.18.57 x86_64
+OS: Debian GNU/Linux 13 (trixie)
+rustc 1.100.0 (0ef1bc386 2026-11-09)
+cargo 1.100.0 (3acc79c0c 2026-11-05)
+Smithay 0.7.0 (Cargo.lock)
+GTK 4.18.6
+Qt 6.8.2
+foot version: 1.21.0 +pgo +ime +graphemes -assertions
+0.16.0
+Zig test parent: wlroots 0.20.2, headless backend and pixman.
+Stage 2–4B compositor EGL: Wayland host, LIBGL_ALWAYS_SOFTWARE=1.
+Stage 5B compositor EGL: Xvfb X11 host, LIBGL_ALWAYS_SOFTWARE=1.
+Both paths reported Mesa llvmpipe in the backend log.
+Tools and Debian packages were installed under workspace scratch paths.
+The Zig package archives were fetched from GitHub mirrors after Codeberg
+returned HTTP 403. zig fetch reproduced the four hashes in build.zig.zon.
+
+Commands in rust/:
+  cargo fmt --all -- --check
+  cargo check --workspace --all-targets --locked
+  cargo build --workspace --locked
+  cargo test --workspace --locked
+  cargo clippy --workspace --all-targets --locked -- -D warnings
+  cargo check --workspace --all-targets --no-default-features --locked
+  cargo build --workspace --no-default-features --locked
+  cargo test --workspace --no-default-features --locked
+  cargo clippy --workspace --all-targets --no-default-features --locked
+
+Commands from the repository root:
+  tests/docs-sync.sh
+  git diff --exit-code 8311d1baa4f77319c073871dfbd110087bf9463a 32004f91c8ede3167f7ccd10c1bed3f3c3db95e7 -- src protocol config packaging scripts tests build.zig build.zig.zon rust/Cargo.toml rust/Cargo.lock
+  /usr/bin/python3 rust/tests/nested-smoke.py --zig-bin /workspace/work/raywm-test-bin
+  /usr/bin/python3 rust/tests/nested-smoke.py --stage3 --zig-bin /workspace/work/raywm-test-bin
+  /usr/bin/python3 rust/tests/selection-smoke.py --zig-bin /workspace/work/raywm-test-bin
+  /usr/bin/python3 rust/tests/stage4b-smoke.py --zig-bin /workspace/work/raywm-test-bin
+  /usr/bin/python3 rust/tests/stage5b-smoke.py --binary /workspace/work/raywm-stage5b-published-bin
+
+The Zig runner path holds wrappers for the unchanged Zig executables
+built with -Dtest-input and the portable runtime library path. The Stage 5B
+binary is a copy of the default cargo build. Each runtime source.txt
+identifies the original directory. Logs and PNG selections were copied
+from those directories, with trailing blank lines trimmed. results.tsv records process exit statuses (0 = PASS).

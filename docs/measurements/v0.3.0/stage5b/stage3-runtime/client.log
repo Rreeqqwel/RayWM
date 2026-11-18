@@ -1,0 +1,27 @@
+
+running 1 test
+stage3: three-ready
+stage3: focus-ready
+stage3: move-ready
+stage3: invalid-ready
+stage3: resize-armed
+stage3: resize-unacked
+stage3: resize-ready
+stage3: max-ready
+stage3: popup-ready
+stage3: reposition-ready
+stage3: dismiss-ready
+stage3: parent-armed
+stage3: parent-popup-ready
+stage3: parent-destroyed
+stage3: keyboard-popup-armed
+stage3: keyboard-popup-ready
+stage3: popup-disconnected
+stage3: unmap-armed
+stage3: unmap-remapped
+stage3: disconnect-armed
+stage3: survivor-ready
+stage3: client-done
+test floating::nested_floating_focus_geometry_and_popups ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 16 filtered out; finished in 22.00s

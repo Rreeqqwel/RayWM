@@ -1,0 +1,13 @@
+client: output scale 1
+client: round 0 configured 480x360
+client: surface enter
+client: activated
+client: round 0 frame done
+client: hold resized 480x360
+client: kbd keymap
+client: kbd repeat 25 200
+client: kbd enter
+client: deactivated
+client: kbd leave
+client: ptr leave window
+client: hold resized 480x360

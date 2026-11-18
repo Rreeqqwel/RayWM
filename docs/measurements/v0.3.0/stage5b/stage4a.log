@@ -1,0 +1,10 @@
+artifacts: /tmp/raywm-stage4-0rn6rc5o
+selection: PASS (two independent clients, focus, both serial policies, fd errors)
+foot: map/render PASS (red client-selected background at 200,120)
+foot: keyboard input PASS
+foot: mouse selection to primary PASS
+foot: copy to an independent client PASS
+foot: paste from an independent client PASS
+gtk4: map/render/input/copy/paste PASS
+qt6: map/render/input/copy/paste PASS
+stage4: PASS (clipboard, primary selection, foot, wl-clipboard, cleanup)

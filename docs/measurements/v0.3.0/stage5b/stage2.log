@@ -1,0 +1,5 @@
+artifacts: /tmp/raywm-stage2-ku_8kdxz
+pixels: PASS (800x600)
+keyboard/pointer: PASS (actual client events)
+pixels: PASS (700x500)
+nested graphics: PASS (scenario, submitted pixels and process/socket cleanup)
